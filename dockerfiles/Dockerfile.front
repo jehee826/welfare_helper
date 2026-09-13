@@ -1,0 +1,13 @@
+FROM node:24
+
+WORKDIR /app/FrontEnd
+
+COPY FrontEnd/package*.json ./
+
+RUN npm install
+
+COPY FrontEnd/ .
+
+EXPOSE 5173
+
+CMD ["npm", "run", "dev", "--", "--host"]

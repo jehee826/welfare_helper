@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.back
+    container_name: backend
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./BackEnd:/app/BackEnd
+    restart: none
+
+  frontend:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.front
+    container_name: frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./FrontEnd:/app/FrontEnd
+      - /app/FrontEnd/node_modules
+    restart: none

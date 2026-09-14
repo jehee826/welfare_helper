@@ -2,14 +2,17 @@ services:
   backend:
     build:
       context: .
-      dockerfile: dockerFiles/Dockerfile.back
+      dockerfile: dockerfiles/Dockerfile.back
     container_name: backend
     env_file:
       - .env
     environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
       DB_HOST: postgres
       DB_PORT: 5432
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      OLLAMA_BASE_URL: http://ollama:11434
     ports:
       - "8000:8000"
     volumes:
@@ -21,14 +24,26 @@ services:
         condition: service_started
 
   ollama:
-    image: ollama/ollama:latest
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.ollama
     container_name: ollama
     ports:
       - "11434:11434"
     volumes:
-      - ollama_data:/root/.ollama
+      - ./ollama_data:/root/.ollama
     environment:
       OLLAMA_HOST: 0.0.0.0
+      OLLAMA_PULL_MODELS: "${OLLAMA_LLM} ${OLLAMA_EMBED}"
+      # OLLAMA_NUM_PARALLEL: 4 동접 처리를 위한 Ollama 컨테이너 다중화
+    # GPU가 있는 하드웨어로 실행시 주석 해제
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
   postgres:
     image: postgres:16
@@ -40,13 +55,9 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
-
-volumes:
-  postgres_data:
-  ollama_data:

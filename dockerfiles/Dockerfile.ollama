@@ -1,9 +1,10 @@
 FROM ollama/ollama:latest
 
+COPY docker_script/script.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 11434
 
 ENV OLLAMA_HOST=0.0.0.0
 
-RUN ollama serve & sleep 5 && ollama pull qwen2.5
-
-CMD ["serve"]
+ENTRYPOINT ["/entrypoint.sh"]

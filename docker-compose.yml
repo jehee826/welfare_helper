@@ -22,6 +22,7 @@ services:
         condition: service_healthy
       ollama:
         condition: service_started
+    restart: none
 
   ollama:
     build:
@@ -44,6 +45,7 @@ services:
     #         - driver: nvidia
     #           count: all
     #           capabilities: [gpu]
+    restart: none
 
   postgres:
     image: postgres:16
@@ -61,3 +63,4 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: none

@@ -1,0 +1,9 @@
+.env
+.env.*
+.git/
+.vercel/
+ollama_data/
+postgres_data/
+**/__pycache__/
+**/*.pyc
+*.erd

@@ -1,0 +1,14 @@
+[project]
+name = "welfare-helper"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "psycopg2-binary",
+    "httpx",
+    "pydantic-settings",
+]
+
+[tool.vercel]
+entrypoint = "BackEnd.main:app"

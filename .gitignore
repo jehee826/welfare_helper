@@ -9,3 +9,6 @@ postgres_data/
 # 파이썬 컴파일결과 제외
 **/__pycache__/
 **/*.pyc
+
+# 로컬 ERD 설계 파일
+/복지챗봇.erd

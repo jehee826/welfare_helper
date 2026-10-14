@@ -1,7 +1,9 @@
 from contextlib import closing
+from pathlib import Path
 
 import psycopg2
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +22,11 @@ class DatabaseSettings(BaseSettings):
 database_settings = DatabaseSettings()
 
 app = FastAPI()
+
+
+@app.get("/", response_class=FileResponse, include_in_schema=False)
+def homepage():
+    return FileResponse(Path(__file__).resolve().parent.parent / "FrontEnd" / "index.html")
 
 
 @app.get("/health")

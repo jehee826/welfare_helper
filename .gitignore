@@ -13,3 +13,12 @@ postgres_data/
 
 # 로컬 ERD 설계 파일
 /복지챗봇.erd
+
+# 로컬 AI 도구 프로젝트 지침
+/AGENTS.md
+/CLAUDE.md
+/.agents/skills/
+/.claude/skills/
+
+# 로컬 디자인 참고 문서
+/DESIGN-mobbin.md

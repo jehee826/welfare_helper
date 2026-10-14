@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#ffffff">
+<title>곁에 · 나에게 필요한 복지</title>
+</head>
+<body style="margin:0;background:#fff;color:#141414;font-family:Arial,'Malgun Gothic',sans-serif;font-size:16px;line-height:1.5">
+<header style="position:sticky;top:16px;z-index:2;margin:24px auto 0;width:calc(100% - 40px);max-width:960px;box-sizing:border-box;border-radius:9999px;background:#f3f3f3;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+<a href="/" aria-label="곁에 홈" style="text-decoration:none;color:#141414;font-size:23px;font-weight:700;padding:0 12px">곁에<span style="font-size:11px;margin-left:8px;font-weight:400">복지 길잡이</span></a>
+<nav aria-label="주 메뉴" style="display:flex;align-items:center;gap:16px">
+<a href="#services" style="color:#141414;text-decoration:none;font-size:14px">복지 찾기</a>
+<button type="button" data-open-chat style="cursor:pointer;border:0;border-radius:9999px;background:#141414;color:white;padding:13px 20px;font:600 14px Arial,'Malgun Gothic',sans-serif">도움 받기 ↗</button>
+</nav>
+</header>
+<main style="max-width:1120px;margin:auto;padding:0 24px 80px">
+<section style="text-align:center;padding:80px 0 56px">
+<p style="display:inline-block;margin:0 0 24px;padding:7px 14px;background:#f3f3f3;border-radius:9999px;font-size:12px;color:#707070">복잡한 복지, 조금 더 가까이.</p>
+<h1 style="margin:0;font-size:clamp(38px,7vw,80px);font-weight:700;line-height:1.13">필요한 순간에.<br>나에게 맞는 복지.</h1>
+<p style="font-size:clamp(16px,2.5vw,20px);font-weight:300;color:#707070;margin:24px auto 32px;max-width:580px">어디서부터 시작할지 막막하다면,<br>찾는 것부터 신청 방법까지 곁에서 함께할게요.</p>
+<form id="search-form" role="search" style="display:flex;align-items:center;gap:8px;background:#f0f0f0;padding:8px;max-width:620px;margin:auto;border-radius:9999px">
+<label for="search" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">복지 서비스 검색</label>
+<span aria-hidden="true" style="font-size:24px;padding-left:16px">⌕</span>
+<input id="search" type="search" placeholder="주거, 취업, 돌봄… 필요한 도움을 찾아보세요" style="min-width:0;flex:1;border:0;background:transparent;padding:12px 4px;font:14px Arial,'Malgun Gothic',sans-serif;border-radius:9999px">
+<button style="border:0;border-radius:9999px;background:#141414;color:white;min-height:48px;padding:0 22px;cursor:pointer;font-weight:600">찾기</button>
+</form>
+<p style="font-size:12px;color:#707070;margin:16px 0 0">화면 구성과 이용 흐름을 살펴보는 미리보기입니다.</p>
+</section>
+<section id="services" style="scroll-margin-top:110px">
+<div style="display:flex;justify-content:space-between;align-items:end;gap:16px;flex-wrap:wrap;margin-bottom:24px">
+<div><p style="color:#707070;font-size:12px;margin:0 0 8px">나의 일상에 필요한 도움</p><h2 style="font-size:32px;line-height:1.2;margin:0">어떤 도움이 필요하세요.</h2></div>
+<p id="result-count" aria-live="polite" style="font-size:14px;color:#707070;margin:0">6가지 서비스 예시</p>
+</div>
+<div id="filters" role="group" aria-label="서비스 분야" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:28px">
+<button data-category="전체" aria-pressed="true" style="cursor:pointer;border:0;border-radius:9999px;padding:13px 20px;background:#141414;color:white;font-size:14px">전체</button>
+<button data-category="주거" aria-pressed="false" style="cursor:pointer;border:0;border-radius:9999px;padding:13px 20px;background:#f3f3f3;color:#141414;font-size:14px">주거</button>
+<button data-category="일자리" aria-pressed="false" style="cursor:pointer;border:0;border-radius:9999px;padding:13px 20px;background:#f3f3f3;color:#141414;font-size:14px">일자리</button>
+<button data-category="생활" aria-pressed="false" style="cursor:pointer;border:0;border-radius:9999px;padding:13px 20px;background:#f3f3f3;color:#141414;font-size:14px">생활</button>
+<button data-category="돌봄" aria-pressed="false" style="cursor:pointer;border:0;border-radius:9999px;padding:13px 20px;background:#f3f3f3;color:#141414;font-size:14px">돌봄</button>
+</div>
+<div id="cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:20px"></div>
+<p id="empty" hidden style="text-align:center;background:#f3f3f3;border-radius:24px;padding:48px 24px;color:#707070">일치하는 예시가 없어요. 다른 단어로 찾아보세요.</p>
+</section>
+<section style="margin-top:80px;padding:36px;background:#f3f3f3;border-radius:24px;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap">
+<div><p style="font-size:12px;color:#707070;margin:0 0 12px">신청 화면에서도 함께</p><h2 style="font-size:clamp(25px,4vw,36px);line-height:1.25;margin:0">다음에 무엇을 눌러야 할지.<br>곁에서 알려드릴게요.</h2><p style="color:#707070;font-size:14px;margin:16px 0 0">화면 안내 예시를 열어 이용 흐름을 확인해보세요.</p></div>
+<button id="screen-guide" style="cursor:pointer;border:0;border-radius:9999px;background:#141414;color:white;padding:16px 24px;font-size:14px">화면 안내 살펴보기 ↗</button>
+</section>
+<section style="margin-top:64px;max-width:760px">
+<h2 style="font-size:24px;margin:0 0 20px">처음이라면, 여기부터.</h2>
+<details style="background:#f3f3f3;border-radius:16px;padding:20px 24px;margin-bottom:12px"><summary style="cursor:pointer;font-size:15px">어떤 서비스를 이용할 수 있나요?</summary><p style="font-size:14px;color:#707070">이 화면은 분야별 서비스 탐색을 보여주는 목업입니다. 실제 지원 대상과 신청 방법은 각 기관의 공식 안내를 확인해야 합니다.</p></details>
+<details style="background:#f3f3f3;border-radius:16px;padding:20px 24px"><summary style="cursor:pointer;font-size:15px">화면 안내를 누르면 내 화면이 전송되나요?</summary><p style="font-size:14px;color:#707070">이 미리보기에서는 화면을 수집하거나 전송하지 않습니다. 준비된 안내 예시만 표시합니다.</p></details>
+</section>
+</main>
+<footer style="background:#141414;color:white;border-radius:24px 24px 0 0;padding:48px max(24px,calc((100vw - 1120px)/2));padding-bottom:110px">
+<div style="font-size:48px;font-weight:700;margin-bottom:12px">곁에.</div><p style="color:#adadad;font-size:14px;margin:0">생활에 필요한 도움을, 더 쉽게.</p><p style="color:#adadad;font-size:12px;margin-top:28px">서비스·상담 내용은 인터페이스 확인을 위한 예시이며 실제 신청이나 자격 판정이 아닙니다.</p>
+</footer>
+<button id="chat-launcher" aria-controls="chat-panel" aria-expanded="false" style="position:fixed;right:24px;bottom:24px;z-index:4;cursor:pointer;border:1px solid white;background:#141414;color:white;border-radius:9999px;padding:17px 24px;font:600 15px Arial,'Malgun Gothic',sans-serif">◌ 곁에 물어보기</button>
+<section id="chat-panel" role="dialog" aria-label="곁에 상담 미리보기" hidden style="position:fixed;right:16px;bottom:90px;z-index:5;width:min(368px,calc(100vw - 32px));max-height:calc(100dvh - 116px);overflow:auto;box-sizing:border-box;background:white;border:1px solid #e0e0e0;border-radius:24px;padding:20px">
+<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f0f0f0;padding-bottom:16px">
+<div><strong style="font-size:18px">곁에 상담</strong><p style="font-size:12px;color:#707070;margin:4px 0 0">천천히, 하나씩 함께 찾아요.</p></div>
+<button id="chat-close" aria-label="상담창 접기" style="border:0;background:#f3f3f3;border-radius:9999px;width:44px;height:44px;cursor:pointer;font-size:22px">−</button>
+</div>
+<div id="messages" role="log" aria-live="polite" aria-label="상담 내용" style="max-height:260px;overflow:auto;padding:20px 0;display:flex;flex-direction:column;gap:12px">
+<p style="margin:0;padding:16px;background:#f3f3f3;border-radius:16px;font-size:14px">안녕하세요. 어떤 도움이 필요하세요?<br>궁금한 내용을 편하게 적어주세요.</p>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+<button data-prompt="주거 도움" style="background:white;border:1px solid #e0e0e0;border-radius:9999px;padding:10px 14px;cursor:pointer">주거 도움</button>
+<button data-prompt="신청 순서" style="background:white;border:1px solid #e0e0e0;border-radius:9999px;padding:10px 14px;cursor:pointer">신청 순서</button>
+</div>
+<form id="chat-form" style="background:#f0f0f0;border-radius:9999px;display:flex;align-items:center;padding:6px;gap:4px">
+<label for="chat-input" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">궁금한 내용</label>
+<input id="chat-input" maxlength="300" required placeholder="궁금한 내용을 입력하세요" style="min-width:0;flex:1;border:0;background:transparent;border-radius:9999px;padding:12px;font:14px Arial,'Malgun Gothic',sans-serif">
+<button aria-label="메시지 보내기" style="border:0;background:#141414;color:white;border-radius:9999px;width:44px;height:44px;cursor:pointer;font-size:20px">↑</button>
+</form><p style="font-size:11px;color:#707070;text-align:center;margin:12px 0 0">예시 대화 · 개인정보를 입력하지 마세요.</p>
+</section>
+<dialog id="service-detail" aria-labelledby="detail-title" style="width:min(480px,calc(100vw - 64px));box-sizing:border-box;border:1px solid #e0e0e0;border-radius:24px;padding:28px;color:#141414">
+<p style="font-size:12px;color:#707070">서비스 안내 예시</p><h2 id="detail-title" style="font-size:28px;line-height:1.3"></h2><p id="detail-description" style="color:#707070"></p><p style="background:#f3f3f3;padding:16px;border-radius:16px;font-size:14px">실제 대상·금액·신청 기간은 공식 기관에서 확인해주세요. 이 화면에서는 신청이 진행되지 않습니다.</p><div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:24px"><a href="https://www.bokjiro.go.kr/" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#141414;color:white;border-radius:9999px;padding:13px 20px;text-decoration:none;font-size:14px">복지로에서 확인 ↗</a><button id="detail-close" style="cursor:pointer;border:0;background:#f3f3f3;border-radius:9999px;padding:13px 20px">닫기</button></div>
+</dialog>
+<script>
+const services = [
+ {title:'내 공간을 위한 첫걸음.',category:'주거',icon:'⌂',subtitle:'안정적인 일상을 위한 주거 지원을 살펴보세요.',tags:'주거 · 생활 기반',detail:'주거 관련 서비스의 탐색 흐름을 보여주는 예시입니다.'},
+ {title:'새로운 시작을 함께.',category:'일자리',icon:'↗',subtitle:'취업 준비와 다음 도전을 위한 도움을 찾아보세요.',tags:'취업 · 역량 개발',detail:'취업과 교육 관련 서비스를 찾아보는 예시입니다.'},
+ {title:'일상의 부담을 덜어요.',category:'생활',icon:'◎',subtitle:'생활에 필요한 지원을 차근차근 알아보세요.',tags:'생활 · 경제 지원',detail:'생활 지원 분야의 안내 화면 예시입니다.'},
+ {title:'돌보는 마음 곁에.',category:'돌봄',icon:'♡',subtitle:'가족과 나를 위한 돌봄 서비스를 만나보세요.',tags:'가족 · 돌봄',detail:'가족과 돌봄 서비스의 안내 화면 예시입니다.'},
+ {title:'배움은 계속되니까.',category:'일자리',icon:'▤',subtitle:'새로운 가능성을 열어줄 교육 정보를 찾아보세요.',tags:'교육 · 성장',detail:'교육과 성장 지원 서비스의 탐색 화면 예시입니다.'},
+ {title:'혼자 고민하지 않도록.',category:'생활',icon:'☏',subtitle:'상담과 지역의 도움을 연결하는 방법을 알아보세요.',tags:'상담 · 지역 서비스',detail:'지역 상담 창구를 찾는 이용 흐름의 예시입니다.'}
+];
+let category='전체';
+const cards=document.getElementById('cards');
+function renderCards(){
+ const query=document.getElementById('search').value.trim();
+ const filtered=services.filter(item=>(category==='전체'||item.category===category)&&(!query||(item.title+item.subtitle+item.tags).includes(query)));
+ cards.replaceChildren();
+ for(const item of filtered){
+  const card=document.createElement('article');
+  card.style.cssText='padding:24px;border:1px solid #f0f0f0;border-radius:24px;background:#fff;display:flex;flex-direction:column;min-height:264px;box-sizing:border-box';
+  const icon=document.createElement('div');icon.textContent=item.icon;icon.setAttribute('aria-hidden','true');icon.style.cssText='width:60px;height:60px;border-radius:30%;background:#f3f3f3;display:grid;place-items:center;font-size:30px;margin-bottom:28px';
+  const tags=document.createElement('p');tags.textContent=item.tags;tags.style.cssText='font-size:12px;color:#707070;margin:0 0 8px';
+  const title=document.createElement('h3');title.textContent=item.title;title.style.cssText='font-size:24px;font-weight:700;line-height:1.25;margin:0 0 12px';
+  const text=document.createElement('p');text.textContent=item.subtitle;text.style.cssText='font-size:14px;color:#707070;margin:0 0 24px;flex:1';
+  const button=document.createElement('button');button.textContent='자세히 살펴보기 ↗';button.style.cssText='align-self:start;background:#f3f3f3;border:0;border-radius:9999px;padding:12px 18px;cursor:pointer;font-size:13px';button.addEventListener('click',()=>{document.getElementById('detail-title').textContent=item.title;document.getElementById('detail-description').textContent=item.detail;document.getElementById('service-detail').showModal();});
+  card.append(icon,tags,title,text,button);cards.append(card);
+ }
+ document.getElementById('empty').hidden=filtered.length>0;
+ document.getElementById('result-count').textContent=filtered.length+'가지 서비스 예시';
+}
+document.querySelectorAll('[data-category]').forEach(button=>button.addEventListener('click',()=>{
+ category=button.dataset.category;
+ document.querySelectorAll('[data-category]').forEach(tab=>{const active=tab===button;tab.setAttribute('aria-pressed',String(active));tab.style.background=active?'#141414':'#f3f3f3';tab.style.color=active?'white':'#141414';});renderCards();
+}));
+document.getElementById('search-form').addEventListener('submit',event=>{event.preventDefault();renderCards();document.getElementById('services').scrollIntoView({behavior:'smooth'});});
+document.getElementById('search').addEventListener('input',renderCards);
+document.getElementById('detail-close').addEventListener('click',()=>document.getElementById('service-detail').close());
+const panel=document.getElementById('chat-panel'), launcher=document.getElementById('chat-launcher'), chatInput=document.getElementById('chat-input');
+let returnFocus=launcher;
+function openChat(trigger){returnFocus=trigger||launcher;panel.hidden=false;launcher.setAttribute('aria-expanded','true');chatInput.focus();}
+function closeChat(){panel.hidden=true;launcher.setAttribute('aria-expanded','false');returnFocus.focus();}
+launcher.addEventListener('click',()=>panel.hidden?openChat(launcher):closeChat());
+document.querySelectorAll('[data-open-chat]').forEach(button=>button.addEventListener('click',()=>openChat(button)));
+document.getElementById('chat-close').addEventListener('click',closeChat);
+panel.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();closeChat();}});
+function message(text,user=false){const p=document.createElement('p');p.textContent=text;p.style.cssText='margin:0;padding:14px 16px;border-radius:16px;font-size:14px;white-space:pre-line;overflow-wrap:anywhere;background:'+(user?'#141414':'#f3f3f3')+';color:'+(user?'white':'#141414');const log=document.getElementById('messages');log.append(p);log.scrollTop=log.scrollHeight;}
+function reply(text){message(text,true);message(text.includes('주거')?'주거 분야를 선택하면 관련 서비스 예시를 살펴볼 수 있어요. 실제 지원 조건은 복지로의 공식 안내를 확인해주세요.':text.includes('신청')?'신청 순서 예시예요.\n1. 공식 안내에서 대상 확인\n2. 필요한 서류 확인\n3. 신청 기관과 접수 방법 확인\n이 미리보기에서는 실제 신청을 진행하지 않아요.':'말씀하신 내용은 상담 흐름을 보여주는 예시로만 사용돼요. 복지 찾기에서 분야를 선택하거나, 화면 안내 예시를 살펴보세요.');}
+document.getElementById('chat-form').addEventListener('submit',event=>{event.preventDefault();const text=chatInput.value.trim();if(!text)return;reply(text);chatInput.value='';chatInput.focus();});
+document.querySelectorAll('[data-prompt]').forEach(button=>button.addEventListener('click',()=>reply(button.dataset.prompt)));
+document.getElementById('screen-guide').addEventListener('click',event=>{openChat(event.currentTarget);message('화면 안내 예시\n신청 페이지에서 먼저 ‘대상 확인’ 항목을 찾아보세요. 다음으로 준비 서류를 확인한 뒤 신청 방법을 선택해요.\n현재 화면을 읽거나 전송한 결과가 아닌 준비된 안내입니다.');});
+document.querySelectorAll('button,a,input,summary').forEach(element=>{element.addEventListener('focus',()=>{element.style.outline='2px solid #141414';element.style.outlineOffset='3px';});element.addEventListener('blur',()=>{element.style.outline='';element.style.outlineOffset='';});});
+renderCards();
+</script>
+</body>
+</html>

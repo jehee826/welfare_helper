@@ -7,3 +7,8 @@ postgres_data/
 **/__pycache__/
 **/*.pyc
 *.erd
+/AGENTS.md
+/CLAUDE.md
+/.agents/skills/
+/.claude/skills/
+/DESIGN-mobbin.md

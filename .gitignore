@@ -13,3 +13,5 @@ postgres_data/
 
 # 로컬 ERD 설계 파일
 /복지챗봇.erd
+
+.CLAUDE.md

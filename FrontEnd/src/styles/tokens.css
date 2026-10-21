@@ -1,0 +1,29 @@
+:root {
+  --ink: #141414;
+  --ink-muted: #5f5f5f;
+  --surface: #ffffff;
+  --surface-soft: #f3f3f3;
+  --surface-input: #f0f0f0;
+  --line: #e3e3e3;
+  --accent-warn-bg: #fff6e0;
+  --accent-warn-ink: #6b4a00;
+  --danger: #b3261e;
+  --focus: #1a56db;
+  --radius-pill: 9999px;
+  --radius-card: 24px;
+  --radius-inner: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --tap: 48px;
+  --font: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  font-size: 17px;
+  color-scheme: light;
+}
+
+:root[data-text="large"] {
+  font-size: 21px;
+}

@@ -1,5 +1,5 @@
 import { Route, Routes } from "react-router-dom";
-import { api as defaultApi } from "./api/mockApi";
+import { api as defaultApi } from "./api";
 import type { WelfareApi } from "./api/types";
 import { AdminPage } from "./pages/AdminPage";
 import { UserPage } from "./pages/UserPage";

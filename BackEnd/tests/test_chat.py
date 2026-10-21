@@ -1,0 +1,162 @@
+import pytest
+
+from BackEnd.ingest.csv_loader import ServiceRecord
+from BackEnd.rag.chat import ChatService
+from BackEnd.rag.ollama import OllamaError
+
+PENSION = ServiceRecord(
+    service_id="WLF00001164",
+    name="기초연금",
+    summary="노인에게 기초연금을 지급하여 안정적인 소득기반을 제공합니다.",
+    ministry="보건복지부",
+    department="기초연금과",
+    url="https://www.bokjiro.go.kr/x?wlfareInfoId=WLF00001164",
+    contacts=[{"label": "국민연금공단", "phone": "1355"}, {"label": "보건복지상담센터", "phone": "129"}],
+    updated_at="2025-03-25",
+)
+CARE = ServiceRecord(
+    service_id="WLF00003191",
+    name="노인맞춤돌봄서비스",
+    summary="일상생활 영위가 어려운 취약노인에게 적절한 돌봄서비스를 제공합니다.",
+    ministry="보건복지부",
+    department="노인정책과",
+    url="https://www.bokjiro.go.kr/x?wlfareInfoId=WLF00003191",
+    contacts=[{"label": "보건복지상담센터", "phone": "129"}],
+    updated_at="2025-03-25",
+)
+
+
+class FakeRepo:
+    def __init__(self, dense=None, fail=False):
+        self.dense = dense or []
+        self.fail = fail
+
+    def all_services(self):
+        if self.fail:
+            raise RuntimeError("db down")
+        return [PENSION, CARE]
+
+    def dense_search(self, embedding, k):
+        return self.dense[:k]
+
+
+class FakeOllama:
+    def __init__(self, reply="기초연금은 노인의 안정적인 소득을 돕는 제도예요. 자세한 자격은 담당 기관에서 확인해 주세요.", embed_fail=False, chat_fail=False):
+        self.reply = reply
+        self.embed_fail = embed_fail
+        self.chat_fail = chat_fail
+        self.chat_calls = 0
+
+    def embed(self, texts):
+        if self.embed_fail:
+            raise OllamaError("embed down")
+        return [[0.1] * 4 for _ in texts]
+
+    def chat(self, system, user):
+        self.chat_calls += 1
+        if self.chat_fail:
+            raise OllamaError("llm down")
+        return self.reply
+
+
+def make(dense=None, **ollama_kwargs):
+    ollama = FakeOllama(**ollama_kwargs)
+    return ChatService(FakeRepo(dense=dense), ollama, min_similarity=0.45, top_n=5), ollama
+
+
+def test_relevant_question_returns_llm_answer_with_db_cards():
+    service, ollama = make(dense=[("WLF00001164", 0.71), ("WLF00003191", 0.52)])
+    result = service.answer("어르신 연금이 궁금해요", None)
+    assert result["kind"] == "answer"
+    assert result["text"].startswith("기초연금은")
+    assert [s["name"] for s in result["services"]] == ["기초연금", "노인맞춤돌봄서비스"]
+    assert result["services"][0]["contacts"][0] == {"label": "국민연금공단", "phone": "1355"}
+    assert "기초연금 신청 방법" in result["suggestions"]
+    assert ollama.chat_calls == 1
+
+
+def test_low_similarity_returns_contacts_without_calling_llm():
+    service, ollama = make(dense=[("WLF00001164", 0.2)])
+    result = service.answer("반려동물 미용 할인", None)
+    assert result["kind"] == "fallback"
+    assert {"label": "보건복지상담센터", "phone": "129"} in result["contacts"]
+    assert ollama.chat_calls == 0
+
+
+def test_apply_question_for_named_service_routes_to_its_contacts():
+    service, ollama = make(dense=[("WLF00001164", 0.8)])
+    result = service.answer("기초연금 신청 방법", None)
+    assert result["kind"] == "fallback"
+    assert result["contacts"][0] == {"label": "국민연금공단", "phone": "1355"}
+    assert ollama.chat_calls == 0
+
+
+def test_contact_question_lists_db_contacts():
+    service, _ = make(dense=[])
+    result = service.answer("기초연금 문의처", None)
+    assert result["kind"] == "answer"
+    assert "국민연금공단 1355" in result["text"]
+
+
+def test_llm_failure_falls_back_to_template_text():
+    service, _ = make(dense=[("WLF00001164", 0.7)], chat_fail=True)
+    result = service.answer("어르신 연금", None)
+    assert result["kind"] == "answer"
+    assert "1개를 찾았어요" in result["text"]
+
+
+def test_invented_phone_number_in_llm_reply_is_rejected():
+    service, _ = make(dense=[("WLF00001164", 0.7)], reply="1588-0000으로 전화하면 바로 받을 수 있어요.")
+    result = service.answer("어르신 연금", None)
+    assert "1588-0000" not in result["text"]
+
+
+def test_invented_age_or_amount_in_llm_reply_is_rejected():
+    service, _ = make(dense=[("WLF00001164", 0.7)], reply="기초연금은 만 65세 이상에게 월 30만원을 드려요.")
+    result = service.answer("어르신 연금", None)
+    assert "65세" not in result["text"]
+    assert "1개를 찾았어요" in result["text"]
+
+
+def test_age_from_profile_is_allowed_in_llm_reply():
+    reply = "70세이시고 혼자 사신다면 기초연금을 확인해 보세요. 실제 대상 여부는 담당 기관에서 확인해 주세요."
+    service, _ = make(dense=[("WLF00001164", 0.7)], reply=reply)
+    profile = {"age": 70, "income": "under50", "household": "single", "region": "서울특별시", "disability": False}
+    assert service.answer("받을 수 있는 연금", profile)["text"] == reply
+
+
+def test_llm_reply_blank_lines_are_collapsed():
+    service, _ = make(dense=[("WLF00001164", 0.7)], reply="첫 문장이에요.\n\n둘째 문장이에요.")
+    assert service.answer("어르신 연금", None)["text"] == "첫 문장이에요. 둘째 문장이에요."
+
+
+def test_truncated_llm_reply_is_cut_to_last_sentence():
+    service, _ = make(dense=[("WLF00001164", 0.7)], reply="기초연금을 확인해 보세요. 담당 기관에서 대상 여부를")
+    assert service.answer("어르신 연금", None)["text"] == "기초연금을 확인해 보세요."
+
+
+def test_embedding_failure_uses_keyword_search():
+    service, _ = make(embed_fail=True)
+    result = service.answer("노인 돌봄 서비스가 필요해요", None)
+    assert result["kind"] == "answer"
+    assert result["services"][0]["name"] == "노인맞춤돌봄서비스"
+
+
+def test_profile_is_passed_to_llm_prompt():
+    captured = {}
+
+    class Capture(FakeOllama):
+        def chat(self, system, user):
+            captured["user"] = user
+            return super().chat(system, user)
+
+    service = ChatService(FakeRepo(dense=[("WLF00001164", 0.7)]), Capture(), min_similarity=0.45, top_n=5)
+    profile = {"age": 70, "income": "under50", "household": "single", "region": "서울특별시", "disability": False}
+    service.answer("받을 수 있는 연금", profile)
+    assert "70세" in captured["user"] and "혼자 살아요" in captured["user"]
+
+
+def test_database_failure_raises():
+    service = ChatService(FakeRepo(fail=True), FakeOllama(), min_similarity=0.45, top_n=5)
+    with pytest.raises(RuntimeError):
+        service.answer("연금", None)

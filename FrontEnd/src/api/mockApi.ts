@@ -170,4 +170,3 @@ export function createMockApi(options: { latencyMs?: number } = {}): WelfareApi 
   };
 }
 
-export const api: WelfareApi = createMockApi();

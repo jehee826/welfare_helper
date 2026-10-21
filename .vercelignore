@@ -7,3 +7,10 @@ postgres_data/
 **/__pycache__/
 **/*.pyc
 *.erd
+.venv/
+**/node_modules/
+FrontEnd/dist/
+docs/
+data/
+.playwright-mcp/
+*.egg-info/

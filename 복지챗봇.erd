@@ -1,0 +1,812 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dineug/erd-editor/main/json-schema/schema.json",
+  "version": "3.0.0",
+  "settings": {
+    "width": 2800,
+    "height": 2200,
+    "scrollTop": 0,
+    "scrollLeft": 0,
+    "originX": -69.9592,
+    "originY": 102.2129,
+    "zoomLevel": 0.72,
+    "show": 431,
+    "database": 16,
+    "databaseName": "",
+    "canvasType": "ERD",
+    "language": 1,
+    "tableNameCase": 4,
+    "columnNameCase": 2,
+    "bracketType": 1,
+    "relationshipDataTypeSync": true,
+    "relationshipOptimization": false,
+    "columnOrder": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64
+    ],
+    "maxWidthComment": -1,
+    "ignoreSaveSettings": 0
+  },
+  "doc": {
+    "tableIds": [
+      "399de0b6855647ce85bb9",
+      "ba7c41ee642047b2af0b5",
+      "a5a080157d8146fba675c",
+      "9336488e0c104bb9b5a89",
+      "peFQl5997Qie45plXU5O7"
+    ],
+    "relationshipIds": [
+      "sKZuAOEVFW0LIHng0O7Li",
+      "LFhnFhFaGU_zszlE69BcQ",
+      "Prbmr4WOnQtQQMZqv1hul",
+      "A-1P07QWO0wYYpkUBUQoo"
+    ],
+    "indexIds": [],
+    "memoIds": [
+      "xRO6BQYBRHGLPV3EMniaz"
+    ]
+  },
+  "collections": {
+    "tableEntities": {
+      "399de0b6855647ce85bb9": {
+        "id": "399de0b6855647ce85bb9",
+        "name": "welfare_programs",
+        "comment": "복지제도 정보",
+        "columnIds": [
+          "fe2ebde089ba4ec1bc8fd",
+          "8bd2bee5b49e411bbdfae",
+          "2115c04450fa49dca8cab",
+          "6f2ac7ccb43c4e37a15cc",
+          "79edfae0069d41d7806ea",
+          "d9e60448b7c44ec6a16e8",
+          "4800d76a13c84be6a1641"
+        ],
+        "seqColumnIds": [
+          "fe2ebde089ba4ec1bc8fd",
+          "8bd2bee5b49e411bbdfae",
+          "2115c04450fa49dca8cab",
+          "6f2ac7ccb43c4e37a15cc",
+          "79edfae0069d41d7806ea",
+          "d9e60448b7c44ec6a16e8",
+          "4800d76a13c84be6a1641"
+        ],
+        "ui": {
+          "x": 244.4444,
+          "y": 271.3889,
+          "zIndex": 4,
+          "widthName": 96,
+          "widthComment": 77,
+          "color": ""
+        },
+        "meta": {
+          "updateAt": 1791345689388,
+          "createAt": 1791337228540
+        }
+      },
+      "ba7c41ee642047b2af0b5": {
+        "id": "ba7c41ee642047b2af0b5",
+        "name": "welfare_document_vectors",
+        "comment": "복지제도 문서 벡터",
+        "columnIds": [
+          "94527824d38e4479adc33",
+          "bce001f368124a2183ebc",
+          "ef17df6e324142bebca92",
+          "2eb23b4c822940ef9eb4b",
+          "P9DJtLEc9rRWsythgC4e5"
+        ],
+        "seqColumnIds": [
+          "94527824d38e4479adc33",
+          "bce001f368124a2183ebc",
+          "ef17df6e324142bebca92",
+          "2eb23b4c822940ef9eb4b",
+          "P9DJtLEc9rRWsythgC4e5"
+        ],
+        "ui": {
+          "x": 812.5,
+          "y": 525.5556,
+          "zIndex": 5,
+          "widthName": 142,
+          "widthComment": 105,
+          "color": ""
+        },
+        "meta": {
+          "updateAt": 1791345692091,
+          "createAt": 1791337228540
+        }
+      },
+      "a5a080157d8146fba675c": {
+        "id": "a5a080157d8146fba675c",
+        "name": "counselors",
+        "comment": "상담사 정보",
+        "columnIds": [
+          "ccebd62f15d845e795164",
+          "2675b007d7f6403f9bdce",
+          "0ae360b018ca48c08aa45",
+          "756064e627a140baa1d4b"
+        ],
+        "seqColumnIds": [
+          "ccebd62f15d845e795164",
+          "2675b007d7f6403f9bdce",
+          "0ae360b018ca48c08aa45",
+          "756064e627a140baa1d4b"
+        ],
+        "ui": {
+          "x": 850,
+          "y": 80,
+          "zIndex": 2,
+          "widthName": 60,
+          "widthComment": 65,
+          "color": ""
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791337228540
+        }
+      },
+      "9336488e0c104bb9b5a89": {
+        "id": "9336488e0c104bb9b5a89",
+        "name": "counselor_connections",
+        "comment": "상담사 연결 내역",
+        "columnIds": [
+          "3f43daef79344888bf905",
+          "3283644c760746fcab3d0",
+          "371e72fe43374b5690f92",
+          "3e4abdf57846480cbb292",
+          "6d1355ab18004337b0550"
+        ],
+        "seqColumnIds": [
+          "3f43daef79344888bf905",
+          "3283644c760746fcab3d0",
+          "371e72fe43374b5690f92",
+          "3e4abdf57846480cbb292",
+          "6d1355ab18004337b0550"
+        ],
+        "ui": {
+          "x": 958.3333,
+          "y": 328.6111,
+          "zIndex": 3,
+          "widthName": 122,
+          "widthComment": 93,
+          "color": ""
+        },
+        "meta": {
+          "updateAt": 1791345695851,
+          "createAt": 1791341990455
+        }
+      },
+      "peFQl5997Qie45plXU5O7": {
+        "id": "peFQl5997Qie45plXU5O7",
+        "name": "departments",
+        "comment": "소속 부서 정보",
+        "columnIds": [
+          "ekY4rzUCwRrUs8SuUZsky",
+          "Nwl5XBi2AEiXLCQuN6R8M"
+        ],
+        "seqColumnIds": [
+          "ekY4rzUCwRrUs8SuUZsky",
+          "Nwl5XBi2AEiXLCQuN6R8M"
+        ],
+        "ui": {
+          "x": 313.8889,
+          "y": 71.6667,
+          "zIndex": 9,
+          "widthName": 69,
+          "widthComment": 81,
+          "color": ""
+        },
+        "meta": {
+          "updateAt": 1791345685551,
+          "createAt": 1791343235619
+        }
+      }
+    },
+    "tableColumnEntities": {
+      "ccebd62f15d845e795164": {
+        "id": "ccebd62f15d845e795164",
+        "tableId": "a5a080157d8146fba675c",
+        "name": "counselor_id",
+        "comment": "상담사 ID · 자동 증가 PK",
+        "dataType": "BIGSERIAL",
+        "default": "",
+        "options": 10,
+        "ui": {
+          "keys": 1,
+          "widthName": 69,
+          "widthComment": 130,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "2675b007d7f6403f9bdce": {
+        "id": "2675b007d7f6403f9bdce",
+        "tableId": "a5a080157d8146fba675c",
+        "name": "counselor_name",
+        "comment": "상담사 이름",
+        "dataType": "VARCHAR(100)",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 88,
+          "widthComment": 65,
+          "widthDataType": 81,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "0ae360b018ca48c08aa45": {
+        "id": "0ae360b018ca48c08aa45",
+        "tableId": "a5a080157d8146fba675c",
+        "name": "department_id",
+        "comment": "소속 부서 ID · FK",
+        "dataType": "BIGINT",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 2,
+          "widthName": 79,
+          "widthComment": 90,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "756064e627a140baa1d4b": {
+        "id": "756064e627a140baa1d4b",
+        "tableId": "a5a080157d8146fba675c",
+        "name": "phone_number",
+        "comment": "연락처 · 전화번호",
+        "dataType": "VARCHAR(30)",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 82,
+          "widthComment": 95,
+          "widthDataType": 75,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "3283644c760746fcab3d0": {
+        "id": "3283644c760746fcab3d0",
+        "tableId": "9336488e0c104bb9b5a89",
+        "name": "counselor_id",
+        "comment": "상담사 ID · FK",
+        "dataType": "BIGINT",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 2,
+          "widthName": 69,
+          "widthComment": 75,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "371e72fe43374b5690f92": {
+        "id": "371e72fe43374b5690f92",
+        "tableId": "9336488e0c104bb9b5a89",
+        "name": "requested_at",
+        "comment": "연결 요청 시각",
+        "dataType": "TIMESTAMPTZ",
+        "default": "CURRENT_TIMESTAMP",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 70,
+          "widthComment": 81,
+          "widthDataType": 79,
+          "widthDefault": 122
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "6d1355ab18004337b0550": {
+        "id": "6d1355ab18004337b0550",
+        "tableId": "9336488e0c104bb9b5a89",
+        "name": "confirmed_at",
+        "comment": "실제 연결 확인 시각 · 선택",
+        "dataType": "TIMESTAMPTZ",
+        "default": "",
+        "options": 0,
+        "ui": {
+          "keys": 0,
+          "widthName": 71,
+          "widthComment": 141,
+          "widthDataType": 79,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "fe2ebde089ba4ec1bc8fd": {
+        "id": "fe2ebde089ba4ec1bc8fd",
+        "tableId": "399de0b6855647ce85bb9",
+        "name": "program_id",
+        "comment": "복지제도 ID · 자동 증가 PK",
+        "dataType": "BIGSERIAL",
+        "default": "",
+        "options": 10,
+        "ui": {
+          "keys": 1,
+          "widthName": 63,
+          "widthComment": 142,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "8bd2bee5b49e411bbdfae": {
+        "id": "8bd2bee5b49e411bbdfae",
+        "tableId": "399de0b6855647ce85bb9",
+        "name": "program_name",
+        "comment": "복지제도명",
+        "dataType": "VARCHAR(200)",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 82,
+          "widthComment": 62,
+          "widthDataType": 81,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "2115c04450fa49dca8cab": {
+        "id": "2115c04450fa49dca8cab",
+        "tableId": "399de0b6855647ce85bb9",
+        "name": "eligibility",
+        "comment": "신청 자격조건",
+        "dataType": "TEXT",
+        "default": "",
+        "options": 0,
+        "ui": {
+          "keys": 0,
+          "widthName": 60,
+          "widthComment": 77,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "6f2ac7ccb43c4e37a15cc": {
+        "id": "6f2ac7ccb43c4e37a15cc",
+        "tableId": "399de0b6855647ce85bb9",
+        "name": "benefit_details",
+        "comment": "지원내용",
+        "dataType": "TEXT",
+        "default": "",
+        "options": 0,
+        "ui": {
+          "keys": 0,
+          "widthName": 79,
+          "widthComment": 60,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "79edfae0069d41d7806ea": {
+        "id": "79edfae0069d41d7806ea",
+        "tableId": "399de0b6855647ce85bb9",
+        "name": "application_method",
+        "comment": "신청방법",
+        "dataType": "TEXT",
+        "default": "",
+        "options": 0,
+        "ui": {
+          "keys": 0,
+          "widthName": 107,
+          "widthComment": 60,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "d9e60448b7c44ec6a16e8": {
+        "id": "d9e60448b7c44ec6a16e8",
+        "tableId": "399de0b6855647ce85bb9",
+        "name": "department_id",
+        "comment": "소속 부서 ID · FK",
+        "dataType": "BIGINT",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 2,
+          "widthName": 79,
+          "widthComment": 90,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "4800d76a13c84be6a1641": {
+        "id": "4800d76a13c84be6a1641",
+        "tableId": "399de0b6855647ce85bb9",
+        "name": "updated_at",
+        "comment": "복지제도 최종 갱신 시각",
+        "dataType": "TIMESTAMPTZ",
+        "default": "CURRENT_TIMESTAMP",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 62,
+          "widthComment": 132,
+          "widthDataType": 79,
+          "widthDefault": 122
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "94527824d38e4479adc33": {
+        "id": "94527824d38e4479adc33",
+        "tableId": "ba7c41ee642047b2af0b5",
+        "name": "vector_id",
+        "comment": "문서 벡터 ID · 자동 증가 PK",
+        "dataType": "BIGSERIAL",
+        "default": "",
+        "options": 10,
+        "ui": {
+          "keys": 1,
+          "widthName": 60,
+          "widthComment": 146,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "bce001f368124a2183ebc": {
+        "id": "bce001f368124a2183ebc",
+        "tableId": "ba7c41ee642047b2af0b5",
+        "name": "program_id",
+        "comment": "복지제도 ID · FK",
+        "dataType": "BIGINT",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 2,
+          "widthName": 63,
+          "widthComment": 87,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "ef17df6e324142bebca92": {
+        "id": "ef17df6e324142bebca92",
+        "tableId": "ba7c41ee642047b2af0b5",
+        "name": "chunk_content",
+        "comment": "문서 조각 내용",
+        "dataType": "TEXT",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 79,
+          "widthComment": 81,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "2eb23b4c822940ef9eb4b": {
+        "id": "2eb23b4c822940ef9eb4b",
+        "tableId": "ba7c41ee642047b2af0b5",
+        "name": "embedding",
+        "comment": "검색용 벡터 · 차원 미지정",
+        "dataType": "vector",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 63,
+          "widthComment": 138,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791341990455
+        }
+      },
+      "3f43daef79344888bf905": {
+        "id": "3f43daef79344888bf905",
+        "tableId": "9336488e0c104bb9b5a89",
+        "name": "connection_id",
+        "comment": "연결 ID · 자동 증가 PK",
+        "dataType": "BIGSERIAL",
+        "default": "",
+        "options": 10,
+        "ui": {
+          "keys": 1,
+          "widthName": 76,
+          "widthComment": 118,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791342560741
+        }
+      },
+      "3e4abdf57846480cbb292": {
+        "id": "3e4abdf57846480cbb292",
+        "tableId": "9336488e0c104bb9b5a89",
+        "name": "connection_status",
+        "comment": "요청·연결 완료·실패·취소",
+        "dataType": "VARCHAR(20)",
+        "default": "'requested'",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 97,
+          "widthComment": 133,
+          "widthDataType": 75,
+          "widthDefault": 61
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791342560741
+        }
+      },
+      "ekY4rzUCwRrUs8SuUZsky": {
+        "id": "ekY4rzUCwRrUs8SuUZsky",
+        "tableId": "peFQl5997Qie45plXU5O7",
+        "name": "department_id",
+        "comment": "부서 ID · 자동 증가 PK",
+        "dataType": "BIGSERIAL",
+        "default": "",
+        "options": 10,
+        "ui": {
+          "keys": 1,
+          "widthName": 79,
+          "widthComment": 118,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791343244821
+        }
+      },
+      "Nwl5XBi2AEiXLCQuN6R8M": {
+        "id": "Nwl5XBi2AEiXLCQuN6R8M",
+        "tableId": "peFQl5997Qie45plXU5O7",
+        "name": "department_name",
+        "comment": "부서명",
+        "dataType": "VARCHAR(150)",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 99,
+          "widthComment": 60,
+          "widthDataType": 81,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791343254780
+        }
+      },
+      "P9DJtLEc9rRWsythgC4e5": {
+        "id": "P9DJtLEc9rRWsythgC4e5",
+        "tableId": "ba7c41ee642047b2af0b5",
+        "name": "source_reference",
+        "comment": "원문 URL 또는 문서 경로",
+        "dataType": "TEXT",
+        "default": "",
+        "options": 8,
+        "ui": {
+          "keys": 0,
+          "widthName": 91,
+          "widthComment": 132,
+          "widthDataType": 60,
+          "widthDefault": 60
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791343955847
+        }
+      }
+    },
+    "relationshipEntities": {
+      "sKZuAOEVFW0LIHng0O7Li": {
+        "id": "sKZuAOEVFW0LIHng0O7Li",
+        "identification": false,
+        "relationshipType": 4,
+        "startRelationshipType": 2,
+        "onDelete": 4,
+        "onUpdate": 1,
+        "start": {
+          "tableId": "399de0b6855647ce85bb9",
+          "columnIds": [
+            "fe2ebde089ba4ec1bc8fd"
+          ],
+          "x": 821.4444,
+          "y": 370.3889,
+          "direction": 2
+        },
+        "end": {
+          "tableId": "ba7c41ee642047b2af0b5",
+          "columnIds": [
+            "bce001f368124a2183ebc"
+          ],
+          "x": 812.5,
+          "y": 600.5556,
+          "direction": 1
+        },
+        "meta": {
+          "updateAt": 1791343955854,
+          "createAt": 1791341991268
+        }
+      },
+      "LFhnFhFaGU_zszlE69BcQ": {
+        "id": "LFhnFhFaGU_zszlE69BcQ",
+        "identification": false,
+        "relationshipType": 4,
+        "startRelationshipType": 2,
+        "onDelete": 32,
+        "onUpdate": 1,
+        "start": {
+          "tableId": "a5a080157d8146fba675c",
+          "columnIds": [
+            "ccebd62f15d845e795164"
+          ],
+          "x": 1092,
+          "y": 206,
+          "direction": 8
+        },
+        "end": {
+          "tableId": "9336488e0c104bb9b5a89",
+          "columnIds": [
+            "3283644c760746fcab3d0"
+          ],
+          "x": 1240.3333,
+          "y": 328.6111,
+          "direction": 4
+        },
+        "meta": {
+          "updateAt": 1791343955854,
+          "createAt": 1791342561909
+        }
+      },
+      "Prbmr4WOnQtQQMZqv1hul": {
+        "id": "Prbmr4WOnQtQQMZqv1hul",
+        "identification": false,
+        "relationshipType": 4,
+        "startRelationshipType": 2,
+        "onDelete": 32,
+        "onUpdate": 1,
+        "start": {
+          "tableId": "peFQl5997Qie45plXU5O7",
+          "columnIds": [
+            "ekY4rzUCwRrUs8SuUZsky"
+          ],
+          "x": 555.3888999999999,
+          "y": 149.6667,
+          "direction": 8
+        },
+        "end": {
+          "tableId": "399de0b6855647ce85bb9",
+          "columnIds": [
+            "d9e60448b7c44ec6a16e8"
+          ],
+          "x": 532.9444,
+          "y": 271.3889,
+          "direction": 4
+        },
+        "meta": {
+          "updateAt": 1791343955854,
+          "createAt": 1791343493541
+        }
+      },
+      "A-1P07QWO0wYYpkUBUQoo": {
+        "id": "A-1P07QWO0wYYpkUBUQoo",
+        "identification": false,
+        "relationshipType": 4,
+        "startRelationshipType": 2,
+        "onDelete": 32,
+        "onUpdate": 1,
+        "start": {
+          "tableId": "peFQl5997Qie45plXU5O7",
+          "columnIds": [
+            "ekY4rzUCwRrUs8SuUZsky"
+          ],
+          "x": 796.8888999999999,
+          "y": 110.66669999999999,
+          "direction": 2
+        },
+        "end": {
+          "tableId": "a5a080157d8146fba675c",
+          "columnIds": [
+            "0ae360b018ca48c08aa45"
+          ],
+          "x": 850,
+          "y": 143,
+          "direction": 1
+        },
+        "meta": {
+          "updateAt": 1791343955854,
+          "createAt": 1791343493542
+        }
+      }
+    },
+    "indexEntities": {},
+    "indexColumnEntities": {},
+    "memoEntities": {
+      "xRO6BQYBRHGLPV3EMniaz": {
+        "id": "xRO6BQYBRHGLPV3EMniaz",
+        "value": "PostgreSQL 16 기준 ERD · 5개 테이블, 23개 컬럼\n\n사용자 저장\n사용자 조건과 AI 대화이력은 모두 브라우저 localStorage에 저장합니다.\n사용자 정보 테이블과 사용자 식별용 쿠키 UUID는 사용하지 않습니다.\n질문 요청 시 필요한 조건을 서버에 전달합니다.\n\n키 및 자료형\n각 테이블의 BIGSERIAL 기본키는 자동 증가합니다. FK는 참조하는 키와 같은 BIGINT를 사용합니다.\nVARCHAR는 길이가 제한된 문자열, TEXT는 긴 본문, TIMESTAMPTZ는 시간대를 고려하는 시각입니다.\nembedding은 차원을 지정하지 않은 pgvector의 vector 자료형입니다. 사용 DB에 pgvector 확장이 필요합니다.\n실제 검색은 동일 임베딩 모델과 같은 차원의 벡터끼리 수행합니다.\n근사 벡터 검색 인덱스는 모델·차원과 데이터 규모를 확정한 뒤 추가합니다.\n\n관계 및 삭제 정책\ndepartments 1 : N welfare_programs, departments 1 : N counselors\nwelfare_programs 1 : N welfare_document_vectors, counselors 1 : N counselor_connections\n부서와 상담사의 연결은 부서 ID로 처리하며, 부서 내 상담사 선택 방식은 이후 구현합니다.\nFK는 모두 필수입니다. 부서 및 연결 내역이 있는 상담사의 삭제는 제한합니다.\n복지제도 삭제 시 해당 문서 벡터도 함께 삭제합니다.\n\n연결 상태 및 제약조건\nconnection_status 허용값: requested(요청), connected(연결 완료), failed(실패), cancelled(취소).\nCHECK: connection_status IN ('requested', 'connected', 'failed', 'cancelled').\nCHECK: (connection_status = 'connected') = (confirmed_at IS NOT NULL).\nCHECK: confirmed_at IS NULL OR confirmed_at >= requested_at.\n위 CHECK 조건은 구현 시 적용할 제약조건이며 ERD 메모로 명시합니다.\n연락처 표시나 전화 버튼 클릭만으로 연결 완료를 처리하지 않습니다. 실제 확인 방법은 구현 전 확정합니다.\n월별 건수는 connected 상태의 내역을 confirmed_at의 한국 시간(Asia/Seoul) 연월과 상담사별로 집계합니다.\n월별 집계 테이블은 별도로 두지 않습니다.\n\n기본값 및 갱신\nrequested_at, updated_at의 생성 기본값은 CURRENT_TIMESTAMP입니다.\n복지제도 변경 시 updated_at도 서버에서 갱신합니다. 생성 기본값만으로 수정 시각이 자동 갱신되지는 않습니다.\nconfirmed_at은 연결 확인 전 NULL입니다. 사용자 UUID나 AI 대화 본문은 연결 내역에 저장하지 않습니다.",
+        "ui": {
+          "x": 100,
+          "y": 850,
+          "zIndex": 6,
+          "width": 2200,
+          "height": 850,
+          "color": ""
+        },
+        "meta": {
+          "updateAt": 1791345615304,
+          "createAt": 1791342871392
+        }
+      }
+    }
+  }
+}

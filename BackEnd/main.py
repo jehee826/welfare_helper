@@ -1,25 +1,48 @@
+import logging
 from contextlib import closing
+from functools import lru_cache
+from typing import Literal
 
 import psycopg2
-from fastapi import FastAPI, HTTPException
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+from BackEnd.core.db import DatabaseNotConfigured, connect
+from BackEnd.core.settings import get_settings
+from BackEnd.rag.chat import ChatService
+from BackEnd.rag.ollama import OllamaClient
+from BackEnd.rag.repository import PgServiceRepository
+
+logger = logging.getLogger("welfare_helper")
+
+app = FastAPI(title="welfare_helper")
 
 
-class DatabaseSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    database_url: SecretStr | None = None
-    db_host: str = ""
-    db_port: int = 5432
-    db_name: str = ""
-    db_user: str = ""
-    db_password: SecretStr | None = None
+class ProfileIn(BaseModel):
+    age: int = Field(ge=0, le=120)
+    income: Literal["under50", "under100", "under150", "over150", "unknown"]
+    household: Literal["single", "couple", "withChildren", "singleParent", "grandparent", "other"]
+    region: str = Field(max_length=20)
+    disability: bool
 
 
-database_settings = DatabaseSettings()
+class ChatRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=300)
+    profile: ProfileIn | None = None
 
-app = FastAPI()
+
+@lru_cache
+def get_chat_service() -> ChatService:
+    settings = get_settings()
+    llm = OllamaClient(
+        settings.ollama_base_url,
+        settings.ollama_embed,
+        settings.ollama_llm,
+        settings.ollama_timeout,
+        {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx, "num_predict": settings.llm_num_predict},
+    )
+    repo = PgServiceRepository(lambda: connect(settings))
+    return ChatService(repo, llm, min_similarity=settings.min_dense_sim, top_n=settings.retrieve_top_n)
 
 
 @app.get("/health")
@@ -29,47 +52,25 @@ def health():
 
 @app.get("/health/db")
 def database_health():
-    database_url = (
-        database_settings.database_url.get_secret_value()
-        if database_settings.database_url
-        else ""
-    )
-    password = (
-        database_settings.db_password.get_secret_value()
-        if database_settings.db_password
-        else ""
-    )
-    connection_options = {"connect_timeout": 5}
-
-    # Supabase 접속 문자열을 우선 사용하고 TLS 연결을 요구한다.
-    if database_url:
-        connection_options.update(dsn=database_url, sslmode="require")
-    elif (
-        database_settings.db_host
-        and database_settings.db_name
-        and database_settings.db_user
-        and password
-    ):
-        connection_options.update(
-            host=database_settings.db_host,
-            port=database_settings.db_port,
-            dbname=database_settings.db_name,
-            user=database_settings.db_user,
-            password=password,
-        )
-    else:
-        raise HTTPException(status_code=503, detail="DB 연결 설정이 없습니다.")
-
     try:
-        # 연결 확인 후 트랜잭션과 접속을 모두 종료해 서버리스 연결을 남기지 않는다.
-        with closing(psycopg2.connect(**connection_options)) as connection:
-            with connection:
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT 1")
-                    cursor.fetchone()
+        with closing(connect(get_settings())) as connection, connection, connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except DatabaseNotConfigured:
+        raise HTTPException(status_code=503, detail="DB 연결 설정이 없습니다.") from None
     except psycopg2.Error:
-        raise HTTPException(
-            status_code=503, detail="DB 연결을 확인하지 못했습니다."
-        ) from None
-
+        raise HTTPException(status_code=503, detail="DB 연결을 확인하지 못했습니다.") from None
     return {"status": "ok", "database": "connected"}
+
+
+@app.post("/api/v1/chat")
+def chat(request: ChatRequest, service: ChatService = Depends(get_chat_service)):
+    profile = request.profile.model_dump() if request.profile else None
+    try:
+        return service.answer(request.query.strip(), profile)
+    except Exception:
+        logger.exception("chat failed")
+        raise HTTPException(
+            status_code=503,
+            detail="상담 데이터를 불러오지 못했어요. 잠시 후 다시 시도하거나 보건복지상담센터 129로 문의해 주세요.",
+        ) from None

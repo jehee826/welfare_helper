@@ -10,6 +10,13 @@ dependencies = [
     "pydantic-settings",
 ]
 
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["BackEnd/tests"]
+
 [tool.setuptools]
 packages = []
 

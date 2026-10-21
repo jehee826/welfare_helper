@@ -1,0 +1,527 @@
+[
+  {
+    "id": "WLF00001164",
+    "name": "기초연금",
+    "summary": "노인에게 기초연금을 지급하여 안정적인 소득기반을 제공함으로써 노인의 생활안정을 지원합니다.",
+    "ministry": "보건복지부",
+    "department": "기초연금과",
+    "contacts": [
+      {
+        "label": "국민연금공단",
+        "phone": "1355"
+      },
+      {
+        "label": "보건복지상담센터",
+        "phone": "129"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00001164&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-25",
+    "category": "생활",
+    "keywords": [
+      "노인",
+      "어르신",
+      "연금",
+      "65세"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00003249",
+    "name": "장애인연금",
+    "summary": "장애로 인하여 생활이 어려운 중증장애인에게 매월 일정금액의 연금을 지급하여 생활안정 지원과 복지 증진 및 사회통합을 도모합니다.",
+    "ministry": "보건복지부",
+    "department": "장애인자립기반과",
+    "contacts": [
+      {
+        "label": "보건복지상담센터",
+        "phone": "129"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00003249&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-05-07",
+    "category": "생활",
+    "keywords": [
+      "장애",
+      "연금",
+      "중증"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00003191",
+    "name": "노인맞춤돌봄서비스",
+    "summary": "일상생활 영위가 어려운 취약노인에게 적절한 돌봄서비스를 제공하여 안정적인 노후생활 보장, 노인의 기능·건강 유지 및 악화 예방을 지원합니다.",
+    "ministry": "보건복지부",
+    "department": "노인정책과",
+    "contacts": [
+      {
+        "label": "보건복지상담센터",
+        "phone": "129"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00003191&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-25",
+    "category": "돌봄",
+    "keywords": [
+      "노인",
+      "어르신",
+      "돌봄",
+      "혼자"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00000024",
+    "name": "아이돌봄 서비스",
+    "summary": "맞벌이를 하거나 갑자기 아이를 돌볼 수 없는 일이 생겼을 때 육아 도우미가 방문하여 12세 이하 자녀의 양육을 도와줍니다.",
+    "ministry": "여성가족부",
+    "department": "가족문화과",
+    "contacts": [
+      {
+        "label": "아이돌봄 지원사업",
+        "phone": "1577-8136"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00000024&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-31",
+    "category": "돌봄",
+    "keywords": [
+      "아이",
+      "육아",
+      "돌봄",
+      "맞벌이"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00003201",
+    "name": "주거급여(맞춤형 급여)",
+    "summary": "생활이 어려운 사람에게 주거급여를 실시하여 취약계층의 주거비 부담을 완화하고 양질의 주거 수준 향상을 도모합니다.",
+    "ministry": "국토교통부",
+    "department": "주거복지지원과",
+    "contacts": [
+      {
+        "label": "마이홈",
+        "phone": "1600-0777"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00003201&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-05-23",
+    "category": "주거",
+    "keywords": [
+      "주거",
+      "월세",
+      "집",
+      "임대"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00001132",
+    "name": "생계급여(맞춤형 급여)",
+    "summary": "생활이 어려운 사람에게 필요한 급여를 실시하여 최저생활을 보장하고 자활을 돕습니다.",
+    "ministry": "보건복지부",
+    "department": "기초생활보장과",
+    "contacts": [
+      {
+        "label": "보건복지부 콜센터",
+        "phone": "129"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00001132&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-02-26",
+    "category": "생활",
+    "keywords": [
+      "생계",
+      "저소득",
+      "기초생활",
+      "생활비"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00000102",
+    "name": "의료급여(의료급여)",
+    "summary": "의료급여 수급권자에 대한 의료비를 지원하여 저소득층의 국민보건 향상과 사회복지 증진에 기여합니다.",
+    "ministry": "보건복지부",
+    "department": "기초의료보장과",
+    "contacts": [
+      {
+        "label": "보건복지부상담센터",
+        "phone": "129"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00000102&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-24",
+    "category": "의료",
+    "keywords": [
+      "의료",
+      "병원",
+      "치료",
+      "저소득"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00003245",
+    "name": "국민취업지원제도",
+    "summary": "저소득 구직자, 청년, 경력단절여성 등 취업 취약계층을 대상으로 취업지원서비스와 생계지원을 함께 제공합니다.",
+    "ministry": "고용노동부",
+    "department": "국민취업지원기획팀",
+    "contacts": [
+      {
+        "label": "고용노동부 고객상담센터",
+        "phone": "1350"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00003245&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-02-26",
+    "category": "일자리",
+    "keywords": [
+      "취업",
+      "일자리",
+      "구직",
+      "청년"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00001068",
+    "name": "한부모가족 아동양육비 지원",
+    "summary": "저소득 한부모가족 및 조손가족이 가족의 기능을 유지하고 안정된 생활을 할 수 있도록 아동 양육비를 지원합니다.",
+    "ministry": "여성가족부",
+    "department": "가족지원과",
+    "contacts": [
+      {
+        "label": "여성가족부",
+        "phone": "02-2100-6000"
+      },
+      {
+        "label": "한부모가족상담전화",
+        "phone": "1577-4206"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00001068&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-05-07",
+    "category": "돌봄",
+    "keywords": [
+      "한부모",
+      "양육",
+      "아이"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00003180",
+    "name": "긴급복지 생계지원",
+    "summary": "생계곤란 등의 위기상황에 처하여 도움이 필요한 사람을 일시적으로 신속하게 지원함으로써 위기상황에서 벗어나도록 합니다.",
+    "ministry": "보건복지부",
+    "department": "기초생활보장과",
+    "contacts": [
+      {
+        "label": "보건복지부상담센터",
+        "phone": "129"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00003180&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-05-26",
+    "category": "생활",
+    "keywords": [
+      "긴급",
+      "위기",
+      "갑자기",
+      "생계"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00000072",
+    "name": "에너지바우처",
+    "summary": "에너지취약계층에게 에너지바우처를 지급하여 전기·가스·지역난방·등유·LPG 등 필요 에너지의 이용 비용을 지원합니다.",
+    "ministry": "산업통상자원부",
+    "department": "에너지정책관",
+    "contacts": [
+      {
+        "label": "에너지바우처 콜센터",
+        "phone": "1600-3190"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00000072&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-06-13",
+    "category": "생활",
+    "keywords": [
+      "에너지",
+      "난방",
+      "냉방",
+      "전기"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00004656",
+    "name": "첫만남이용권",
+    "summary": "출생 아동에게 200만원 이상의 첫만남 이용권을 지급하여 생애초기 아동양육에 따른 경제적 부담을 경감합니다.",
+    "ministry": "보건복지부",
+    "department": "출산정책과",
+    "contacts": [
+      {
+        "label": "보건복지상담센터",
+        "phone": "129"
+      },
+      {
+        "label": "사회서비스 전자바우처",
+        "phone": "1566-3232"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00004656&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-31",
+    "category": "돌봄",
+    "keywords": [
+      "출산",
+      "아기",
+      "신생아"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00004657",
+    "name": "부모급여 지원",
+    "summary": "영아기 집중돌봄을 두텁게 지원하여 출산 및 양육으로 인한 경제적 부담을 줄여드립니다.",
+    "ministry": "보건복지부",
+    "department": "아동정책과",
+    "contacts": [
+      {
+        "label": "보건복지상담센터",
+        "phone": "129"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00004657&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-05-23",
+    "category": "돌봄",
+    "keywords": [
+      "부모",
+      "영아",
+      "출산",
+      "아기"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00001171",
+    "name": "아동수당 지급",
+    "summary": "아동 양육에 따른 경제적 부담을 경감하고 건강한 성장 환경을 조성함으로써 아동의 기본적 권리와 복지를 증진합니다.",
+    "ministry": "보건복지부",
+    "department": "아동정책과",
+    "contacts": [
+      {
+        "label": "보건복지부상담센터",
+        "phone": "129"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00001171&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-24",
+    "category": "돌봄",
+    "keywords": [
+      "아동",
+      "아이",
+      "수당"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00004649",
+    "name": "행복주택 공급",
+    "summary": "청년, (예비)신혼부부, 한부모가족, 대학생 등 젊은층의 주거 안정을 위해  대중교통이 편리하거나 직주근접이 가능한 부지에 주변 시세보다 저렴하게 공공임대주택을 공급합니다.",
+    "ministry": "국토교통부",
+    "department": "공공주택정책과",
+    "contacts": [
+      {
+        "label": "SH공사 홈페이지",
+        "phone": "1600-3456"
+      },
+      {
+        "label": "국토교통부",
+        "phone": "1599-0001"
+      },
+      {
+        "label": "한국토지주택공사",
+        "phone": "1600-1004"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00004649&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-02-21",
+    "category": "주거",
+    "keywords": [
+      "주거",
+      "청년",
+      "신혼",
+      "임대",
+      "집"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00005004",
+    "name": "치매검사비 지원",
+    "summary": "치매조기검진을 통해 치매를 예방하고 진행을 완화하며, 이에 대한 검사비 부담을 경감합니다.",
+    "ministry": "보건복지부",
+    "department": "노인건강과",
+    "contacts": [
+      {
+        "label": "보건복지상담센터",
+        "phone": "129"
+      },
+      {
+        "label": "치매상담콜센터",
+        "phone": "1899-9988"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00005004&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-27",
+    "category": "의료",
+    "keywords": [
+      "치매",
+      "노인",
+      "어르신",
+      "검사"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00003260",
+    "name": "장애인활동지원",
+    "summary": "혼자서 일상생활과 사회생활을 하기 어려운 장애인에게 활동보조서비스를 제공하여 자립생활을 지원하고 사회참여를 도모합니다.",
+    "ministry": "보건복지부",
+    "department": "장애인서비스과",
+    "contacts": [
+      {
+        "label": "보건복지상담센터",
+        "phone": "129"
+      },
+      {
+        "label": "시·군·구 또는 읍·면·동 주민센터주소지 관할 시·군·구 또는 읍·면·동 주민센터",
+        "phone": ""
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00003260&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-31",
+    "category": "돌봄",
+    "keywords": [
+      "장애",
+      "활동",
+      "돌봄"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00001155",
+    "name": "노인일자리 및 사회활동 지원사업",
+    "summary": "활기차고 건강한 노후생활을 영위할 수 있도록 다양한 일자리를 제공하고 사회활동을 지원하여 노인 복지 향상에 기여합니다.",
+    "ministry": "보건복지부",
+    "department": "노인지원과",
+    "contacts": [
+      {
+        "label": "보건복지상담센터",
+        "phone": "129"
+      },
+      {
+        "label": "한국노인인력개발원",
+        "phone": "1544-3388"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00001155&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-24",
+    "category": "일자리",
+    "keywords": [
+      "노인",
+      "어르신",
+      "일자리"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00004661",
+    "name": "청년월세 한시 특별지원",
+    "summary": "고금리·고물가 등으로 경제적 어려움을 겪는 청년층의 주거비 부담 경감을 위해 청년월세를 한시적으로 지원합니다.",
+    "ministry": "국토교통부",
+    "department": "청년주거정책과",
+    "contacts": [
+      {
+        "label": "국토교통부",
+        "phone": "1599-0001"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00004661&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-25",
+    "category": "주거",
+    "keywords": [
+      "청년",
+      "월세",
+      "주거"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  },
+  {
+    "id": "WLF00005360",
+    "name": "청년도약계좌",
+    "summary": "만기 5년 동안 매월 70만원 한도 내에서 자유롭게 납입 가능한 정부지원형 적금상품으로 청년의 중장기 자산형성을 지원합니다.",
+    "ministry": "금융위원회",
+    "department": "청년정책과",
+    "contacts": [
+      {
+        "label": "서민금융콜센터",
+        "phone": "1397"
+      }
+    ],
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00005360&wlfareInfoReldBztpCd=01",
+    "updatedAt": "2025-03-21",
+    "category": "일자리",
+    "keywords": [
+      "청년",
+      "저축",
+      "자산"
+    ],
+    "eligibility": "",
+    "benefit": "",
+    "howToApply": ""
+  }
+]

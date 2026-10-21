@@ -16,3 +16,9 @@ postgres_data/
 /복지챗봇.erd
 
 .CLAUDE.md
+
+# 파이썬 패키지 빌드 산출물 제외
+*.egg-info/
+
+.vercel
+.env*

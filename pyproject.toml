@@ -10,5 +10,8 @@ dependencies = [
     "pydantic-settings",
 ]
 
+[tool.setuptools]
+packages = []
+
 [tool.vercel]
 entrypoint = "BackEnd.main:app"

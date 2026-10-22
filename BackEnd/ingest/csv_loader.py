@@ -1,4 +1,5 @@
 import csv
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -63,9 +64,11 @@ def load_csv(path: Path | str = DEFAULT_CSV, encoding: str = "cp949") -> list[Se
         absent = [col for col in COLUMNS if col not in header]
         if absent:
             raise CsvFormatError(f"헤더에 없는 컬럼: {absent}")
+        reader.fieldnames = header
         records = [_row_to_record(row, line) for line, row in enumerate(reader, start=2)]
-    ids = [r.service_id for r in records]
-    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    if not records:
+        raise CsvFormatError("서비스 데이터가 없는 CSV입니다.")
+    duplicates = sorted(sid for sid, count in Counter(r.service_id for r in records).items() if count > 1)
     if duplicates:
         raise CsvFormatError(f"서비스아이디 중복: {duplicates}")
     return records

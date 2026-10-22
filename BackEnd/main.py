@@ -5,7 +5,7 @@ from typing import Literal
 
 import psycopg2
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
@@ -30,6 +30,14 @@ class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=300)
     profile: ProfileIn | None = None
 
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("질문을 입력해 주세요.")
+        return value
+
 
 @lru_cache
 def get_chat_service() -> ChatService:
@@ -40,8 +48,11 @@ def get_chat_service() -> ChatService:
         settings.ollama_llm,
         settings.ollama_timeout,
         {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx, "num_predict": settings.llm_num_predict},
+        embed_dim=settings.embed_dim,
     )
-    repo = PgServiceRepository(lambda: connect(settings))
+    repo = PgServiceRepository(
+        lambda: connect(settings), embed_model=settings.ollama_embed, embed_dim=settings.embed_dim
+    )
     return ChatService(repo, llm, min_similarity=settings.min_dense_sim, top_n=settings.retrieve_top_n)
 
 

@@ -48,6 +48,13 @@ def test_chat_rejects_empty_query():
     assert response.status_code == 422
 
 
+def test_chat_rejects_whitespace_before_loading_service():
+    stub = StubChat()
+    response = client_with(stub).post("/api/v1/chat", json={"query": " \n\t "})
+    assert response.status_code == 422
+    assert stub.calls == []
+
+
 def test_chat_returns_503_when_data_unavailable():
     response = client_with(StubChat(error=RuntimeError("db down"))).post("/api/v1/chat", json={"query": "연금"})
     assert response.status_code == 503

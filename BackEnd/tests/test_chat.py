@@ -160,3 +160,72 @@ def test_database_failure_raises():
     service = ChatService(FakeRepo(fail=True), FakeOllama(), min_similarity=0.45, top_n=5)
     with pytest.raises(RuntimeError):
         service.answer("연금", None)
+
+
+def test_keyword_search_still_runs_when_dense_results_are_below_threshold():
+    service, _ = make(dense=[("WLF00001164", 0.1)])
+    result = service.answer("노인 돌봄 서비스가 필요해요", None)
+    assert result["kind"] == "answer"
+    assert result["services"][0]["id"] == CARE.service_id
+
+
+def test_hybrid_search_promotes_results_found_by_both_methods():
+    service, _ = make(dense=[(CARE.service_id, 0.8), (PENSION.service_id, 0.7)])
+    result = service.answer("연금 지원이 궁금해요", None)
+    assert result["services"][0]["id"] == PENSION.service_id
+
+
+def test_repeated_dense_chunks_do_not_consume_multiple_cards():
+    service, _ = make(dense=[
+        (PENSION.service_id, 0.8), (PENSION.service_id, 0.7), (CARE.service_id, 0.6),
+    ])
+    result = service.answer("노후에 필요한 도움", None)
+    assert [item["id"] for item in result["services"]] == [PENSION.service_id, CARE.service_id]
+
+
+@pytest.mark.parametrize("reply", [
+    "기초연금은 30만원을 지원합니다.",
+    "기초연금은 65세 이상이면 받을 수 있어요.",
+    "기초연금은 1588로 문의하세요.",
+    "기초연금은 https://example.com/apply 에서 신청해요.",
+])
+def test_query_is_not_a_source_for_invented_conditions_contacts_or_links(reply):
+    service, _ = make(dense=[(PENSION.service_id, 0.8)], reply=reply)
+    result = service.answer("65세에게 30만원인가요? 1588 또는 https://example.com/apply 맞나요?", None)
+    assert "1개를 찾았어요" in result["text"]
+
+
+def test_profile_age_is_not_evidence_of_an_eligibility_threshold():
+    service, _ = make(dense=[(PENSION.service_id, 0.8)], reply="기초연금은 70세 이상이면 받을 수 있어요.")
+    result = service.answer("연금 지원", {"age": 70})
+    assert "70세 이상" not in result["text"]
+
+
+def test_empty_catalog_is_cached_and_does_not_call_models():
+    class EmptyRepo:
+        calls = 0
+
+        def all_services(self):
+            self.calls += 1
+            return []
+
+    repo = EmptyRepo()
+    model = FakeOllama()
+    service = ChatService(repo, model, 0.5, 5)
+    assert service.answer("연금", None)["kind"] == "fallback"
+    assert service.answer("주거", None)["kind"] == "fallback"
+    assert repo.calls == 1
+    assert model.chat_calls == 0
+
+
+def test_generic_discount_word_alone_does_not_make_unrelated_service_relevant():
+    from dataclasses import replace
+
+    class DiscountRepo(FakeRepo):
+        def all_services(self):
+            return [replace(PENSION, name="양곡할인", summary="저소득층의 양곡 구매를 지원합니다.")]
+
+    model = FakeOllama()
+    service = ChatService(DiscountRepo(dense=[]), model, 0.52, 5)
+    assert service.answer("반려동물 미용 할인", None)["kind"] == "fallback"
+    assert model.chat_calls == 0

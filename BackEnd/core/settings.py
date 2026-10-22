@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,14 +19,14 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_llm: str = "gemma3:4b"
     ollama_embed: str = "bge-m3"
-    ollama_timeout: float = 120.0
-    embed_dim: int = 1024
-    llm_num_ctx: int = 8192
-    llm_temperature: float = 0.2
-    llm_num_predict: int = 250
+    ollama_timeout: float = Field(default=120.0, gt=0)
+    embed_dim: int = Field(default=1024, ge=1024, le=1024)
+    llm_num_ctx: int = Field(default=8192, ge=512)
+    llm_temperature: float = Field(default=0.2, ge=0, le=2)
+    llm_num_predict: int = Field(default=250, ge=1)
 
-    retrieve_top_n: int = 5
-    min_dense_sim: float = 0.52
+    retrieve_top_n: int = Field(default=5, ge=1, le=50)
+    min_dense_sim: float = Field(default=0.52, ge=-1, le=1)
 
 
 @lru_cache

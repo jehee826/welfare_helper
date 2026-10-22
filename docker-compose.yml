@@ -17,6 +17,7 @@ services:
       - "8000:8000"
     volumes:
       - ./BackEnd:/app/BackEnd
+      - ./.reranker_cache:/app/.reranker_cache
     depends_on:
       postgres:
         condition: service_healthy

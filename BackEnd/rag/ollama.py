@@ -1,4 +1,7 @@
 import httpx
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_ollama import ChatOllama
 
 from BackEnd.rag.embeddings import validate_embeddings
 
@@ -8,7 +11,7 @@ class OllamaError(RuntimeError):
 
 
 class OllamaClient:
-    """Ollama HTTP API로 임베딩과 채팅 응답을 받는다. base_url에 user:pass@를 넣으면 기본 인증을 보낸다."""
+    """임베딩 HTTP 호출과 LangChain의 Ollama 프롬프트·구조화 자료 선택을 담당한다."""
 
     def __init__(
         self,
@@ -25,6 +28,7 @@ class OllamaClient:
         self.timeout = timeout
         self.llm_options = llm_options or {}
         self.embed_dim = embed_dim
+        self._chat_chain = None
 
     def _post(self, path: str, payload: dict, timeout: float) -> dict:
         try:
@@ -52,18 +56,21 @@ class OllamaClient:
             raise OllamaError(str(exc)) from exc
         return embeddings
 
-    def chat(self, system: str, user: str) -> str:
-        payload = {
-            "model": self.llm_model,
-            "stream": False,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "options": self.llm_options,
-        }
-        data = self._post("/api/chat", payload, timeout=self.timeout)
-        message = data.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        if data.get("done") is False or data.get("done_reason") == "length":
-            raise OllamaError("Ollama 응답이 완료되기 전에 잘렸습니다.")
-        if not isinstance(content, str) or not content.strip():
-            raise OllamaError("Ollama 채팅 응답 형식 오류")
-        return content.strip()
+    def chat(self, system: str, user: str) -> dict:
+        try:
+            if self._chat_chain is None:
+                prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
+                model = ChatOllama(
+                    model=self.llm_model, base_url=self.base_url, format="json",
+                    client_kwargs={"timeout": self.timeout}, **self.llm_options,
+                )
+                self._chat_chain = prompt | model
+            message = self._chat_chain.invoke({"system": system, "user": user})
+            if message.response_metadata.get("done_reason") == "length":
+                raise ValueError("응답이 잘렸습니다.")
+            result = JsonOutputParser().invoke(message)
+            if not isinstance(result, dict):
+                raise ValueError("응답이 JSON 객체가 아닙니다.")
+            return result
+        except Exception as exc:
+            raise OllamaError(f"LangChain Ollama 응답 실패: {type(exc).__name__}") from None

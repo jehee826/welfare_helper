@@ -26,7 +26,21 @@ python -m BackEnd.ingest.run --check-embeddings # DB 호출 없이 실제 임베
 
 기본 인코딩은 CP949이며 UTF-8 CSV는 `--encoding utf-8-sig`를 사용합니다. 빈 파일·필수 컬럼 누락·ID 중복은 DB 반영 전에 거부합니다. 모델은 기존 `vector(1024)` 구조와 같은 1024차원이어야 합니다. 모델을 바꾸면 적재를 다시 실행해야 하며, 검색은 현재 설정한 모델의 벡터만 사용합니다.
 
-검색은 서비스명 직접 언급을 우선하고, 의미 검색과 키워드 검색을 RRF 순위 합산으로 결합합니다. 의미 검색 유사도 기준은 `MIN_DENSE_SIM`, 후보 수는 `RETRIEVE_TOP_N`으로 설정합니다. 자료에 없는 금액·자격·문의처·URL은 질문에 적혀 있어도 답변 근거로 쓰지 않습니다.
+검색은 서비스명 직접 언급과 의미·키워드 RRF 검색으로 후보를 모은 뒤, 질문과 후보 원문을 교차 인코더로 리랭킹합니다. `RETRIEVE_TOP_N`개 후보 중 `MIN_RERANK_SCORE` 이상인 최대 3개만 LLM에 전달합니다. 의미 검색 기준은 `MIN_DENSE_SIM`입니다. 리랭커가 없거나 관련성 점수가 낮으면 후보만으로 답변을 만들지 않고 보류합니다. 점수는 관련성 지표이며, 사실 정확도나 지원 자격 확률이 아닙니다.
+
+LangChain의 `ChatPromptTemplate`·`ChatOllama`·`JsonOutputParser`로 LLM의 자료 선택을 처리합니다. LLM은 확인된 서비스 ID만 선택하며, 표시할 설명은 선택된 DB 요약 원문으로 구성합니다. 자유 생성한 금액·자격·전화번호·URL은 표시하지 않습니다. 문의처·링크·자료 수정일도 DB 값으로 유지합니다. 자료가 낡았거나 요약에 상세 조건이 없으면 원문만으로 최신 자격을 확정할 수 없습니다.
+
+## 로컬 리랭커 준비
+```cmd
+python -m pip install -r requirements-reranker.txt
+python -m BackEnd.rag.reranker
+```
+
+[BGE 다국어 리랭커](https://huggingface.co/BAAI/bge-reranker-v2-m3)의 [INT8 ONNX 변환본](https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX)을 CPU에서 후보별로 실행합니다. 가중치 다운로드는 약 571MB이며 `.env.example`의 `RERANK_MODEL`·`RERANK_REVISION`으로 모델과 버전을 고정합니다. 준비 명령만 모델을 다운로드하고, 실제 질의는 `.reranker_cache/`의 파일만 사용합니다. `RERANK_THREADS=2`, `RERANK_MAX_LENGTH=512`로 CPU 사용과 입력 길이를 제한하며, 긴 후보 원문은 리랭킹 시 잘릴 수 있습니다. 프로세스마다 모델 메모리가 필요하므로 로컬에서는 백엔드 한 프로세스로 실행합니다.
+
+리랭커 외에도 bge-m3 임베딩과 Ollama LLM의 메모리가 필요합니다. 여유 메모리가 적거나 모델을 매번 다시 읽는 환경에서는 첫 응답이 오래 걸리거나 모델 호출이 시간 초과로 보류될 수 있습니다. 후보 수·스레드 수를 늘리면 자원 사용도 증가하므로 실제 실행 환경에 맞게 설정합니다.
+
+Compose 백엔드는 리랭커 의존성을 설치하고 같은 캐시 폴더를 마운트합니다. 모델 캐시·데이터·환경 비밀값은 Git·Docker 빌드 컨텍스트·Vercel 업로드에서 제외합니다. Vercel의 기본 의존성에는 로컬 ONNX 런타임을 포함하지 않으므로, 별도의 리랭커 실행 환경을 연결하기 전에는 일반 상담이 보류될 수 있습니다. 서버리스에 모델을 올리거나 외부 리랭킹 서비스를 연결하는 구성은 이 로컬 실행 설정에 포함하지 않습니다.
 
 ## 로컬 실행
 ```
@@ -55,5 +69,5 @@ cd FrontEnd && npm test     # 프론트엔드
 
 pgvector 통합 테스트는 `RAG_TEST_DATABASE_URL`이 지정된 경우에만 실행합니다. 대상은 일회용 로컬 `rag_test` 데이터베이스여야 하며, 테스트마다 `welfare_services`와 연결된 청크를 비웁니다. 운영 DB나 보존할 로컬 데이터를 지정하지 않습니다. 모델 없이 실행하는 테스트와 별개로, 실제 모델의 검색 품질과 응답 시간은 로컬 Ollama를 켠 뒤 확인해야 합니다.
 
-## 배포 사이트에서 LLM 쓰기
-Vercel에서는 Ollama를 실행할 수 없으므로, Ollama가 켜진 PC를 터널(ngrok 등)로 공개하고 Vercel 환경변수 `OLLAMA_BASE_URL`에 그 주소를 등록합니다. PC가 꺼져 있으면 챗봇은 키워드 검색과 연락처 안내로만 동작합니다.
+## 배포 환경의 모델 연결
+Vercel에서는 Ollama나 Compose 전체를 실행할 수 없습니다. 배포에는 별도로 운영하는 Ollama·리랭커 실행 환경과 인증·접속 설정이 필요합니다. 로컬 리랭커만 설정한 상태에서는 일반 상담을 보류하며, 서비스명을 지정한 문의처·상세 조건 확인 안내는 DB 자료로 처리합니다. PC의 모델 캐시나 데이터 폴더를 배포 파일로 업로드하지 않습니다.

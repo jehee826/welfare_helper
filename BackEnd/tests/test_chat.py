@@ -1,8 +1,11 @@
+import json
+
 import pytest
 
 from BackEnd.ingest.csv_loader import ServiceRecord
 from BackEnd.rag.chat import ChatService
 from BackEnd.rag.ollama import OllamaError
+from BackEnd.rag.reranker import RerankerError
 
 PENSION = ServiceRecord(
     service_id="WLF00001164",
@@ -41,7 +44,7 @@ class FakeRepo:
 
 
 class FakeOllama:
-    def __init__(self, reply="기초연금은 노인의 안정적인 소득을 돕는 제도예요. 자세한 자격은 담당 기관에서 확인해 주세요.", embed_fail=False, chat_fail=False):
+    def __init__(self, reply=None, embed_fail=False, chat_fail=False):
         self.reply = reply
         self.embed_fail = embed_fail
         self.chat_fail = chat_fail
@@ -56,19 +59,37 @@ class FakeOllama:
         self.chat_calls += 1
         if self.chat_fail:
             raise OllamaError("llm down")
-        return self.reply
+        if self.reply is not None:
+            return self.reply
+        context = user.split("[참고 자료]\n")[1].split("\n\n[질문]")[0]
+        return {"service_ids": [r["service_id"] for r in json.loads(context)]}
+
+
+class FakeReranker:
+    def __init__(self, scores=None, fail=False):
+        self.scores = scores
+        self.fail = fail
+        self.calls = []
+
+    def score(self, query, passages):
+        self.calls.append((query, passages))
+        if self.fail:
+            raise RerankerError("reranker down")
+        return self.scores if self.scores is not None else [0.9] * len(passages)
 
 
 def make(dense=None, **ollama_kwargs):
     ollama = FakeOllama(**ollama_kwargs)
-    return ChatService(FakeRepo(dense=dense), ollama, min_similarity=0.45, top_n=5), ollama
+    return ChatService(FakeRepo(dense=dense), ollama, min_similarity=0.45, top_n=5,
+                       reranker=FakeReranker()), ollama
 
 
 def test_relevant_question_returns_llm_answer_with_db_cards():
     service, ollama = make(dense=[("WLF00001164", 0.71), ("WLF00003191", 0.52)])
     result = service.answer("어르신 연금이 궁금해요", None)
     assert result["kind"] == "answer"
-    assert result["text"].startswith("기초연금은")
+    assert result["text"].startswith("기초연금:")
+    assert PENSION.summary in result["text"]
     assert [s["name"] for s in result["services"]] == ["기초연금", "노인맞춤돌봄서비스"]
     assert result["services"][0]["contacts"][0] == {"label": "국민연금공단", "phone": "1355"}
     assert "기초연금 신청 방법" in result["suggestions"]
@@ -98,11 +119,11 @@ def test_contact_question_lists_db_contacts():
     assert "국민연금공단 1355" in result["text"]
 
 
-def test_llm_failure_falls_back_to_template_text():
+def test_llm_failure_abstains():
     service, _ = make(dense=[("WLF00001164", 0.7)], chat_fail=True)
     result = service.answer("어르신 연금", None)
-    assert result["kind"] == "answer"
-    assert "1개를 찾았어요" in result["text"]
+    assert result["kind"] == "fallback"
+    assert "services" not in result
 
 
 def test_invented_phone_number_in_llm_reply_is_rejected():
@@ -115,24 +136,24 @@ def test_invented_age_or_amount_in_llm_reply_is_rejected():
     service, _ = make(dense=[("WLF00001164", 0.7)], reply="기초연금은 만 65세 이상에게 월 30만원을 드려요.")
     result = service.answer("어르신 연금", None)
     assert "65세" not in result["text"]
-    assert "1개를 찾았어요" in result["text"]
+    assert result["kind"] == "fallback"
 
 
-def test_age_from_profile_is_allowed_in_llm_reply():
+def test_free_form_llm_claim_about_profile_is_not_published():
     reply = "70세이시고 혼자 사신다면 기초연금을 확인해 보세요. 실제 대상 여부는 담당 기관에서 확인해 주세요."
     service, _ = make(dense=[("WLF00001164", 0.7)], reply=reply)
     profile = {"age": 70, "income": "under50", "household": "single", "region": "서울특별시", "disability": False}
-    assert service.answer("받을 수 있는 연금", profile)["text"] == reply
+    assert service.answer("받을 수 있는 연금", profile)["kind"] == "fallback"
 
 
-def test_llm_reply_blank_lines_are_collapsed():
+def test_free_form_llm_reply_is_not_evidence():
     service, _ = make(dense=[("WLF00001164", 0.7)], reply="첫 문장이에요.\n\n둘째 문장이에요.")
-    assert service.answer("어르신 연금", None)["text"] == "첫 문장이에요. 둘째 문장이에요."
+    assert service.answer("어르신 연금", None)["kind"] == "fallback"
 
 
-def test_truncated_llm_reply_is_cut_to_last_sentence():
+def test_truncated_free_form_llm_reply_is_not_published():
     service, _ = make(dense=[("WLF00001164", 0.7)], reply="기초연금을 확인해 보세요. 담당 기관에서 대상 여부를")
-    assert service.answer("어르신 연금", None)["text"] == "기초연금을 확인해 보세요."
+    assert service.answer("어르신 연금", None)["kind"] == "fallback"
 
 
 def test_embedding_failure_uses_keyword_search():
@@ -150,7 +171,8 @@ def test_profile_is_passed_to_llm_prompt():
             captured["user"] = user
             return super().chat(system, user)
 
-    service = ChatService(FakeRepo(dense=[("WLF00001164", 0.7)]), Capture(), min_similarity=0.45, top_n=5)
+    service = ChatService(FakeRepo(dense=[("WLF00001164", 0.7)]), Capture(), min_similarity=0.45, top_n=5,
+                          reranker=FakeReranker())
     profile = {"age": 70, "income": "under50", "household": "single", "region": "서울특별시", "disability": False}
     service.answer("받을 수 있는 연금", profile)
     assert "70세" in captured["user"] and "혼자 살아요" in captured["user"]
@@ -192,7 +214,7 @@ def test_repeated_dense_chunks_do_not_consume_multiple_cards():
 def test_query_is_not_a_source_for_invented_conditions_contacts_or_links(reply):
     service, _ = make(dense=[(PENSION.service_id, 0.8)], reply=reply)
     result = service.answer("65세에게 30만원인가요? 1588 또는 https://example.com/apply 맞나요?", None)
-    assert "1개를 찾았어요" in result["text"]
+    assert result["kind"] == "fallback"
 
 
 def test_profile_age_is_not_evidence_of_an_eligibility_threshold():
@@ -216,6 +238,52 @@ def test_empty_catalog_is_cached_and_does_not_call_models():
     assert service.answer("주거", None)["kind"] == "fallback"
     assert repo.calls == 1
     assert model.chat_calls == 0
+
+
+def test_reranker_reorders_candidates_before_source_selection():
+    model = FakeOllama()
+    reranker = FakeReranker(scores=[0.6, 0.95])
+    service = ChatService(FakeRepo(dense=[(PENSION.service_id, 0.9), (CARE.service_id, 0.8)]),
+                          model, 0.45, 12, reranker=reranker)
+    result = service.answer("노후에 필요한 도움", None)
+    assert [r["id"] for r in result["services"]] == [CARE.service_id, PENSION.service_id]
+    assert CARE.summary in result["text"]
+    assert reranker.calls[0][0] == "노후에 필요한 도움"
+
+
+@pytest.mark.parametrize("scores", [[0.49], [float("nan")], [], [1.1]])
+def test_irrelevant_or_invalid_rerank_scores_abstain_without_generation(scores):
+    model = FakeOllama()
+    service = ChatService(FakeRepo(dense=[(PENSION.service_id, 0.99)]), model, 0.45, 12,
+                          reranker=FakeReranker(scores))
+    assert service.answer("우주 여행 지원", None)["kind"] == "fallback"
+    assert model.chat_calls == 0
+
+
+def test_unavailable_reranker_does_not_publish_retrieval_candidates():
+    service = ChatService(FakeRepo(dense=[(PENSION.service_id, 0.99)]), FakeOllama(), 0.45, 12,
+                          reranker=FakeReranker(fail=True))
+    assert service.answer("연금 지원", None)["kind"] == "fallback"
+
+
+@pytest.mark.parametrize("selection", [
+    {"service_ids": []}, {"service_ids": ["unknown"]}, {"service_ids": "WLF00001164"},
+    {"service_ids": [PENSION.service_id, PENSION.service_id]}, {}, {"service_ids": [None]},
+])
+def test_invalid_or_empty_source_selection_abstains(selection):
+    service, _ = make(dense=[(PENSION.service_id, 0.9)], reply=selection)
+    assert service.answer("어르신 연금", None)["kind"] == "fallback"
+
+
+def test_only_database_facts_are_published_even_if_model_adds_invented_text():
+    service, _ = make(dense=[(PENSION.service_id, 0.9)], reply={
+        "service_ids": [PENSION.service_id], "text": "65세면 100만원, 1588-0000, https://invented.invalid",
+    })
+    result = service.answer("65세면 100만원인가요?", None)
+    assert result["kind"] == "answer"
+    assert result["text"] == f"{PENSION.name}: {PENSION.summary} 자료의 기준일과 실제 대상 여부는 담당 기관에서 확인해 주세요."
+    assert result["services"][0]["url"] == PENSION.url
+    assert result["services"][0]["contacts"] == PENSION.contacts
 
 
 def test_generic_discount_word_alone_does_not_make_unrelated_service_relevant():

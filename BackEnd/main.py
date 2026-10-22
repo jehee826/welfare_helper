@@ -12,6 +12,7 @@ from BackEnd.core.settings import get_settings
 from BackEnd.rag.chat import ChatService
 from BackEnd.rag.ollama import OllamaClient
 from BackEnd.rag.repository import PgServiceRepository
+from BackEnd.rag.reranker import LocalReranker
 
 logger = logging.getLogger("welfare_helper")
 
@@ -53,7 +54,14 @@ def get_chat_service() -> ChatService:
     repo = PgServiceRepository(
         lambda: connect(settings), embed_model=settings.ollama_embed, embed_dim=settings.embed_dim
     )
-    return ChatService(repo, llm, min_similarity=settings.min_dense_sim, top_n=settings.retrieve_top_n)
+    reranker = LocalReranker(
+        settings.rerank_model, settings.rerank_revision, settings.rerank_cache_dir,
+        settings.rerank_max_length, settings.rerank_threads,
+    )
+    return ChatService(
+        repo, llm, min_similarity=settings.min_dense_sim, top_n=settings.retrieve_top_n,
+        reranker=reranker, min_rerank_score=settings.min_rerank_score,
+    )
 
 
 @app.get("/health")

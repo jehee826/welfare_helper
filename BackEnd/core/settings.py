@@ -25,8 +25,14 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.2, ge=0, le=2)
     llm_num_predict: int = Field(default=250, ge=1)
 
-    retrieve_top_n: int = Field(default=5, ge=1, le=50)
+    retrieve_top_n: int = Field(default=12, ge=1, le=50)
     min_dense_sim: float = Field(default=0.52, ge=-1, le=1)
+    rerank_model: str = "onnx-community/bge-reranker-v2-m3-ONNX"
+    rerank_revision: str = "6f5ff65298512715a1e669753bc754d2bc8f367b"
+    rerank_cache_dir: str = ".reranker_cache"
+    rerank_max_length: int = Field(default=512, ge=128, le=512)
+    rerank_threads: int = Field(default=2, ge=1, le=8)
+    min_rerank_score: float = Field(default=0.5, ge=0, le=1)
 
 
 @lru_cache

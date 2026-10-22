@@ -8,6 +8,16 @@ dependencies = [
     "psycopg2-binary",
     "httpx",
     "pydantic-settings",
+    "langchain-core==1.6.13",
+    "langchain-ollama==1.1.0",
+]
+
+[project.optional-dependencies]
+reranker = [
+    "onnxruntime==1.31.0",
+    "tokenizers==0.23.3",
+    "huggingface-hub==2.2.0",
+    "numpy==2.5.4",
 ]
 
 [dependency-groups]

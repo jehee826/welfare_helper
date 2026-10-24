@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile.back
-    container_name: backend
+    container_name: welfare-backend
     env_file:
       - .env
     environment:
@@ -29,7 +29,7 @@ services:
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile.ollama
-    container_name: ollama
+    container_name: welfare-ollama
     ports:
       - "11434:11434"
     volumes:
@@ -50,7 +50,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: postgres
+    container_name: welfare-postgres
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}

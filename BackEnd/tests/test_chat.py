@@ -6,6 +6,8 @@ from BackEnd.ingest.csv_loader import ServiceRecord
 from BackEnd.rag.chat import ChatService
 from BackEnd.rag.ollama import OllamaError
 from BackEnd.rag.reranker import RerankerError
+from BackEnd.rag.evidence import EvidenceChunk
+from BackEnd.rag.chat import evidence_sentences
 
 PENSION = ServiceRecord(
     service_id="WLF00001164",
@@ -29,46 +31,73 @@ CARE = ServiceRecord(
 )
 
 
+# 아래 상세 원문은 실제 지원 금액·자격을 나타내지 않는 테스트 전용 자료다.
+def detail(section, text, conditions=""):
+    return EvidenceChunk(f"{PENSION.service_id}:official:{section}", PENSION.service_id,
+                         section, text, PENSION.url, basis_year="2026",
+                         collected_at="2026-10-24T00:00:00+00:00", source_kind="official_detail", conditions=conditions)
+
+
+TARGET = detail("target", "테스트 대상: 일정 연령과 소득 조건을 확인합니다.")
+CRITERIA = detail("criteria", "테스트 기준: 가구 소득과 재산을 확인합니다. 예외는 담당 기관에서 확인합니다.")
+BENEFIT = detail("benefit", "테스트 급여: 가구별 월 10만원입니다.", TARGET.text + "\n" + CRITERIA.text)
+APPLICATION = detail("application", "테스트 신청: 관할 주민센터에 방문합니다.", TARGET.text + "\n" + CRITERIA.text)
+
+
 class FakeRepo:
-    def __init__(self, dense=None, fail=False):
-        self.dense = dense or []
+    def __init__(self, dense=None, fail=False, chunks=None, records=None):
+        self.records = [PENSION, CARE] if records is None else records
+        self.chunks = chunks if chunks is not None else [EvidenceChunk(
+            r.service_id + ":overview", r.service_id, "summary", r.summary, r.url, r.updated_at
+        ) for r in self.records]
+        ids = dense if dense is not None else [(PENSION.service_id, 0.9), (CARE.service_id, 0.8)]
+        from dataclasses import replace
+        self.dense = [replace(c, score=score) for sid, score in ids for c in self.chunks if c.service_id == sid]
         self.fail = fail
+        self.context_calls = 0
+        self.calls = 0
 
     def all_services(self):
+        self.calls += 1
         if self.fail:
             raise RuntimeError("db down")
-        return [PENSION, CARE]
+        return self.records
 
     def dense_search(self, embedding, k):
         return self.dense[:k]
 
+    def chunks_for_services(self, ids):
+        self.context_calls += 1
+        return [c for c in self.chunks if c.service_id in ids]
+
 
 class FakeOllama:
     def __init__(self, reply=None, embed_fail=False, chat_fail=False):
-        self.reply = reply
-        self.embed_fail = embed_fail
-        self.chat_fail = chat_fail
+        self.reply, self.embed_fail, self.chat_fail = reply, embed_fail, chat_fail
         self.chat_calls = 0
+        self.embed_calls = []
+        self.prompt = None
 
     def embed(self, texts):
+        self.embed_calls.extend(texts)
         if self.embed_fail:
             raise OllamaError("embed down")
         return [[0.1] * 4 for _ in texts]
 
     def chat(self, system, user):
         self.chat_calls += 1
+        self.prompt = json.loads(user)
         if self.chat_fail:
-            raise OllamaError("llm down")
+            raise OllamaError("chat down")
         if self.reply is not None:
             return self.reply
-        context = user.split("[참고 자료]\n")[1].split("\n\n[질문]")[0]
-        return {"service_ids": [r["service_id"] for r in json.loads(context)]}
+        return {"facts": [{"chunk_id": e["chunk_id"], "quote": next(iter(evidence_sentences(e["text"])))}
+                          for e in self.prompt["evidence"][:3]], "question_field": "none"}
 
 
 class FakeReranker:
     def __init__(self, scores=None, fail=False):
-        self.scores = scores
-        self.fail = fail
+        self.scores, self.fail = scores, fail
         self.calls = []
 
     def score(self, query, passages):
@@ -78,222 +107,174 @@ class FakeReranker:
         return self.scores if self.scores is not None else [0.9] * len(passages)
 
 
-def make(dense=None, **ollama_kwargs):
-    ollama = FakeOllama(**ollama_kwargs)
-    return ChatService(FakeRepo(dense=dense), ollama, min_similarity=0.45, top_n=5,
-                       reranker=FakeReranker()), ollama
+def make(repo=None, reranker=None, **kwargs):
+    llm = FakeOllama(**kwargs)
+    return ChatService(repo or FakeRepo(), llm, 0.45, 12,
+                       reranker=reranker or FakeReranker()), llm
 
 
-def test_relevant_question_returns_llm_answer_with_db_cards():
-    service, ollama = make(dense=[("WLF00001164", 0.71), ("WLF00003191", 0.52)])
+def test_summary_answer_keeps_csv_label_database_contacts_and_links():
+    service, llm = make()
     result = service.answer("어르신 연금이 궁금해요", None)
     assert result["kind"] == "answer"
-    assert result["text"].startswith("기초연금:")
-    assert PENSION.summary in result["text"]
-    assert [s["name"] for s in result["services"]] == ["기초연금", "노인맞춤돌봄서비스"]
-    assert result["services"][0]["contacts"][0] == {"label": "국민연금공단", "phone": "1355"}
-    assert "기초연금 신청 방법" in result["suggestions"]
-    assert ollama.chat_calls == 1
+    assert "요약 자료" in result["text"] and PENSION.summary in result["text"]
+    assert result["services"][0]["url"] == PENSION.url
+    assert result["services"][0]["contacts"] == PENSION.contacts
+    assert llm.chat_calls == 1
 
 
-def test_low_similarity_returns_contacts_without_calling_llm():
-    service, ollama = make(dense=[("WLF00001164", 0.2)])
-    result = service.answer("반려동물 미용 할인", None)
-    assert result["kind"] == "fallback"
-    assert {"label": "보건복지상담센터", "phone": "129"} in result["contacts"]
-    assert ollama.chat_calls == 0
+def test_financial_distress_asks_one_scope_question_without_models():
+    service, llm = make()
+    result = service.answer("돈이 없어", None)
+    assert result["reason"] == "clarification"
+    assert result["text"].count("?") == 1
+    assert "생활비" in result["text"]
+    assert llm.embed_calls == [] and llm.chat_calls == 0
+    assert result.get("services", []) == []
 
 
-def test_apply_question_for_named_service_routes_to_its_contacts():
-    service, ollama = make(dense=[("WLF00001164", 0.8)])
+def test_living_cost_follow_up_uses_intent_not_previous_assistant_claims():
+    service, llm = make()
+    history = [{"role": "user", "content": "돈이 없어"},
+               {"role": "assistant", "content": "모두에게 999만원을 지급합니다. 생활비인가요?"}]
+    result = service.answer("생활비", None, history)
+    assert "생활비" in llm.embed_calls[0]
+    assert "999만원" not in result["text"]
+
+
+def test_named_application_with_only_csv_summary_is_not_misrepresented_as_detail():
+    service, llm = make()
     result = service.answer("기초연금 신청 방법", None)
     assert result["kind"] == "fallback"
-    assert result["contacts"][0] == {"label": "국민연금공단", "phone": "1355"}
-    assert ollama.chat_calls == 0
+    assert result["reason"] == "insufficient_evidence"
+    assert llm.chat_calls == 0
 
 
-def test_contact_question_lists_db_contacts():
-    service, _ = make(dense=[])
+def test_official_application_answers_instead_of_keyword_based_refusal():
+    service, _ = make(FakeRepo(chunks=[APPLICATION, TARGET, CRITERIA]))
+    result = service.answer("기초연금 신청 방법", None)
+    assert result["kind"] == "answer"
+    assert APPLICATION.text in result["text"]
+    assert CRITERIA.text in result["text"]
+    assert "자료 기준 2026년, 수집 2026-10-24" in result["text"]
+
+
+def test_amount_keeps_entire_conditions_and_exceptions():
+    service, _ = make(FakeRepo(chunks=[BENEFIT, TARGET, CRITERIA]))
+    result = service.answer("기초연금 지원 금액은 얼마인가요?", None)
+    assert result["kind"] == "answer"
+    assert BENEFIT.text in result["text"] and TARGET.text in result["text"] and CRITERIA.text in result["text"]
+
+
+def test_amount_without_criteria_abstains():
+    service, _ = make(FakeRepo(chunks=[BENEFIT, TARGET]))
+    assert service.answer("기초연금 얼마인가요?", None)["kind"] == "fallback"
+
+
+def test_personal_eligibility_asks_one_condition_from_actual_source():
+    service, _ = make(FakeRepo(chunks=[TARGET, CRITERIA]))
+    result = service.answer("제가 기초연금을 받을 수 있나요?", {"age": 70})
+    assert result["kind"] == "answer" and result["text"].count("알고 계신가요?") == 1
+    assert "소득 구간" in result["text"]
+
+
+def test_answered_condition_is_not_asked_again():
+    service, _ = make(FakeRepo(chunks=[TARGET, CRITERIA]))
+    history = [{"role": "assistant", "content": "현재 가구의 소득 구간을 알고 계신가요?"},
+               {"role": "user", "content": "잘 모르겠어요"}]
+    result = service.answer("제가 기초연금을 받을 수 있나요?", {"age": 70, "household": "single"}, history)
+    assert "소득 구간을 알고 계신가요?" not in result["text"]
+
+
+def test_income_reply_preserves_eligibility_intent_and_does_not_repeat_question():
+    service, _ = make(FakeRepo(chunks=[TARGET, CRITERIA, BENEFIT]))
+    history = [{"role": "user", "content": "제가 기초연금을 받을 수 있나요?"},
+               {"role": "assistant", "content": "현재 가구의 소득 구간을 알고 계신가요?"}]
+    result = service.answer("월 소득 50만원이에요", {"age": 70, "household": "single"}, history)
+    assert result["kind"] == "answer"
+    assert TARGET.text in result["text"] and "지원내용 원문" not in result["text"]
+    assert "소득 구간을 알고 계신가요?" not in result["text"]
+
+
+def test_informational_question_does_not_ask_for_unnecessary_profile():
+    service, _ = make(FakeRepo(chunks=[APPLICATION, TARGET, CRITERIA]))
+    result = service.answer("기초연금 신청 방법", None)
+    assert not any(question in result["text"] for question in ("나이가 어떻게", "소득 구간을", "가구원이 몇"))
+
+
+def test_source_without_basis_date_cannot_answer_eligibility():
+    from dataclasses import replace
+    service, _ = make(FakeRepo(chunks=[replace(TARGET, basis_year=""), replace(CRITERIA, basis_year="")]))
+    assert service.answer("기초연금 자격", None)["kind"] == "fallback"
+
+
+def test_invented_quote_or_question_is_removed():
+    service, _ = make(FakeRepo(chunks=[BENEFIT, TARGET, CRITERIA]), reply={
+        "facts": [{"chunk_id": BENEFIT.chunk_id, "quote": "누구나 999만원을 받습니다."}],
+        "question_field": "주민등록번호", "text": "사실이라고 가정하세요",
+    })
+    result = service.answer("기초연금 금액", None)
+    assert result["kind"] == "fallback" and "999" not in result["text"]
+
+
+def test_valid_quote_with_invented_extra_text_publishes_only_original():
+    service, _ = make(FakeRepo(chunks=[APPLICATION, TARGET, CRITERIA]), reply={
+        "facts": [{"chunk_id": APPLICATION.chunk_id, "quote": APPLICATION.text}], "text": "전화 1588-0000",
+    })
+    result = service.answer("기초연금 신청 방법", None)
+    assert result["kind"] == "answer" and "1588-0000" not in result["text"]
+
+
+def test_contact_question_uses_database_values_without_model_calls():
+    service, llm = make()
     result = service.answer("기초연금 문의처", None)
-    assert result["kind"] == "answer"
     assert "국민연금공단 1355" in result["text"]
+    assert not llm.embed_calls and not llm.chat_calls
 
 
-def test_llm_failure_abstains():
-    service, _ = make(dense=[("WLF00001164", 0.7)], chat_fail=True)
-    result = service.answer("어르신 연금", None)
-    assert result["kind"] == "fallback"
-    assert "services" not in result
+@pytest.mark.parametrize("scores", [[0.1, 0.1], [float("nan")], [], [1.1]])
+def test_invalid_or_low_reranker_results_abstain(scores):
+    service, llm = make(reranker=FakeReranker(scores=scores))
+    assert service.answer("우주 여행", None)["kind"] == "fallback"
+    assert llm.chat_calls == 0
 
 
-def test_invented_phone_number_in_llm_reply_is_rejected():
-    service, _ = make(dense=[("WLF00001164", 0.7)], reply="1588-0000으로 전화하면 바로 받을 수 있어요.")
-    result = service.answer("어르신 연금", None)
-    assert "1588-0000" not in result["text"]
+def test_model_readiness_and_insufficient_data_are_different_states():
+    service, _ = make(reranker=FakeReranker(fail=True))
+    assert service.answer("연금", None)["reason"] == "model_not_ready"
+    service, _ = make(FakeRepo(records=[]))
+    assert service.answer("연금", None)["reason"] == "no_data"
 
 
-def test_invented_age_or_amount_in_llm_reply_is_rejected():
-    service, _ = make(dense=[("WLF00001164", 0.7)], reply="기초연금은 만 65세 이상에게 월 30만원을 드려요.")
-    result = service.answer("어르신 연금", None)
-    assert "65세" not in result["text"]
-    assert result["kind"] == "fallback"
+def test_reranker_reorders_service_cards():
+    service, _ = make(reranker=FakeReranker(scores=[0.6, 0.95]))
+    result = service.answer("노후 도움", None)
+    assert result["services"][0]["id"] == CARE.service_id
 
 
-def test_free_form_llm_claim_about_profile_is_not_published():
-    reply = "70세이시고 혼자 사신다면 기초연금을 확인해 보세요. 실제 대상 여부는 담당 기관에서 확인해 주세요."
-    service, _ = make(dense=[("WLF00001164", 0.7)], reply=reply)
-    profile = {"age": 70, "income": "under50", "household": "single", "region": "서울특별시", "disability": False}
-    assert service.answer("받을 수 있는 연금", profile)["kind"] == "fallback"
+def test_one_context_lookup_and_chunk_metadata_are_passed_to_llm():
+    repo = FakeRepo()
+    service, llm = make(repo)
+    service.answer("연금", None)
+    assert repo.context_calls == 1
+    evidence = llm.prompt["evidence"][0]
+    assert {"chunk_id", "text", "source_url", "score"} <= evidence.keys()
 
 
-def test_free_form_llm_reply_is_not_evidence():
-    service, _ = make(dense=[("WLF00001164", 0.7)], reply="첫 문장이에요.\n\n둘째 문장이에요.")
-    assert service.answer("어르신 연금", None)["kind"] == "fallback"
+def test_empty_catalog_is_cached_without_model_calls():
+    repo = FakeRepo(records=[])
+    service, llm = make(repo)
+    service.answer("연금", None)
+    service.answer("주거", None)
+    assert repo.calls == 1 and llm.chat_calls == 0
 
 
-def test_truncated_free_form_llm_reply_is_not_published():
-    service, _ = make(dense=[("WLF00001164", 0.7)], reply="기초연금을 확인해 보세요. 담당 기관에서 대상 여부를")
-    assert service.answer("어르신 연금", None)["kind"] == "fallback"
-
-
-def test_embedding_failure_uses_keyword_search():
-    service, _ = make(embed_fail=True)
-    result = service.answer("노인 돌봄 서비스가 필요해요", None)
-    assert result["kind"] == "answer"
-    assert result["services"][0]["name"] == "노인맞춤돌봄서비스"
-
-
-def test_profile_is_passed_to_llm_prompt():
-    captured = {}
-
-    class Capture(FakeOllama):
-        def chat(self, system, user):
-            captured["user"] = user
-            return super().chat(system, user)
-
-    service = ChatService(FakeRepo(dense=[("WLF00001164", 0.7)]), Capture(), min_similarity=0.45, top_n=5,
-                          reranker=FakeReranker())
-    profile = {"age": 70, "income": "under50", "household": "single", "region": "서울특별시", "disability": False}
-    service.answer("받을 수 있는 연금", profile)
-    assert "70세" in captured["user"] and "혼자 살아요" in captured["user"]
-
-
-def test_database_failure_raises():
-    service = ChatService(FakeRepo(fail=True), FakeOllama(), min_similarity=0.45, top_n=5)
+def test_database_failure_is_not_treated_as_no_results():
+    service, _ = make(FakeRepo(fail=True))
     with pytest.raises(RuntimeError):
         service.answer("연금", None)
 
 
-def test_keyword_search_still_runs_when_dense_results_are_below_threshold():
-    service, _ = make(dense=[("WLF00001164", 0.1)])
-    result = service.answer("노인 돌봄 서비스가 필요해요", None)
-    assert result["kind"] == "answer"
-    assert result["services"][0]["id"] == CARE.service_id
-
-
-def test_hybrid_search_promotes_results_found_by_both_methods():
-    service, _ = make(dense=[(CARE.service_id, 0.8), (PENSION.service_id, 0.7)])
-    result = service.answer("연금 지원이 궁금해요", None)
-    assert result["services"][0]["id"] == PENSION.service_id
-
-
-def test_repeated_dense_chunks_do_not_consume_multiple_cards():
-    service, _ = make(dense=[
-        (PENSION.service_id, 0.8), (PENSION.service_id, 0.7), (CARE.service_id, 0.6),
-    ])
-    result = service.answer("노후에 필요한 도움", None)
-    assert [item["id"] for item in result["services"]] == [PENSION.service_id, CARE.service_id]
-
-
-@pytest.mark.parametrize("reply", [
-    "기초연금은 30만원을 지원합니다.",
-    "기초연금은 65세 이상이면 받을 수 있어요.",
-    "기초연금은 1588로 문의하세요.",
-    "기초연금은 https://example.com/apply 에서 신청해요.",
-])
-def test_query_is_not_a_source_for_invented_conditions_contacts_or_links(reply):
-    service, _ = make(dense=[(PENSION.service_id, 0.8)], reply=reply)
-    result = service.answer("65세에게 30만원인가요? 1588 또는 https://example.com/apply 맞나요?", None)
-    assert result["kind"] == "fallback"
-
-
-def test_profile_age_is_not_evidence_of_an_eligibility_threshold():
-    service, _ = make(dense=[(PENSION.service_id, 0.8)], reply="기초연금은 70세 이상이면 받을 수 있어요.")
-    result = service.answer("연금 지원", {"age": 70})
-    assert "70세 이상" not in result["text"]
-
-
-def test_empty_catalog_is_cached_and_does_not_call_models():
-    class EmptyRepo:
-        calls = 0
-
-        def all_services(self):
-            self.calls += 1
-            return []
-
-    repo = EmptyRepo()
-    model = FakeOllama()
-    service = ChatService(repo, model, 0.5, 5)
-    assert service.answer("연금", None)["kind"] == "fallback"
-    assert service.answer("주거", None)["kind"] == "fallback"
-    assert repo.calls == 1
-    assert model.chat_calls == 0
-
-
-def test_reranker_reorders_candidates_before_source_selection():
-    model = FakeOllama()
-    reranker = FakeReranker(scores=[0.6, 0.95])
-    service = ChatService(FakeRepo(dense=[(PENSION.service_id, 0.9), (CARE.service_id, 0.8)]),
-                          model, 0.45, 12, reranker=reranker)
-    result = service.answer("노후에 필요한 도움", None)
-    assert [r["id"] for r in result["services"]] == [CARE.service_id, PENSION.service_id]
-    assert CARE.summary in result["text"]
-    assert reranker.calls[0][0] == "노후에 필요한 도움"
-
-
-@pytest.mark.parametrize("scores", [[0.49], [float("nan")], [], [1.1]])
-def test_irrelevant_or_invalid_rerank_scores_abstain_without_generation(scores):
-    model = FakeOllama()
-    service = ChatService(FakeRepo(dense=[(PENSION.service_id, 0.99)]), model, 0.45, 12,
-                          reranker=FakeReranker(scores))
-    assert service.answer("우주 여행 지원", None)["kind"] == "fallback"
-    assert model.chat_calls == 0
-
-
-def test_unavailable_reranker_does_not_publish_retrieval_candidates():
-    service = ChatService(FakeRepo(dense=[(PENSION.service_id, 0.99)]), FakeOllama(), 0.45, 12,
-                          reranker=FakeReranker(fail=True))
-    assert service.answer("연금 지원", None)["kind"] == "fallback"
-
-
-@pytest.mark.parametrize("selection", [
-    {"service_ids": []}, {"service_ids": ["unknown"]}, {"service_ids": "WLF00001164"},
-    {"service_ids": [PENSION.service_id, PENSION.service_id]}, {}, {"service_ids": [None]},
-])
-def test_invalid_or_empty_source_selection_abstains(selection):
-    service, _ = make(dense=[(PENSION.service_id, 0.9)], reply=selection)
-    assert service.answer("어르신 연금", None)["kind"] == "fallback"
-
-
-def test_only_database_facts_are_published_even_if_model_adds_invented_text():
-    service, _ = make(dense=[(PENSION.service_id, 0.9)], reply={
-        "service_ids": [PENSION.service_id], "text": "65세면 100만원, 1588-0000, https://invented.invalid",
-    })
-    result = service.answer("65세면 100만원인가요?", None)
-    assert result["kind"] == "answer"
-    assert result["text"] == f"{PENSION.name}: {PENSION.summary} 자료의 기준일과 실제 대상 여부는 담당 기관에서 확인해 주세요."
-    assert result["services"][0]["url"] == PENSION.url
-    assert result["services"][0]["contacts"] == PENSION.contacts
-
-
-def test_generic_discount_word_alone_does_not_make_unrelated_service_relevant():
-    from dataclasses import replace
-
-    class DiscountRepo(FakeRepo):
-        def all_services(self):
-            return [replace(PENSION, name="양곡할인", summary="저소득층의 양곡 구매를 지원합니다.")]
-
-    model = FakeOllama()
-    service = ChatService(DiscountRepo(dense=[]), model, 0.52, 5)
-    assert service.answer("반려동물 미용 할인", None)["kind"] == "fallback"
-    assert model.chat_calls == 0
+def test_embedding_failure_still_uses_keyword_candidates():
+    service, _ = make(embed_fail=True)
+    assert service.answer("노인 돌봄 서비스", None)["kind"] == "answer"

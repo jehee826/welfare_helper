@@ -1,0 +1,8 @@
+services:
+  backend:
+    environment:
+      DATABASE_MODE: supabase
+      INGEST_ON_STARTUP: "false"
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
+      RERANK_CACHE_DIR: /app/.reranker_cache

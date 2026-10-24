@@ -11,7 +11,7 @@
 
 ## 준비
 1. 로컬 Ollama에 모델 받기: `ollama pull gemma3:4b`, `ollama pull bge-m3`
-2. 루트 `.env`에 `DATABASE_URL`(Supabase Transaction pooler), `OLLAMA_BASE_URL=http://127.0.0.1:11434` 설정 (`.env.example` 참고)
+2. `.env.example`을 참고해 `DATABASE_URL`, `OLLAMA_BASE_URL` 등 실제 값을 런타임에 주입합니다. 접속 문자열·키를 저장소에 넣지 않습니다.
 3. 파이썬 의존성: `pip install -r requirements.txt pytest`
 4. 프론트 의존성: `cd FrontEnd && npm install`
 
@@ -22,13 +22,40 @@ python -m BackEnd.ingest.run --dry-run          # 모델·DB 호출 없이 CSV �
 python -m BackEnd.ingest.run --check-embeddings # DB 호출 없이 실제 임베딩 검증
 ```
 
-서비스명·분류·요약 또는 임베딩 모델이 바뀐 청크만 다시 임베딩합니다. 문의처·URL 등 메타데이터는 매번 갱신합니다. CSV에서 빠진 서비스는 기본적으로 보존합니다. 전체 스냅샷에서 누락된 서비스를 실제로 삭제하려면 내용을 확인한 뒤 `--prune`을 명시합니다.
+서비스명·분류·요약 또는 임베딩 모델이 바뀐 청크만 다시 임베딩합니다. 문의처·URL 등 메타데이터는 매번 갱신합니다. `DATABASE_URL` 또는 Supabase 모드에서는 명시적인 `--allow-shared-write` 없이는 CSV 쓰기를 거부하고 스키마를 초기화하지 않습니다. 공용 DB를 오래된 로컬 CSV로 갱신하지 않도록 대상을 먼저 확인해야 합니다. CSV에서 빠진 서비스는 기본 보존하며 삭제는 별도의 명시적인 `--prune` 작업에서만 수행합니다.
 
 기본 인코딩은 CP949이며 UTF-8 CSV는 `--encoding utf-8-sig`를 사용합니다. 빈 파일·필수 컬럼 누락·ID 중복은 DB 반영 전에 거부합니다. 모델은 기존 `vector(1024)` 구조와 같은 1024차원이어야 합니다. 모델을 바꾸면 적재를 다시 실행해야 하며, 검색은 현재 설정한 모델의 벡터만 사용합니다.
 
 검색은 서비스명 직접 언급과 의미·키워드 RRF 검색으로 후보를 모은 뒤, 질문과 후보 원문을 교차 인코더로 리랭킹합니다. `RETRIEVE_TOP_N`개 후보 중 `MIN_RERANK_SCORE` 이상인 최대 3개만 LLM에 전달합니다. 의미 검색 기준은 `MIN_DENSE_SIM`입니다. 리랭커가 없거나 관련성 점수가 낮으면 후보만으로 답변을 만들지 않고 보류합니다. 점수는 관련성 지표이며, 사실 정확도나 지원 자격 확률이 아닙니다.
 
-LangChain의 `ChatPromptTemplate`·`ChatOllama`·`JsonOutputParser`로 LLM의 자료 선택을 처리합니다. LLM은 확인된 서비스 ID만 선택하며, 표시할 설명은 선택된 DB 요약 원문으로 구성합니다. 자유 생성한 금액·자격·전화번호·URL은 표시하지 않습니다. 문의처·링크·자료 수정일도 DB 값으로 유지합니다. 자료가 낡았거나 요약에 상세 조건이 없으면 원문만으로 최신 자격을 확정할 수 없습니다.
+LangChain의 `ChatPromptTemplate`·`ChatOllama`·`JsonOutputParser`로 원문 인용과 확인 질문을 생성합니다. 각 사실 인용은 실제 청크 ID와 원문의 완전한 문장에 일치해야 합니다. 검증된 섹션 원문과 주변 적용 조건·예외를 함께 표시하며, 지원 금액·자격·신청 방법에는 공식 상세 섹션과 기준 정보가 필요합니다. CSV 요약만 있으면 상세 원문으로 가장하지 않고 보류합니다. 자료가 오래됐거나 잘못 수집됐을 가능성까지 제거하는 검증은 아니며 최신 자격을 확정하지 않습니다.
+
+서비스명이 명시되면 ID로 원문을 조회해 불필요한 임베딩 호출을 줄입니다. 일반 질문은 의미·키워드 RRF 후보를 재평가하며, 주변 조건 보완 조회는 한 번만 수행합니다. 자동 질문 분해·반복 검색은 하지 않습니다. 리랭커 준비 실패와 자료 부족은 각각 `model_not_ready`, `insufficient_evidence` 사유로 구분합니다.
+
+## 공식 상세 원문 보강
+[공공데이터포털 중앙부처복지서비스](https://www.data.go.kr/data/15090532/openapi.do)의 상세조회 API를 사용합니다. 활용신청한 `BOKJIRO_SERVICE_KEY`가 필요하며, 서비스 ID를 최대 5개만 명시해 호출합니다. 기본 명령은 DB 읽기·공식 API 조회만 하고, `--write`에서만 상세 청크를 갱신합니다.
+
+```cmd
+python -m BackEnd.ingest.details --service-id WLF00001164
+python -m BackEnd.ingest.details --service-id WLF00001164 --write
+```
+
+지원대상·선정기준·급여내용·신청방법을 섹션 단위 원문으로 보존합니다. 기존 `welfare_chunks.content`의 JSON 봉투에 출처 URL·기준연도·수집일을 저장하므로 테이블 관계와 `vector(1024)`는 바꾸지 않습니다. API가 제공하지 않은 최종 수정일을 CSV 수정일이나 수집일로 채우지 않습니다. 문의처·대표 링크는 공용 DB 값을 유지합니다. 쓰기 명령도 서비스 메타데이터·누락 청크를 자동 삭제하지 않습니다.
+
+## 공용 Supabase와 로컬 실행 분리
+상주 백엔드가 IPv4 환경이면 [공식 연결 안내](https://supabase.com/docs/guides/database/connecting-to-postgres)에 따라 Session pooler를 검토합니다. 호스트·포트·사용자명은 실제 Connect 화면에서 가져오며 지역명으로 조합하지 않습니다. `DATABASE_URL`을 우선 사용하고 TLS를 요구합니다.
+
+`DATABASE_URL`에는 비밀번호를 제외한 접속 주소를 넣고 `DATABASE_PASSWORD`에 비밀번호를 별도로 주입할 수 있습니다. 예를 들어 `postgresql://postgres.<project-ref>@<pooler-host>:5432/postgres` 형태이며, 실제 호스트·사용자명은 Connect 값을 사용합니다. 비밀번호는 URI 문자열에 이어 붙이지 않고 psycopg2의 password 인자로 전달하므로 예약 문자를 인코딩할 필요가 없습니다. 기존 비밀번호 포함 URL도 지원하며, `DATABASE_PASSWORD`가 있으면 그 값이 우선됩니다. 로컬 DB_* 경로의 `DB_PASSWORD`는 그대로 유지합니다.
+
+```cmd
+docker compose -f docker-compose.yml -f docker-compose.supabase.yml -f docker-compose.notebook.yml up --build backend ollama
+```
+
+Supabase 모드에서는 로컬 PostgreSQL 의존성과 시작 시 CSV 적재가 없습니다. 연결 값이 없으면 로컬 DB로 대체하지 않고 설정 오류로 종료합니다. 노트북 오버라이드는 Qwen 2.5 태그를 사용하며 `NOTEBOOK_LLM`으로 실제 설치 태그를 지정할 수 있습니다. 기본 gemma3 설정을 바꾸지 않고 컨텍스트 2048·후보 6개·CPU 스레드 2개·Ollama 메모리 2GB로 제한합니다. Compose up은 이미지·설정 변경 시 해당 컨테이너를 재생성할 수 있으므로 기존 실행 상태와 데이터 마운트를 확인한 뒤 사용합니다.
+
+로컬 DB 모드는 `DATABASE_URL`을 비우고 `docker compose --profile local up --build`로 실행합니다. 기존 로컬 초기 CSV 적재 편의는 유지하며 `INGEST_ON_STARTUP=false`로 끌 수 있습니다. 기존 데이터 폴더를 보존합니다.
+
+공용 테이블은 Data API의 노출 스키마·`anon`/`authenticated` grants·RLS 정책을 함께 확인해야 합니다. RLS를 켜고 정책을 주지 않으면 기존 Data API 접근이 차단됩니다. 다른 파트의 직접 호출 여부를 조율한 뒤 공공 자료 읽기 정책과 서버 전용 쓰기 권한을 정하며, 백엔드 시작 코드에서 권한을 일괄 변경하지 않습니다.
 
 ## 로컬 리랭커 준비
 ```cmd
@@ -59,7 +86,15 @@ Swagger에서 `GET /health`와 `GET /health/db`를 확인한 뒤 `POST /api/v1/c
 {"query": "기초연금은 어떤 서비스인가요?", "profile": null}
 ```
 
-`query`를 `기초연금 문의처`, `기초연금 신청 조건`으로 바꾸면 자료 기반 문의처 안내와 상세 자격 정보가 없을 때의 안내를 확인할 수 있습니다. 빈 질문이나 공백만 있는 질문은 422 응답으로 거부합니다.
+`GET /health/reranker`는 캐시 경로·파일 준비만 확인하며 추론 성공을 뜻하지 않습니다. `query`를 `기초연금 문의처`, `기초연금 신청 조건`, `기초연금 신청 방법`, `우주여행 항공권 예약`으로 바꿔 확인할 수 있습니다. 상세 근거가 없거나 무관하면 보류해야 합니다. 빈 질문이나 공백만 있는 질문은 422 응답으로 거부합니다.
+
+`history`는 선택 입력이며 최근 6턴, 최대 12개 user/assistant 메시지·전체 6000자 이내입니다. 기존 query/profile 호출은 유지합니다. 첫 요청 `{"query":"돈이 없어"}`는 도움 범위를 묻는 질문 하나를 반환하고, 후속 요청은 다음처럼 이력을 보냅니다. 이력·사용자 주장·이전 답변은 복지 사실의 근거로 사용하지 않습니다.
+
+```json
+{"query":"생활비","profile":null,"history":[{"role":"user","content":"돈이 없어"},{"role":"assistant","content":"생활비, 주거비, 병원비 중 어떤 도움이 가장 급하신가요?"}]}
+```
+
+응답의 기존 kind/text/services/suggestions와 카드 필드는 유지하며 fallback에 선택적인 `reason`을 추가합니다. 조건 확인 질문은 text에 담습니다. 프런트엔드는 history를 전송하도록 별도 연동해야 하며, 전송하지 않으면 요청 간 대화 상태를 서버에 저장하지 않습니다.
 
 ## 테스트
 ```

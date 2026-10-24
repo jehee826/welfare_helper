@@ -1,0 +1,16 @@
+services:
+  backend:
+    environment:
+      OLLAMA_LLM: ${NOTEBOOK_LLM:-qwen2.5:1.5b-instruct}
+      LLM_NUM_CTX: "2048"
+      LLM_NUM_PREDICT: "300"
+      LLM_NUM_THREAD: "2"
+      RETRIEVE_TOP_N: "6"
+      RERANK_THREADS: "2"
+  ollama:
+    cpus: 2
+    mem_limit: 2g
+    environment:
+      OLLAMA_PULL_MODELS: "${NOTEBOOK_LLM:-qwen2.5:1.5b-instruct} ${OLLAMA_EMBED:-bge-m3}"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"

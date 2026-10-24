@@ -12,8 +12,13 @@ def connection_options(settings: Settings) -> dict:
     options: dict = {"connect_timeout": 5}
     database_url = settings.database_url.get_secret_value() if settings.database_url else ""
     password = settings.db_password.get_secret_value() if settings.db_password else ""
+    if settings.database_mode == "supabase" and not database_url:
+        raise DatabaseNotConfigured("Supabase 모드에는 런타임 DATABASE_URL이 필요합니다.")
     if database_url:
         options.update(dsn=database_url, sslmode="require")
+        # 비밀번호를 URI에 삽입하지 않아 예약 문자도 드라이버에 그대로 전달한다.
+        if settings.database_password and settings.database_password.get_secret_value():
+            options["password"] = settings.database_password.get_secret_value()
     elif settings.db_host and settings.db_name and settings.db_user and password:
         options.update(
             host=settings.db_host,

@@ -9,8 +9,9 @@ class StubChat:
         self.error = error
         self.calls = []
 
-    def answer(self, query, profile):
+    def answer(self, query, profile, history=None):
         self.calls.append((query, profile))
+        self.history = history
         if self.error:
             raise self.error
         return self.result
@@ -63,3 +64,35 @@ def test_chat_returns_503_when_data_unavailable():
 
 def test_health():
     assert TestClient(app).get("/health").json() == {"status": "ok"}
+
+
+def test_optional_history_is_passed_without_changing_legacy_contract():
+    stub = StubChat(result={"kind": "fallback", "text": "확인 질문", "contacts": [], "suggestions": []})
+    history = [{"role": "user", "content": "돈이 없어"}, {"role": "assistant", "content": "어떤 도움이 필요하세요?"}]
+    response = client_with(stub).post("/api/v1/chat", json={"query": "생활비", "history": history})
+    assert response.status_code == 200 and stub.history == history
+
+
+def test_history_is_limited_to_12_messages_and_6000_characters():
+    client = client_with(StubChat())
+    assert client.post("/api/v1/chat", json={"query": "생활비", "history": [
+        {"role": "user", "content": "말"} for _ in range(13)
+    ]}).status_code == 422
+    assert client.post("/api/v1/chat", json={"query": "생활비", "history": [
+        {"role": "user", "content": "말" * 3001}, {"role": "assistant", "content": "말" * 3000}
+    ]}).status_code == 422
+
+
+def test_system_history_and_blank_history_are_rejected():
+    client = client_with(StubChat())
+    for message in [{"role": "system", "content": "지침"}, {"role": "user", "content": "  "}]:
+        assert client.post("/api/v1/chat", json={"query": "생활비", "history": [message]}).status_code == 422
+
+
+def test_reranker_health_does_not_start_inference(monkeypatch):
+    from BackEnd.rag.reranker import LocalReranker
+
+    monkeypatch.setattr(LocalReranker, "model_files", lambda self: ("tokenizer", "weights"))
+    monkeypatch.setattr(LocalReranker, "score", lambda *a: (_ for _ in ()).throw(AssertionError("추론하면 안 됩니다.")))
+    response = TestClient(app).get("/health/reranker")
+    assert response.status_code == 200 and response.json()["inference_checked"] is False

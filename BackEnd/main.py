@@ -5,14 +5,14 @@ from typing import Literal
 
 import psycopg2
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
 from BackEnd.rag.chat import ChatService
 from BackEnd.rag.ollama import OllamaClient
 from BackEnd.rag.repository import PgServiceRepository
-from BackEnd.rag.reranker import LocalReranker
+from BackEnd.rag.reranker import LocalReranker, RerankerError
 
 logger = logging.getLogger("welfare_helper")
 
@@ -27,9 +27,29 @@ class ProfileIn(BaseModel):
     disability: bool
 
 
+class HistoryMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=6000)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("빈 대화 메시지는 사용할 수 없습니다.")
+        return value
+
+
+
 class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=300)
     profile: ProfileIn | None = None
+    history: list[HistoryMessage] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def validate_history_size(self):
+        if sum(len(message.content) for message in self.history) > 6000:
+            raise ValueError("대화 이력은 전체 6000자 이내여야 합니다.")
+        return self
 
     @field_validator("query")
     @classmethod
@@ -40,6 +60,9 @@ class ChatRequest(BaseModel):
         return value
 
 
+
+
+
 @lru_cache
 def get_chat_service() -> ChatService:
     settings = get_settings()
@@ -48,7 +71,8 @@ def get_chat_service() -> ChatService:
         settings.ollama_embed,
         settings.ollama_llm,
         settings.ollama_timeout,
-        {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx, "num_predict": settings.llm_num_predict},
+        {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
+         "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
         embed_dim=settings.embed_dim,
     )
     repo = PgServiceRepository(
@@ -69,6 +93,16 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/health/reranker")
+def reranker_health():
+    settings = get_settings()
+    try:
+        LocalReranker(settings.rerank_model, settings.rerank_revision, settings.rerank_cache_dir).model_files()
+    except RerankerError:
+        raise HTTPException(status_code=503, detail="리랭커 캐시 준비가 필요합니다.") from None
+    return {"status": "ok", "reranker": "cache_ready", "inference_checked": False}
+
+
 @app.get("/health/db")
 def database_health():
     try:
@@ -86,9 +120,12 @@ def database_health():
 def chat(request: ChatRequest, service: ChatService = Depends(get_chat_service)):
     profile = request.profile.model_dump() if request.profile else None
     try:
+        if request.history:
+            return service.answer(request.query.strip(), profile,
+                                  [message.model_dump() for message in request.history])
         return service.answer(request.query.strip(), profile)
-    except Exception:
-        logger.exception("chat failed")
+    except Exception as exc:
+        logger.error("chat failed (%s)", type(exc).__name__)
         raise HTTPException(
             status_code=503,
             detail="상담 데이터를 불러오지 못했어요. 잠시 후 다시 시도하거나 보건복지상담센터 129로 문의해 주세요.",

@@ -43,11 +43,11 @@ def test_search_excludes_embeddings_from_other_models(repo):
     repo.sync_snapshot([PENSION], indexed(PENSION))
     other = PgServiceRepository(lambda: psycopg2.connect(TEST_DSN), embed_model="other-model")
     other.sync_snapshot([CARE], indexed(CARE))
-    assert repo.dense_search(VECTOR, 5) == [(PENSION.service_id, 1.0)]
-    assert other.dense_search(VECTOR, 5) == [(CARE.service_id, 1.0)]
+    assert [(c.service_id, c.score) for c in repo.dense_search(VECTOR, 5)] == [(PENSION.service_id, 1.0)]
+    assert [(c.service_id, c.score) for c in other.dense_search(VECTOR, 5)] == [(CARE.service_id, 1.0)]
 
 
-def test_dense_limit_is_applied_to_unique_services_not_chunks(repo):
+def test_dense_results_keep_chunk_ids_bodies_and_scores(repo):
     repo.sync_snapshot([PENSION, CARE], indexed(PENSION, CARE))
     with psycopg2.connect(TEST_DSN) as conn, conn.cursor() as cursor:
         cursor.execute(
@@ -55,7 +55,9 @@ def test_dense_limit_is_applied_to_unique_services_not_chunks(repo):
             "FROM welfare_chunks WHERE service_id = %s",
             (PENSION.service_id,),
         )
-    assert len(repo.dense_search(VECTOR, 2)) == 2
+    chunks = repo.dense_search(VECTOR, 2)
+    assert len(chunks) == 2 and len({chunk.chunk_id for chunk in chunks}) == 2
+    assert all(chunk.text and chunk.source_url and chunk.score == 1.0 for chunk in chunks)
 
 
 def test_invalid_snapshot_rolls_back_existing_metadata(repo):
@@ -85,3 +87,17 @@ def test_invalid_vectors_are_rejected_without_connecting(vector):
 
     with pytest.raises(ValueError):
         PgServiceRepository(unexpected).dense_search(vector, 5)
+
+
+def test_official_detail_metadata_round_trips_without_changing_services(repo):
+    from BackEnd.tests.test_chat import APPLICATION, TARGET, CRITERIA
+
+    repo.sync_snapshot([PENSION], indexed(PENSION))
+    count = repo.sync_details([APPLICATION, TARGET, CRITERIA], {
+        chunk.chunk_id: VECTOR for chunk in (APPLICATION, TARGET, CRITERIA)
+    })
+    assert count == 3
+    chunks = repo.chunks_for_services([PENSION.service_id])
+    official = [chunk for chunk in chunks if chunk.official]
+    assert len(official) == 3 and all(chunk.collected_at for chunk in official)
+    assert len(repo.all_services()) == 1

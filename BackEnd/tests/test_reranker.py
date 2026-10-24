@@ -9,18 +9,20 @@ def test_empty_candidates_do_not_load_model():
     assert LocalReranker("missing-model", "revision", "missing-cache").score("질문", []) == []
 
 
-def test_missing_model_abstains_without_network_or_download(tmp_path, monkeypatch):
-    calls = []
-
-    def missing(*args, **kwargs):
-        calls.append(kwargs)
-        raise FileNotFoundError("private/cache/location")
-
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", missing)
+def test_missing_model_abstains_without_network_or_download(tmp_path):
     with pytest.raises(RerankerError) as error:
         LocalReranker("missing-model", "revision", str(tmp_path)).score("질문", ["자료"])
-    assert calls[0]["local_files_only"] is True
     assert "private/cache/location" not in str(error.value)
+
+
+def test_plain_snapshot_files_are_used_without_hub_metadata(tmp_path):
+    root = tmp_path / "models--owner--model" / "snapshots" / "revision"
+    (root / "onnx").mkdir(parents=True)
+    (root / "tokenizer.json").write_text("{}")
+    (root / "onnx/model_quantized.onnx").write_bytes(b"test-only")
+    files = LocalReranker("owner/model", "revision", str(tmp_path)).model_files()
+    assert files[0] == root / "tokenizer.json"
+    assert files[1] == root / "onnx/model_quantized.onnx"
 
 
 @pytest.mark.skipif(os.environ.get("RAG_TEST_RERANKER") != "1", reason="명시적으로 준비한 로컬 모델에서만 실행합니다.")

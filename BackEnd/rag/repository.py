@@ -6,6 +6,7 @@ from psycopg2.extras import Json, execute_values
 
 from BackEnd.ingest.csv_loader import ServiceRecord
 from BackEnd.rag.embeddings import validate_embeddings
+from BackEnd.rag.evidence import EvidenceChunk, read_chunk
 
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 
@@ -103,16 +104,58 @@ class PgServiceRepository:
                 for row in cur.fetchall()
             ]
 
-    def dense_search(self, embedding: list[float], k: int) -> list[tuple[str, float]]:
+    def chunks_for_services(self, ids: list[str]) -> list[EvidenceChunk]:
+        if not ids:
+            return []
+        with closing(self._connect()) as conn, conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT c.chunk_id,c.service_id,c.content,s.url,s.source_updated_at "
+                "FROM welfare_chunks c JOIN welfare_services s USING(service_id) "
+                "WHERE c.service_id = ANY(%s) AND c.embed_model = %s ORDER BY c.chunk_id LIMIT 500",
+                (ids[:50], self.embed_model),
+            )
+            return [read_chunk(row[0], row[1], row[2], row[3], row[4].isoformat() if row[4] else "")
+                    for row in cur.fetchall()]
+
+    def sync_details(self, chunks: list[EvidenceChunk], embeddings: dict[str, list[float]]) -> int:
+        """명시적으로 수집한 상세 청크만 갱신한다. 기존 서비스·CSV·누락 청크는 삭제하지 않는다."""
+        if not chunks or any(chunk.source_kind != "official_detail" for chunk in chunks):
+            raise ValueError("공식 상세 청크가 필요합니다.")
+        ids = {chunk.chunk_id for chunk in chunks}
+        if len(ids) != len(chunks) or not set(embeddings).issubset(ids):
+            raise ValueError("청크와 임베딩 ID가 일치하지 않습니다.")
+        if any(chunk.chunk_id != f"{chunk.service_id}:official:{chunk.section}" for chunk in chunks):
+            raise ValueError("공식 상세 청크 ID와 서비스가 일치하지 않습니다.")
+        validate_embeddings(list(embeddings.values()), len(embeddings), self.embed_dim)
+        with closing(self._connect()) as conn, conn, conn.cursor() as cur:
+            changed = [chunk for chunk in chunks if chunk.chunk_id in embeddings]
+            if changed:
+                execute_values(cur,
+                    "INSERT INTO welfare_chunks(chunk_id,service_id,content,embedding,embed_model) VALUES %s "
+                    "ON CONFLICT(chunk_id) DO UPDATE SET content=EXCLUDED.content, "
+                    "embedding=EXCLUDED.embedding,embed_model=EXCLUDED.embed_model",
+                    [(chunk.chunk_id, chunk.service_id, chunk.storage(), vector_literal(embeddings[chunk.chunk_id]),
+                      self.embed_model) for chunk in changed], template="(%s,%s,%s,%s::vector,%s)")
+            for chunk in chunks:
+                if chunk.chunk_id not in embeddings:
+                    cur.execute("UPDATE welfare_chunks SET content=%s WHERE chunk_id=%s AND embed_model=%s",
+                                (chunk.storage(), chunk.chunk_id, self.embed_model))
+                    if cur.rowcount != 1:
+                        raise ValueError("새로운 상세 청크에는 임베딩이 필요합니다.")
+        return len(chunks)
+
+    def dense_search(self, embedding: list[float], k: int) -> list[EvidenceChunk]:
         validate_embeddings([embedding], 1, self.embed_dim)
         if k < 1:
             raise ValueError("검색 개수는 1 이상이어야 합니다.")
         literal = vector_literal(embedding)
         with closing(self._connect()) as conn, conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT service_id, MAX(1 - (embedding <=> %s::vector)) AS similarity "
-                "FROM welfare_chunks WHERE embed_model = %s "
-                "GROUP BY service_id ORDER BY similarity DESC, service_id LIMIT %s",
-                (literal, self.embed_model, k),
+                "SELECT c.chunk_id,c.service_id,c.content,s.url,s.source_updated_at, "
+                "1 - (c.embedding <=> %s::vector) AS similarity "
+                "FROM welfare_chunks c JOIN welfare_services s USING(service_id) WHERE c.embed_model=%s "
+                "ORDER BY c.embedding <=> %s::vector,c.chunk_id LIMIT %s",
+                (literal, self.embed_model, literal, k),
             )
-            return [(row[0], float(row[1])) for row in cur.fetchall()]
+            return [read_chunk(row[0], row[1], row[2], row[3], row[4].isoformat() if row[4] else "", float(row[5]))
+                    for row in cur.fetchall()]

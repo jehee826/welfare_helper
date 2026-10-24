@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="모델·DB 호출 없이 CSV와 청크를 검증합니다.")
     parser.add_argument("--check-embeddings", action="store_true", help="DB 호출 없이 실제 임베딩을 검증합니다.")
     parser.add_argument("--prune", action="store_true", help="CSV에서 빠진 서비스와 청크를 삭제합니다.")
+    parser.add_argument("--allow-shared-write", action="store_true", help="공용 DATABASE_URL 대상의 명시적인 CSV 갱신을 허용합니다.")
     parser.add_argument("--batch-size", type=int, default=32)
     args = parser.parse_args(argv)
     if not 1 <= args.batch_size <= 128:
@@ -39,13 +40,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     settings = get_settings()
+    shared = settings.database_mode == "supabase" or bool(
+        settings.database_url and settings.database_url.get_secret_value()
+    )
+    if shared and not args.check_embeddings and not args.allow_shared_write:
+        print("공용 DB 자동 갱신을 차단했습니다. 대상·CSV를 확인한 명시적 작업에서만 --allow-shared-write를 사용하세요.", file=sys.stderr)
+        return 1
     repo = PgServiceRepository(
         lambda: connect(settings), embed_model=settings.ollama_embed, embed_dim=settings.embed_dim
     )
     try:
         existing = {}
         if not args.check_embeddings:
-            repo.init_schema()
+            if not shared:
+                repo.init_schema()
             existing = repo.indexed_chunks()
         changed = [
             sid for sid, text in texts.items()

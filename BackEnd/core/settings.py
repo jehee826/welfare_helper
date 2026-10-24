@@ -1,4 +1,6 @@
 from functools import lru_cache
+from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,6 +12,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: SecretStr | None = None
+    database_password: SecretStr | None = None
+    database_mode: Literal["auto", "local", "supabase"] = "auto"
+    ingest_on_startup: bool = True
     db_host: str = ""
     db_port: int = 5432
     db_name: str = ""
@@ -24,15 +29,19 @@ class Settings(BaseSettings):
     llm_num_ctx: int = Field(default=8192, ge=512)
     llm_temperature: float = Field(default=0.2, ge=0, le=2)
     llm_num_predict: int = Field(default=250, ge=1)
+    llm_num_thread: int = Field(default=2, ge=1, le=16)
 
     retrieve_top_n: int = Field(default=12, ge=1, le=50)
     min_dense_sim: float = Field(default=0.52, ge=-1, le=1)
     rerank_model: str = "onnx-community/bge-reranker-v2-m3-ONNX"
     rerank_revision: str = "6f5ff65298512715a1e669753bc754d2bc8f367b"
-    rerank_cache_dir: str = ".reranker_cache"
+    rerank_cache_dir: str = str(Path(__file__).resolve().parents[2] / ".reranker_cache")
     rerank_max_length: int = Field(default=512, ge=128, le=512)
     rerank_threads: int = Field(default=2, ge=1, le=8)
     min_rerank_score: float = Field(default=0.5, ge=0, le=1)
+    bokjiro_service_key: SecretStr | None = None
+    bokjiro_detail_url: str = "https://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfaredetailedV001"
+    bokjiro_timeout: float = Field(default=15, gt=0, le=60)
 
 
 @lru_cache

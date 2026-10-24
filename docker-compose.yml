@@ -8,6 +8,10 @@ services:
     env_file:
       - .env
     environment:
+      DATABASE_MODE: supabase
+      INGEST_ON_STARTUP: "false"
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
       DB_USER: ${DB_USER:-}
       DB_PASSWORD: ${DB_PASSWORD:-}
       DB_NAME: ${DB_NAME:-}
@@ -40,7 +44,8 @@ services:
     environment:
       OLLAMA_HOST: 0.0.0.0
       OLLAMA_PULL_MODELS: "${OLLAMA_LLM:-gemma3:4b} ${OLLAMA_EMBED:-bge-m3}"
-      # OLLAMA_NUM_PARALLEL: 4 동접 처리를 위한 Ollama 컨테이너 다중화
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
     healthcheck:
       test: ['CMD-SHELL', 'for model in $$OLLAMA_PULL_MODELS; do ollama show "$$model" >/dev/null 2>&1 || exit 1; done']
       start_period: 10m

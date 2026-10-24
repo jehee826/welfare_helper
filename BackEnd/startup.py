@@ -10,6 +10,7 @@ import psycopg2
 from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
 from BackEnd.ingest.run import main as ingest
+from BackEnd.rag.reranker import download_model
 
 
 def prepare() -> int:
@@ -41,7 +42,22 @@ def prepare() -> int:
     return 1
 
 
-if __name__ == "__main__":
+def main() -> int:
     if prepare():
-        raise SystemExit(1)
+        return 1
+    try:
+        download_model()
+    except Exception as exc:
+        print(
+            f"리랭커 캐시 준비 실패 ({type(exc).__name__}). "
+            "네트워크·모델/revision·캐시 쓰기 권한·디스크 공간을 확인해 주세요. 백엔드를 시작하지 않습니다.",
+            file=sys.stderr,
+        )
+        return 1
+    sys.stdout.flush()
     os.execvp("uvicorn", ["uvicorn", "BackEnd.main:app", "--host", "0.0.0.0", "--port", "8000"])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

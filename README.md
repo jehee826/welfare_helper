@@ -10,9 +10,9 @@
 | `vercel.json` | 프론트·백엔드를 한 Vercel 프로젝트로 배포 (`/api/*`, `/health*` → 백엔드) |
 
 ## 준비
-1. 로컬 Ollama에 모델 받기: `ollama pull gemma3:4b`, `ollama pull bge-m3`
+1. Docker 실행에서는 아래 단일 Compose 명령이 Ollama 모델과 리랭커 캐시를 준비합니다. 호스트에서 직접 실행할 때만 사용할 Ollama 모델을 별도로 준비합니다.
 2. `.env.example`을 참고해 `DATABASE_URL`, `OLLAMA_BASE_URL` 등 실제 값을 런타임에 주입합니다. 접속 문자열·키를 저장소에 넣지 않습니다.
-3. 파이썬 의존성: `pip install -r requirements.txt pytest`
+3. 호스트에서 직접 실행할 때 파이썬 의존성: `pip install -r requirements.txt pytest`. Docker 실행은 이미지 빌드에서 설치합니다.
 4. 프론트 의존성: `cd FrontEnd && npm install`
 
 ## 데이터 적재 (CSV가 바뀔 때마다)
@@ -42,32 +42,38 @@ python -m BackEnd.ingest.details --service-id WLF00001164 --write
 
 지원대상·선정기준·급여내용·신청방법을 섹션 단위 원문으로 보존합니다. 기존 `welfare_chunks.content`의 JSON 봉투에 출처 URL·기준연도·수집일을 저장하므로 테이블 관계와 `vector(1024)`는 바꾸지 않습니다. API가 제공하지 않은 최종 수정일을 CSV 수정일이나 수집일로 채우지 않습니다. 문의처·대표 링크는 공용 DB 값을 유지합니다. 쓰기 명령도 서비스 메타데이터·누락 청크를 자동 삭제하지 않습니다.
 
-## 공용 Supabase와 로컬 실행 분리
+## Supabase와 Docker 실행
 상주 백엔드가 IPv4 환경이면 [공식 연결 안내](https://supabase.com/docs/guides/database/connecting-to-postgres)에 따라 Session pooler를 검토합니다. 호스트·포트·사용자명은 실제 Connect 화면에서 가져오며 지역명으로 조합하지 않습니다. `DATABASE_URL`을 우선 사용하고 TLS를 요구합니다.
 
 `DATABASE_URL`에는 비밀번호를 제외한 접속 주소를 넣고 `DATABASE_PASSWORD`에 비밀번호를 별도로 주입할 수 있습니다. 예를 들어 `postgresql://postgres.<project-ref>@<pooler-host>:5432/postgres` 형태이며, 실제 호스트·사용자명은 Connect 값을 사용합니다. 비밀번호는 URI 문자열에 이어 붙이지 않고 psycopg2의 password 인자로 전달하므로 예약 문자를 인코딩할 필요가 없습니다. 기존 비밀번호 포함 URL도 지원하며, `DATABASE_PASSWORD`가 있으면 그 값이 우선됩니다. 로컬 DB_* 경로의 `DB_PASSWORD`는 그대로 유지합니다.
 
 ```cmd
-docker compose -f docker-compose.yml -f docker-compose.supabase.yml -f docker-compose.notebook.yml up -d --build backend ollama
+docker compose up -d --build
 ```
 
-Supabase 모드에서는 로컬 PostgreSQL 의존성과 시작 시 CSV 적재가 없습니다. 연결 값이 없으면 로컬 DB로 대체하지 않고 설정 오류로 종료합니다. 기존 notebook 파일은 자원 제한용이며 컨텍스트 2048·출력 300·후보 6개·CPU 스레드 2개·Ollama 2 CPU·메모리 2GB·동시 추론 및 적재 모델 각 1개 제한을 유지합니다. 큰 모델은 메모리 한도를 넘어 실행하지 못할 수 있습니다.
+노트북과 컴퓨터 모두 이 명령 하나로 backend·ollama를 실행합니다. 장비별 Compose 파일이나 모드 선택은 없습니다. 기본 Compose에 `DATABASE_MODE=supabase`, `INGEST_ON_STARTUP=false`를 적용하므로 로컬 PostgreSQL을 시작하지 않고 공용 DB의 CSV 적재·스키마 변경도 수행하지 않습니다. 연결 값이 없으면 로컬 DB로 대체하지 않고 설정 오류로 종료합니다.
 
 모델을 바꿀 때는 사용자가 `.env`의 `OLLAMA_LLM` 이름 하나만 수정합니다. 예를 들어 `qwen2.5:1.5b-instruct` 또는 `gemma3:4b`를 지정하면 backend의 선택 모델과 Ollama 준비 목록에 같은 값이 전달됩니다. 모델 이름으로 정확도나 GPU 사용 가능성을 보장하지 않습니다. 선택 모델이 없으면 기존 Ollama 시작 스크립트가 다운로드할 수 있습니다.
 
+공통 2GB 메모리·2 CPU 상한은 두지 않습니다. 실행 가능한 모델 크기는 장비와 Docker의 가용 자원에 달려 있으며, 메모리가 부족하면 실행 실패나 시간 초과가 발생할 수 있습니다. Ollama의 동시 추론과 동시 적재 모델은 각각 1개로 제한합니다. 컨텍스트·출력·스레드·검색 후보 수는 장비별 분기 없이 기존 `LLM_NUM_CTX`, `LLM_NUM_PREDICT`, `LLM_NUM_THREAD`, `RETRIEVE_TOP_N` 설정과 앱 기본값을 사용합니다.
+
 수정 후 Windows CMD의 저장소 루트에서 위와 같은 Compose up 명령을 다시 실행해 backend·ollama 설정을 재적용합니다. `.env` 저장이나 `docker restart`만으로 환경변수 갱신을 보장할 수 없습니다. Compose up은 변경된 컨테이너를 재생성할 수 있으며, 기존 `ollama_data/`, `postgres_data/`, 리랭커 캐시 마운트는 유지합니다. `down -v`나 데이터 폴더 초기화는 하지 않습니다. 생성 LLM만 바꾸고 임베딩 모델·청크 내용이 같으면 재임베딩할 필요가 없습니다. Supabase·bge-m3 1024차원·리랭커 모델/리비전/임계값/캐시는 그대로 사용합니다.
 
-로컬 DB 모드는 `DATABASE_URL`을 비우고 `docker compose --profile local up --build`로 실행합니다. 기존 로컬 초기 CSV 적재 편의는 유지하며 `INGEST_ON_STARTUP=false`로 끌 수 있습니다. 기존 데이터 폴더를 보존합니다.
+기존 로컬 PostgreSQL 서비스 정의와 데이터 경로는 보존하지만 기본 실행 대상에는 포함하지 않습니다. 로컬 DB를 직접 사용하는 별도 개발 실행에서는 공용 DB 설정과 구분해야 합니다.
 
 공용 테이블은 Data API의 노출 스키마·`anon`/`authenticated` grants·RLS 정책을 함께 확인해야 합니다. RLS를 켜고 정책을 주지 않으면 기존 Data API 접근이 차단됩니다. 다른 파트의 직접 호출 여부를 조율한 뒤 공공 자료 읽기 정책과 서버 전용 쓰기 권한을 정하며, 백엔드 시작 코드에서 권한을 일괄 변경하지 않습니다.
 
 ## 로컬 리랭커 준비
+기본 Compose 실행은 백엔드 시작 전에 리랭커 캐시를 확인합니다. 고정된 `RERANK_MODEL`·`RERANK_REVISION`의 파일이 있으면 재사용하고, 없거나 빈 파일이면 필요한 tokenizer·INT8 ONNX 파일을 다운로드합니다. 준비 후 파일을 다시 확인하며 실패하면 오류 유형과 확인할 설정을 로그에 표시하고 백엔드를 시작하지 않습니다. 다운로드에는 네트워크와 캐시 폴더 쓰기 권한·디스크 공간이 필요하며, 파일 확인만으로 실제 추론 성공을 보장하지는 않습니다.
+
+아래 명령은 Docker 없이 호스트에서 캐시를 별도로 준비할 때 사용합니다. 기본 Compose 실행에는 수동 준비 명령이 필요하지 않습니다.
+
 ```cmd
 python -m pip install -r requirements-reranker.txt
 python -m BackEnd.rag.reranker
 ```
 
-[BGE 다국어 리랭커](https://huggingface.co/BAAI/bge-reranker-v2-m3)의 [INT8 ONNX 변환본](https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX)을 CPU에서 후보별로 실행합니다. 가중치 다운로드는 약 571MB이며 `.env.example`의 `RERANK_MODEL`·`RERANK_REVISION`으로 모델과 버전을 고정합니다. 준비 명령만 모델을 다운로드하고, 실제 질의는 `.reranker_cache/`의 파일만 사용합니다. `RERANK_THREADS=2`, `RERANK_MAX_LENGTH=512`로 CPU 사용과 입력 길이를 제한하며, 긴 후보 원문은 리랭킹 시 잘릴 수 있습니다. 프로세스마다 모델 메모리가 필요하므로 로컬에서는 백엔드 한 프로세스로 실행합니다.
+[BGE 다국어 리랭커](https://huggingface.co/BAAI/bge-reranker-v2-m3)의 [INT8 ONNX 변환본](https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX)을 CPU에서 후보별로 실행합니다. 가중치 다운로드는 약 571MB이며 `.env.example`의 `RERANK_MODEL`·`RERANK_REVISION`으로 모델과 버전을 고정합니다. 시작 준비 또는 위 수동 명령에서만 모델을 다운로드하고, 실제 질의는 `.reranker_cache/`의 파일만 사용합니다. `RERANK_THREADS=2`, `RERANK_MAX_LENGTH=512`로 CPU 사용과 입력 길이를 제한하며, 긴 후보 원문은 리랭킹 시 잘릴 수 있습니다. 프로세스마다 모델 메모리가 필요하므로 로컬에서는 백엔드 한 프로세스로 실행합니다.
 
 리랭커 외에도 bge-m3 임베딩과 Ollama LLM의 메모리가 필요합니다. 여유 메모리가 적거나 모델을 매번 다시 읽는 환경에서는 첫 응답이 오래 걸리거나 모델 호출이 시간 초과로 보류될 수 있습니다. 후보 수·스레드 수를 늘리면 자원 사용도 증가하므로 실제 실행 환경에 맞게 설정합니다.
 
@@ -80,9 +86,9 @@ npx vercel dev -L        # 프론트+백엔드를 http://localhost:3000 하나�
 또는 `uvicorn BackEnd.main:app --port 8000`과 `cd FrontEnd && npm run dev`를 따로 실행합니다 (Vite가 `/api`를 8000으로 넘김).
 백엔드 없이 화면만 보려면 `FrontEnd/.env`에 `VITE_USE_MOCK=true`.
 
-로컬 DB에서 검증할 때는 `DATABASE_URL`을 비우고 로컬 `DB_*` 값을 사용합니다. `DATABASE_URL`이 설정되어 있으면 Supabase 등 해당 DB가 우선됩니다. Compose의 PostgreSQL은 기존 16 버전 데이터 경로를 유지하면서 pgvector를 포함하는 `pgvector/pgvector:pg16` 이미지를 사용합니다. 기존 데이터 폴더나 볼륨을 초기화하지 않습니다.
+호스트에서 로컬 DB를 별도 검증할 때는 `DATABASE_MODE=local`로 지정하고 `DATABASE_URL`을 비운 뒤 로컬 `DB_*` 값을 사용합니다. `DATABASE_URL`이 설정되어 있으면 Supabase 등 해당 DB가 우선됩니다. 보존된 PostgreSQL 서비스 정의는 기존 16 버전 데이터 경로와 `pgvector/pgvector:pg16` 이미지를 유지합니다. 기존 데이터 폴더나 볼륨을 초기화하지 않습니다.
 
-백엔드를 8000 포트로 실행하면 Swagger UI는 http://localhost:8000/docs 에서 사용할 수 있습니다. 호스트에서 실행할 때는 `DB_HOST=localhost`, `DB_PORT=5432`, `OLLAMA_BASE_URL=http://127.0.0.1:11434`를 사용합니다. Compose의 백엔드는 DB·Ollama 주소를 컨테이너 서비스명으로 지정합니다. `OLLAMA_EMBED=bge-m3`, `EMBED_DIM=1024`에 맞춰 대상 DB에 CSV를 적재하고, 답변 생성에 사용할 `OLLAMA_LLM` 모델도 같은 Ollama 서버에 준비해야 합니다.
+백엔드를 8000 포트로 실행하면 Swagger UI는 http://localhost:8000/docs 에서 사용할 수 있습니다. 호스트에서 로컬 DB를 사용할 때는 `DB_HOST=localhost`, `DB_PORT=5432`, `OLLAMA_BASE_URL=http://127.0.0.1:11434`를 사용합니다. 기본 Compose의 백엔드는 DB에 `DATABASE_URL`로, Ollama에 `http://ollama:11434`로 연결합니다. `OLLAMA_EMBED=bge-m3`, `EMBED_DIM=1024`에 맞는 기존 대상 DB 자료를 사용하며, 답변 생성에 사용할 `OLLAMA_LLM` 모델도 같은 Ollama 서버에 준비해야 합니다.
 
 Swagger에서 `GET /health`와 `GET /health/db`를 확인한 뒤 `POST /api/v1/chat`의 **Try it out**으로 다음 요청을 보냅니다. `/health/db` 성공은 DB 연결만 확인하며, CSV·벡터 적재나 모델 준비 완료를 뜻하지 않습니다.
 

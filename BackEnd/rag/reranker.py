@@ -91,6 +91,7 @@ def download_model() -> None:
         settings.rerank_model, revision=settings.rerank_revision, cache_dir=settings.rerank_cache_dir,
         allow_patterns=["tokenizer.json", "onnx/model_quantized.onnx"],
     )
+    reranker.model_files()
     print("리랭커 모델 준비 완료. 질의 시에는 로컬 캐시만 사용합니다.")
 
 

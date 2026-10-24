@@ -25,6 +25,42 @@ def test_plain_snapshot_files_are_used_without_hub_metadata(tmp_path):
     assert files[1] == root / "onnx/model_quantized.onnx"
 
 
+def test_download_reuses_existing_cache_without_network(monkeypatch, tmp_path):
+    import sys
+    from types import SimpleNamespace
+
+    from BackEnd.core.settings import Settings
+    from BackEnd.rag.reranker import download_model
+
+    settings = Settings(_env_file=None, rerank_cache_dir=str(tmp_path))
+    monkeypatch.setattr("BackEnd.core.settings.get_settings", lambda: settings)
+    monkeypatch.setattr(LocalReranker, "model_files", lambda self: (tmp_path, tmp_path))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", SimpleNamespace(
+        snapshot_download=lambda *a, **kw: pytest.fail("기존 캐시를 다운로드했습니다."),
+    ))
+    download_model()
+
+
+def test_download_does_not_report_success_when_snapshot_files_are_missing(monkeypatch, tmp_path, capsys):
+    import sys
+    from types import SimpleNamespace
+
+    from BackEnd.core.settings import Settings
+    from BackEnd.rag.reranker import download_model
+
+    settings = Settings(_env_file=None, rerank_cache_dir=str(tmp_path))
+    calls = []
+    monkeypatch.setattr("BackEnd.core.settings.get_settings", lambda: settings)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", SimpleNamespace(
+        snapshot_download=lambda *a, **kw: calls.append((a, kw)),
+    ))
+    with pytest.raises(RerankerError):
+        download_model()
+    assert calls[0][1]["revision"] == settings.rerank_revision
+    assert calls[0][1]["allow_patterns"] == ["tokenizer.json", "onnx/model_quantized.onnx"]
+    assert "준비 완료" not in capsys.readouterr().out
+
+
 @pytest.mark.skipif(os.environ.get("RAG_TEST_RERANKER") != "1", reason="명시적으로 준비한 로컬 모델에서만 실행합니다.")
 def test_real_korean_reranker_orders_relevant_service_and_rejects_unrelated_query():
     from BackEnd.core.settings import Settings

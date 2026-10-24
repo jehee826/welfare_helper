@@ -76,8 +76,8 @@ def query_intents(query: str) -> list[tuple[str, set[str]]]:
     kinds = []
     if re.search(r"신청|접수|서류|절차|어디서", query):
         kinds.append(("application", {"application"}))
-    if re.search(r"자격|대상|조건|받을|받나요|지원되|가능|해당|제외|중복", query):
+    if re.search(r"자격|대상|조건|받을\s*수|지원되|참여할\s*수|가능|해당|제외|중복", query):
         kinds.append(("eligibility", {"target", "criteria"}))
-    if re.search(r"얼마|금액|만원|지원내용|지원 내용|혜택|지급|지원액|수급액|감액|언제부터|기간", query):
+    if re.search(r"얼마|금액|만원|지원내용|지원 내용|혜택|지급|지원액|수급액|감액|언제부터|기간|몇\s*(?:개|장|회|번)|수량|주기|자주", query):
         kinds.append(("benefit", {"benefit"}))
     return kinds or [("overview", set())]

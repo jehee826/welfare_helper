@@ -98,14 +98,23 @@ def split_ranges(text: str, header: str, count: Callable[[str], int], *, target:
 
 def split_official(sections: list[EvidenceChunk], service_name: str, embed_digest: str,
                    count: Callable[[str], int], tokenizer_revision: str = "") -> list[EvidenceChunk]:
+    if any(c.source_kind != "official_detail" for c in sections):
+        raise ChunkingError("공식 API 원문만 허용합니다.")
+    return split_sections(sections, service_name, embed_digest, count, tokenizer_revision)
+
+
+def split_sections(sections: list[EvidenceChunk], service_name: str, embed_digest: str,
+                   count: Callable[[str], int], tokenizer_revision: str = "") -> list[EvidenceChunk]:
     if not embed_digest or len({c.service_id for c in sections}) != 1 or len(sections) != 4:
         raise ChunkingError("완전한 서비스 원문과 임베딩 digest가 필요합니다.")
     ordered = sorted(sections, key=lambda c: c.section)
     source_hash = fingerprint("\n".join(f"{c.section}|{c.basis_year}|{c.source_updated_at}|{c.source_url}|{c.text}" for c in ordered))
     split_version = SPLIT_VERSION + ":" + tokenizer_revision
-    version = fingerprint(source_hash + CLEAN_VERSION + split_version + service_name + embed_digest)[:24]
+    document_id = ordered[0].document_id
+    namespace = "document:" + document_id if document_id else "official"
+    version = fingerprint(source_hash + CLEAN_VERSION + split_version + service_name + embed_digest + document_id)[:24]
     sid = ordered[0].service_id
-    parents = {c.section: f"{sid}:official:{version}:{c.section}:0" for c in ordered}
+    parents = {c.section: f"{sid}:{namespace}:{version}:{c.section}:0" for c in ordered}
     result = []
     for section in ordered:
         header = f"서비스명: {service_name}\n섹션: {section.section}\n"
@@ -131,7 +140,7 @@ def split_official(sections: list[EvidenceChunk], service_name: str, embed_diges
             required.update(parents[key] for key in ("target", "criteria"))
         for index, (part, heading) in enumerate(ranges):
             result.append(replace(
-                section, chunk_id=f"{sid}:official:{version}:{section.section}:{index}",
+                section, chunk_id=f"{sid}:{namespace}:{version}:{section.section}:{index}",
                 text=section.text[part.start:part.end], conditions="", service_name=service_name,
                 version=version, source_hash=source_hash, clean_version=CLEAN_VERSION,
                 split_version=split_version, embed_digest=embed_digest, parent_id=parents[section.section],

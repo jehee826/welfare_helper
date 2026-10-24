@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, fields as dataclass_fields
 from hashlib import sha256
 from datetime import date, datetime
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,15 @@ class EvidenceChunk:
     active: bool = True
     required_parents: tuple[str, ...] = ()
     heading_context: str = ""
+    document_id: str = ""
+    document_name: str = ""
+    analysis_hash: str = ""
+    review_hash: str = ""
+    reviewed_by: str = ""
+    reviewed_at: str = ""
+    page_refs: tuple[int, ...] = ()
+    source_blocks: tuple[str, ...] = ()
+    test_only: bool = False
 
     @property
     def official(self) -> bool:
@@ -63,6 +73,26 @@ class EvidenceChunk:
             return f"서비스명: {self.service_name}\n섹션: {self.section}\n{heading}{self.text}"
         return f"섹션: {self.section}\n{self.text}\n적용 조건과 예외: {self.conditions}".strip()
 
+    @property
+    def usable_detail(self) -> bool:
+        if self.official:
+            return True
+        if self.source_kind != "reviewed_document":
+            return False
+        try:
+            UUID(self.document_id)
+            UUID(self.reviewed_by)
+            dated = datetime.fromisoformat(self.reviewed_at).tzinfo is not None
+            collected = datetime.fromisoformat(self.collected_at).tzinfo is not None
+            url = urlparse(self.source_url)
+            return bool(dated and collected and self.document_name and self.source_blocks
+                        and re.fullmatch(r"(?:19|20)\d{2}", self.basis_year)
+                        and re.fullmatch(r"[0-9a-f]{64}", self.analysis_hash)
+                        and re.fullmatch(r"[0-9a-f]{64}", self.review_hash)
+                        and url.scheme == "https" and url.hostname and not url.username and not url.password)
+        except (ValueError, TypeError):
+            return False
+
     def storage(self) -> str:
         values = asdict(self)
         values.pop("score")
@@ -82,13 +112,19 @@ def read_chunk(chunk_id: str, service_id: str, content: str, url: str,
             names = {field.name for field in dataclass_fields(EvidenceChunk)} - {"score"}
             values = {key: value for key, value in data.items() if key in names}
             values["required_parents"] = tuple(values.get("required_parents", ()))
+            for key in ("page_refs", "source_blocks"):
+                if not isinstance(values.get(key, []), (list, tuple)):
+                    raise ValueError("문서 출처 연결 형식 오류")
+                values[key] = tuple(values.get(key, ()))
             chunk = EvidenceChunk(**values, score=score)
-            strings = names - {"ordinal", "start", "end", "complete", "active", "required_parents"}
+            strings = names - {"ordinal", "start", "end", "complete", "active", "required_parents", "page_refs", "source_blocks", "test_only"}
             if (chunk.chunk_id != chunk_id or chunk.service_id != service_id or not chunk.version
                     or any(not isinstance(getattr(chunk, key), str) for key in strings)
                     or any(type(getattr(chunk, key)) is not int for key in ("ordinal", "start", "end"))
                     or type(chunk.complete) is not bool or type(chunk.active) is not bool
-                    or any(not isinstance(key, str) for key in chunk.required_parents)):
+                    or type(chunk.test_only) is not bool
+                    or any(type(page) is not int or page < 1 for page in chunk.page_refs)
+                    or any(not isinstance(key, str) for key in chunk.required_parents + chunk.source_blocks)):
                 raise ValueError("청크 메타데이터 형식 오류")
             return chunk
         except (TypeError, ValueError):
@@ -121,7 +157,8 @@ def fingerprint(value: str) -> str:
 
 def validate_version(chunks: list[EvidenceChunk]) -> None:
     if not chunks or len({(c.service_id, c.version, c.source_hash, c.embed_digest, c.basis_year,
-                           c.source_updated_at, c.source_url, c.clean_version, c.split_version, c.service_name)
+                           c.source_updated_at, c.source_url, c.clean_version, c.split_version, c.service_name,
+                           c.source_kind, c.document_id, c.analysis_hash, c.review_hash)
                           for c in chunks}) != 1:
         raise EvidenceConsistencyError("서비스 원문 버전이 섞였습니다.")
     if {c.section for c in chunks} != SECTIONS or len({c.chunk_id for c in chunks}) != len(chunks):
@@ -135,7 +172,7 @@ def validate_version(chunks: list[EvidenceChunk]) -> None:
     if source_hash != chunks[0].source_hash:
         raise EvidenceConsistencyError("부모 원문 해시가 다릅니다.")
     first = chunks[0]
-    if fingerprint(source_hash + first.clean_version + first.split_version + first.service_name + first.embed_digest)[:24] != first.version:
+    if fingerprint(source_hash + first.clean_version + first.split_version + first.service_name + first.embed_digest + first.document_id)[:24] != first.version:
         raise EvidenceConsistencyError("원문 버전 식별자가 일치하지 않습니다.")
     condition_parents = {c.chunk_id for c in parents.values() if c.section in {"target", "criteria"}}
     for section in SECTIONS:
@@ -146,9 +183,10 @@ def validate_version(chunks: list[EvidenceChunk]) -> None:
             raise EvidenceConsistencyError("부모·자식 순번이 일치하지 않습니다.")
         covered = 0
         for child in children:
-            if (not child.official or not child.embed_digest or not child.active
+            namespace = "document:" + child.document_id if child.document_id else "official"
+            if (not child.usable_detail or not child.embed_digest or not child.active
                     or not child.clean_version or not child.split_version or not child.service_name
-                    or child.chunk_id != f"{child.service_id}:official:{child.version}:{child.section}:{child.ordinal}"
+                    or child.chunk_id != f"{child.service_id}:{namespace}:{child.version}:{child.section}:{child.ordinal}"
                     or child.parent_id != parent.chunk_id or child.start < 0
                     or len(child.text) > 800
                     or not child.start < child.end <= len(parent.parent_text)

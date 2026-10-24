@@ -115,7 +115,8 @@ def test_runtime_endpoint_whitelists_settings_without_external_work(monkeypatch)
 
     monkeypatch.setattr("BackEnd.main.connect", unexpected)
     monkeypatch.setattr("BackEnd.main.get_chat_service", unexpected)
-    monkeypatch.setattr("BackEnd.main.OllamaClient", unexpected)
+    monkeypatch.setattr("BackEnd.rag.factory.OllamaClient", unexpected)
+    monkeypatch.setattr("BackEnd.rag.factory.LocalReranker", unexpected)
     monkeypatch.setattr("BackEnd.main.LocalReranker", unexpected)
     response = TestClient(app).get("/health/runtime")
     assert response.status_code == 200

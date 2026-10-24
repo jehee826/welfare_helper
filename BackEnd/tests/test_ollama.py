@@ -72,6 +72,21 @@ def test_langchain_prompt_and_json_parser_use_configured_ollama(client, monkeypa
     assert captured["messages"][1].content == '질문 {지시 아님}'
 
 
+def test_request_specific_schema_replaces_previous_generation_grammar(client, monkeypatch):
+    formats = []
+
+    def invoke(model, *args, **kwargs):
+        formats.append(model.format)
+        return AIMessage(content='{"facts": []}', response_metadata={"done_reason": "stop"})
+
+    monkeypatch.setattr(ChatOllama, "invoke", invoke)
+    first = {"type": "object", "properties": {"facts": {"type": "array", "maxItems": 1}}}
+    second = {"type": "object", "properties": {"facts": {"type": "array", "maxItems": 2}}}
+    client.chat("문장 선택", "첫 요청", schema=first)
+    client.chat("문장 선택", "다음 요청", schema=second)
+    assert formats == [first, second]
+
+
 def test_transport_errors_do_not_expose_url_credentials(client, monkeypatch):
     def post(*args, **kwargs):
         raise httpx.ConnectError("http://user:secret@private-host")

@@ -48,6 +48,22 @@ class Settings(BaseSettings):
     bokjiro_detail_url: str = "https://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfaredetailedV001"
     bokjiro_timeout: float = Field(default=15, gt=0, le=60)
 
+    documents_enabled: bool = False
+    supabase_url: str = ""
+    supabase_service_key: SecretStr | None = None
+    documents_bucket: str = "document-originals"
+    documents_max_file_mb: int = Field(default=20, ge=1, le=50)
+    documents_max_pages: int = Field(default=100, ge=1, le=300)
+    documents_max_characters: int = Field(default=500000, ge=1000, le=2000000)
+    documents_max_chunks: int = Field(default=2000, ge=4, le=5000)
+    documents_parse_timeout: int = Field(default=300, ge=30, le=1800)
+    documents_index_timeout: int = Field(default=600, ge=30, le=3600)
+    documents_download_timeout: int = Field(default=7200, ge=300, le=86400)
+    documents_poll_seconds: int = Field(default=10, ge=2, le=60)
+    documents_lease_seconds: int = Field(default=90, ge=60, le=300)
+    docling_cache_dir: str = "/app/.docling_cache"
+    docling_ocr: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

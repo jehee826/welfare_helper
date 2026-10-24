@@ -71,6 +71,53 @@ docker compose up -d --build
 
 공용 테이블은 Data API의 노출 스키마·`anon`/`authenticated` grants·RLS 정책을 함께 확인해야 합니다. RLS를 켜고 정책을 주지 않으면 기존 Data API 접근이 차단됩니다. 다른 파트의 직접 호출 여부를 조율한 뒤 공공 자료 읽기 정책과 서버 전용 쓰기 권한을 정하며, 백엔드 시작 코드에서 권한을 일괄 변경하지 않습니다.
 
+## Swagger 관리자 문서 등록
+
+문서는 업로드와 분석, 검토 후 색인을 분리합니다. PDF·DOCX·UTF-8 Markdown만 지원하며 HWP/HWPX는 지원하지 않습니다. 원본 파일이나 입력 문자열을 Docling 없이 임베딩하지 않습니다. 새 테이블은 기존 서비스 ID와 연결하며 기존 서비스·API 청크를 덮어쓰지 않습니다. 현 버전의 색인 대상은 **한 서비스의 지원대상·선정기준·지원내용·신청방법을 모두 검토할 수 있는 문서**입니다.
+
+### 최초 서버 준비
+
+1. [문서 수집 SQL](BackEnd/db/migrations/0001_document_ingestion.sql)을 Supabase SQL Editor에서 검토 후 별도 적용합니다. 로컬 Supabase CLI가 없어 SQL 검토 파일로 제공하며 앱·작업자는 DDL을 자동 적용하지 않습니다. 추가되는 `rag_document_admins`, `rag_documents`, `rag_document_jobs`, `rag_document_chunks`는 RLS를 켜고 `anon`·`authenticated` 접근을 모두 차단합니다. 서버 DB 역할에는 이 테이블의 읽기·쓰기 권한이 필요합니다.
+2. Supabase Storage에서 `document-originals`를 **비공개** 버킷으로 만듭니다. 서버는 매 요청에서 비공개 여부를 확인하며 공개 버킷에는 업로드하지 않습니다. 원본과 Docling 전체 JSON·정규화 분석 결과를 여기에 보존합니다. 버킷의 객체 크기·MIME 제한은 PDF·DOCX·Markdown과 `application/json` 분석 결과를 수용해야 합니다. 기본 설정의 JSON 분석 객체 상한은 30,971,520바이트이며 원본 파일의 20MiB 상한과 별개입니다. 자동 공개 링크·공개 정책은 만들지 않습니다.
+3. Supabase Auth에서 실제 관리자 사용자를 준비하고, 확인한 사용자 UUID만 SQL Editor에서 등록합니다. 예시는 `INSERT INTO public.rag_document_admins(user_id) VALUES ('확인한 Auth 사용자 UUID');`입니다. 브라우저의 기존 관리자 키·localStorage와 `user_metadata`는 권한 근거가 아닙니다. 관리자 해제는 해당 행의 `active=false`로 처리합니다.
+4. 서버에 `SUPABASE_URL`, 서버 전용 `SUPABASE_SERVICE_KEY`, `DOCUMENTS_BUCKET`을 주입한 뒤 `DOCUMENTS_ENABLED=true`로 지정합니다. 실제 값은 `.env.example`이나 저장소에 적지 않습니다. Swagger의 **Authorize**에는 서버 비밀키가 아닌, 관리자가 Supabase Auth로 로그인해 얻은 **사용자 access token**을 입력합니다. 서버는 Auth `/user`로 사용자를 검증하고 DB 관리자 허용 목록도 확인합니다. [사용자 검증](https://supabase.com/docs/reference/javascript/auth-getuser), [Storage 접근 제어](https://supabase.com/docs/guides/storage/security/access-control)
+
+두 장비 모두 기존 `docker compose up -d --build`를 사용합니다. 문서 작업자는 같은 Compose의 `document-worker`이며 작업이 없거나 기능이 꺼져 있으면 Docling·OCR·모델을 로드하지 않습니다. Vercel에는 요청 API만 배치할 수 있고 상주 작업자·Docling·Ollama를 함께 실행한다고 가정하지 않습니다.
+
+### 업로드와 검토
+
+`POST /api/v1/admin/documents`에서 `file`과 `metadata` JSON 문자열을 전송합니다. 메타데이터 예시는 아래와 같습니다. 출처는 실제 공개 원본 HTTPS 주소이며 서명·인증정보가 들어간 URL은 허용하지 않습니다.
+
+```json
+{"service_id":"확인한 기존 서비스 ID","name":"문서명","source_url":"https://공개원본주소/문서.pdf","basis_year":"2026","edition":"검토한 판본","test_only":false}
+```
+
+원본 파일 해시·메타데이터·파서 버전·분석 설정이 같으면 기존 문서 ID/작업을 재사용합니다. 업로드 실패 후 같은 파일을 다시 전송할 수 있으며 기존 객체는 내용이 일치할 때만 재사용합니다. 원본 Storage 저장 후 DB의 내구성 분석 작업을 등록하고 202를 반환합니다. 요청 안에서 파싱·OCR·임베딩하지 않습니다.
+
+`GET /api/v1/admin/documents/{id}`에서 상태와 분석 미리보기, 제목·표 구조·페이지·블록 ID·품질 문제를 확인합니다. `offset`/`limit`으로 끝까지 읽을 수 있으며 블록 본문을 조용히 자르지 않습니다. PDF의 빈/미분석 페이지, 손상된 표, 부분 변환, 빈 추출은 색인을 막습니다. DOCX·Markdown은 고정 인쇄 쪽이 없을 수 있어 Docling 블록 앵커를 사용합니다. 그림·비정형 조건과 OCR 오인은 원본과 대조해 검토해야 하며 자동 품질 검사가 내용의 진실성을 보장하지 않습니다.
+
+검토 후 `POST /api/v1/admin/documents/{id}/index`에 분석 `analysis_hash`, 4개 `sections`의 Docling 블록 ID 목록, 제외할 블록별 사유 `excluded_blocks`, `confirm_complete=true`, `confirm_source_and_service=true`, `review_note`를 보냅니다. 선택/제외 목록으로 모든 블록을 정확히 한 번 검토하고 섹션 내 원문 순서를 유지해야 합니다. 본문을 수정하거나 임의 텍스트를 넣는 입력 필드는 없습니다. 제목·정의·표의 단위·각주·제외 문장이 조건에 영향을 주면 함께 포함합니다. 같은 서비스의 API 원문이 있으면 동일 자료 기준과 `reconciled_api_version`(상태 조회의 API hash)·충돌 검토 사유 `reconciliation_note`를 명시해야 합니다. 다른 연도/미확인 충돌은 교체하지 않습니다.
+
+작업자는 검토된 분석만 청킹하고 bge-m3 1024차원 벡터를 저장합니다. 파일·분석·파서·분할·검토·임베딩 digest를 작업에 묶고, 동일 임베딩 입력/모델/digest의 저장 벡터는 재사용합니다. 새 버전 전체 검증과 서비스 잠금·원문 충돌·관리자 권한 재확인이 끝나야 활성 포인터를 바꿉니다. 실패·타임아웃 중에는 이전 활성 문서를 유지합니다. `POST /{id}/retry`는 실패 작업의 명시적 재시도이며, 의도적인 재색인은 검토 요청의 `reindex_revision`을 새 값으로 지정합니다.
+
+업로드 문서는 `reviewed_document` 출처이며 복지로 API의 `official_detail`로 위장하지 않습니다. 답변에는 문서명·문서 ID·쪽 또는 블록·원출처·자료 기준·검토일을 표시합니다. 문서 활성 후 API 원문 기준이 달라지면 해당 서비스의 상세 답변을 보류하고 진단에 `document_api_source_conflict`를 남깁니다. 단순 업로드·관리자 계정·검토 사실은 문서의 사실성이나 현재 효력 보장이 아닙니다.
+
+### 실행 상한과 작업 복구
+
+기본 상한은 파일 20MiB, PDF 100쪽, 추출 500,000자, 블록 10,000개, 자식 2,000개입니다. DOCX는 압축 해제 예상 합계 100MiB·항목 2,000개로 제한하고 외부 관계·매크로·내장 객체를 거부합니다. Markdown의 외부 이미지/미디어도 지원하지 않습니다. 분석 300초·색인 600초와 모델 다운로드 7,200초 예산은 분리하며 관련 `DOCUMENTS_*` 설정으로 조정합니다. 작업자는 기본 2 CPU·4GiB이고 Ollama의 메모리를 이 값으로 제한하지 않습니다. 다운로드 지연 시 캐시 바이트와 작업 단계를 확인할 수 있습니다.
+
+20MiB는 앱 자체의 파일 상한입니다. 배포 플랫폼·프록시의 요청 본문 상한은 별도로 확인해야 하며, 이 값을 설정했다고 같은 크기의 Vercel 업로드가 보장되지는 않습니다.
+
+작업 lease는 기본 90초이고 주기적으로 갱신합니다. 중단된 작업은 만료 후 재선점하며 자동 시도는 최대 3회입니다. 이전 작업자의 토큰으로는 저장·활성화할 수 없습니다. Docling 2.141.0·core 2.99.0, CPU PyTorch 2.10.0/torchvision 0.25.0을 사용하고 Docling 모델 커밋은 Heron `8f39ad3`, TableFormer `fc0f2d4`로 지정합니다. 실제 모델 파일 해시는 분석 결과에 기록합니다. `docling_models` Docker 볼륨에 캐시를 보존하고 첫 PDF 작업에서만 필요한 모델을 준비합니다. OCR은 기본 꺼져 있으며 `DOCLING_OCR=true`에서 컨테이너의 한국어/영어 Tesseract를 사용합니다. PDF/OCR 인식 품질은 실제 자료 검증이 필요합니다.
+
+### 격리된 검증 문서
+
+가상 자료는 기존 정부 서비스에 연결하지 않고 `TEST_` 전용 서비스와 `test_only=true`를 사용합니다. 공개 상담은 이 자료를 제외합니다. 인증된 관리자의 `POST /{id}/search`는 해당 문서 ID만 의미 검색하며 `POST /{id}/query`는 동일 RAG·LLM 처리에 문서 범위만 제한한 진단 경로입니다. 이 결과를 공개 상담 API나 Supabase Auth/Storage 실제 통합 검증과 혼동하지 않습니다. 테스트 원문·모델 캐시·접속 비밀값은 커밋하지 않습니다.
+
+`BackEnd/tests/document_live_check.py`는 명시적으로 실행하는 개발 검증 도구입니다. 별도 일회용 PostgreSQL/pgvector(`127.0.0.1:15433`, DB·사용자 `document_check`)와 Ollama(`127.0.0.1:11435`)만 사용하며 `.env`의 실제 DB를 연결하지 않습니다. 지정 모의 Markdown 문서, 빌드한 `welfare_helper-document-worker`, 준비된 리랭커·bge-m3·Qwen2.5:1.5b-instruct가 필요합니다. Auth 사용자 검증과 Storage는 테스트 대체물이므로 실제 Supabase 통합 합격으로 보지 않습니다. 예시는 `python -m BackEnd.tests.document_live_check --fixture docs/design/rag-docling-test.md --result 검증결과.json`이며, 가상 원문은 별도로 준비하고 결과 파일은 저장소 밖에 둡니다.
+
+기본 검증은 전체 업로드·Docling·수동 검토 요청·벡터 저장·재색인 재사용·공개 상담 제외·의미 검색을 거친 뒤, 답할 수 있는 4문항과 금액이 없는 1문항을 두 번 확인합니다. HTTP 200뿐 아니라 실제 선택 문장, 수량·단위·예외·신청 순서, 근거 없는 금액 보류를 검사하고 실패 시 종료 코드가 0이 아닙니다. 만료된 작업 토큰의 쓰기 거부, 불완전한 버전 활성화의 롤백, 명시적 재시도도 검사합니다. `--document-id`는 기존 격리 DB의 문서 질의만 재검사하며 분석·Storage를 다시 확인하지 않습니다. `--case`/`--rounds 1`은 실패 진단용이고 전체 합격을 대신하지 않습니다. 이 도구는 `LLM_NUM_CTX=16384`를 사용하며 앱 기본값 `8192`에서 같은 긴 문서를 처리했다고 주장하지 않습니다.
+
 ## 로컬 리랭커 준비
 기본 Compose 실행은 백엔드 시작 전에 리랭커 캐시를 확인합니다. 고정된 `RERANK_MODEL`·`RERANK_REVISION`의 파일이 있으면 재사용하고, 없거나 빈 파일이면 필요한 tokenizer·INT8 ONNX 파일을 다운로드합니다. 준비 후 파일을 다시 확인하며 실패하면 오류 유형과 확인할 설정을 로그에 표시하고 백엔드를 시작하지 않습니다. 다운로드에는 네트워크와 캐시 폴더 쓰기 권한·디스크 공간이 필요하며, 파일 확인만으로 실제 추론 성공을 보장하지는 않습니다.
 
@@ -107,6 +154,8 @@ Swagger에서 `GET /health`와 `GET /health/db`를 확인한 뒤 `POST /api/v1/c
 `GET /health/runtime`은 프로세스에 적용된 llm(모델·컨텍스트·출력·온도·스레드), embedding(모델·차원), retrieval(후보·유사도 기준), reranker(모델·리비전·임계값·입력 길이·스레드)를 반환합니다. DB 접속값·비밀번호·API 키·서버 경로는 반환하지 않습니다. `configuration_only=true`, `readiness_checked=false`이며 모델 추론·연결·적재·다운로드를 실행하거나 모델 준비·정확도를 보증하지 않습니다. 모델 변경 후 Swagger에서 적용된 설정을 확인합니다.
 
 생성 문맥은 Ollama 모델 정보의 지원 길이와 `LLM_NUM_CTX=8192` 중 작은 값으로 제한합니다. 생성 tokenizer를 정확히 계수할 수 없어 UTF-8 바이트 길이·템플릿 길이·안전 여유 256을 보수적 입력 추정에 사용하고 출력은 기본 512토큰을 예약합니다. 추정치를 정확한 토큰 수라고 표시하지 않습니다. 필수 부모를 임의 요약하지 않고 완전한 근거 묶음만 넣으며, 넣지 못한 항목은 부분 답변이나 `context_budget` 보류로 구분합니다. 출력 길이 종료·입력 평가량 한계 도달·잘림 플래그를 검사하지만, 모델별 숨은 절단을 완전히 증명하는 검사는 아닙니다. 기준일 이후 현행 여부·의미적 관련성·실제 자격은 별도 확인 대상입니다.
+
+생성 모델에는 요청 한정 자료 ID와 중복 없는 부모 묶음, 완전한 원문 문장 목록을 전달합니다. 검색 청크의 `MIN_RERANK_SCORE`(기본 0.5) 통과 후, 자식 범위에 걸치는 문장을 부모에서 완전히 복원해 같은 BGE 리랭커로 재정렬하고 상위 2개를 인용 후보로 사용합니다. 문장 단독 점수는 청크 점수와 구분하며 확률이나 추가 통과 기준으로 해석하지 않습니다. 필수 조건 부모는 요약하거나 줄이지 않습니다. [Ollama JSON Schema 출력](https://ollama.com/blog/structured-outputs)으로 그 후보 중 한 문장만 선택하게 하고, 서버가 후보·원문 일치·핵심 섹션·필수 부모·조건·예외·버전을 다시 검증합니다. 하위 질문마다 한 문장만 선택하며, 조건 ID나 장문의 설명을 모델이 반복 출력하지 않습니다. Docling 위치·제목·표 시작/끝 표시는 문장 후보에서만 제외하고 원문·출처에는 보존합니다. 형식 제한이나 리랭커 점수 자체가 의미적 정확도를 보증하지는 않습니다. 진단의 `sentence_rerank`, `selected_sentences`, `generation_metadata`로 후보 점수·선택 위치·입력/출력 평가량·종료 사유를 구분합니다.
 
 ### 개발용 Swagger 진단
 

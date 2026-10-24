@@ -13,13 +13,16 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
 from BackEnd.rag.chat import ChatService, RagExecutionError
-from BackEnd.rag.ollama import OllamaClient
+from BackEnd.rag.factory import build_chat_service
 from BackEnd.rag.repository import PgServiceRepository
 from BackEnd.rag.reranker import LocalReranker, RerankerError
+from BackEnd.documents.api import DocumentBodyLimit, router as document_router
 
 logger = logging.getLogger("welfare_helper")
 
 app = FastAPI(title="welfare_helper")
+app.add_middleware(DocumentBodyLimit)
+app.include_router(document_router)
 
 
 class ProfileIn(BaseModel):
@@ -69,27 +72,11 @@ class ChatRequest(BaseModel):
 @lru_cache
 def get_chat_service() -> ChatService:
     settings = get_settings()
-    llm = OllamaClient(
-        settings.ollama_base_url,
-        settings.ollama_embed,
-        settings.ollama_llm,
-        settings.ollama_timeout,
-        {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
-         "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
-        embed_dim=settings.embed_dim,
-    )
     repo = PgServiceRepository(
-        lambda: connect(settings), embed_model=settings.ollama_embed, embed_dim=settings.embed_dim
+        lambda: connect(settings), embed_model=settings.ollama_embed, embed_dim=settings.embed_dim,
+        documents_enabled=settings.documents_enabled,
     )
-    reranker = LocalReranker(
-        settings.rerank_model, settings.rerank_revision, settings.rerank_cache_dir,
-        settings.rerank_max_length, settings.rerank_threads,
-    )
-    return ChatService(
-        repo, llm, min_similarity=settings.min_dense_sim, top_n=settings.retrieve_top_n,
-        reranker=reranker, min_rerank_score=settings.min_rerank_score,
-        dense_k=settings.dense_top_k, keyword_k=settings.keyword_top_k, core_k=settings.core_evidence_k,
-    )
+    return build_chat_service(repo, settings)
 
 
 @app.get("/health")

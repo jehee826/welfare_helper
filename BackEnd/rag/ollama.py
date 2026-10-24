@@ -35,6 +35,7 @@ class OllamaClient:
         self._chat_chain = None
         self._effective_context = None
         self._template_bytes = 0
+        self.last_chat_diagnostics = {}
 
     def model_digest(self, model: str | None = None) -> str:
         selected = model or self.embed_model
@@ -100,20 +101,29 @@ class OllamaClient:
             raise OllamaError(str(exc)) from exc
         return embeddings
 
-    def chat(self, system: str, user: str) -> dict:
+    def chat(self, system: str, user: str, *, schema: dict | None = None) -> dict:
+        self.last_chat_diagnostics = {}
         try:
             context = self._effective_context or self.context_limit()
             output = self.llm_options.get("num_predict", 512)
             if self.input_cost(system, user) + output > context:
                 raise ContextBudgetError("필수 근거가 생성 문맥 예산을 초과했습니다.")
-            if self._chat_chain is None:
+            if self._chat_chain is None or schema is not None:
                 prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
                 model = ChatOllama(
-                    model=self.llm_model, base_url=self.base_url, format="json",
+                    model=self.llm_model, base_url=self.base_url, format=schema if schema is not None else "json",
                     client_kwargs={"timeout": self.timeout}, **{**self.llm_options, "num_ctx": context},
                 )
-                self._chat_chain = prompt | model
-            message = self._chat_chain.invoke({"system": system, "user": user})
+                chain = prompt | model
+                # 요청별 자료·문장 선택 문법은 공유 캐시에 넣지 않는다.
+                if schema is None:
+                    self._chat_chain = chain
+            else:
+                chain = self._chat_chain
+            message = chain.invoke({"system": system, "user": user})
+            self.last_chat_diagnostics = {key: message.response_metadata[key]
+                                          for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated")
+                                          if key in message.response_metadata}
             if message.response_metadata.get("done_reason") == "length":
                 raise ContextBudgetError("모델 출력이 잘렸습니다.")
             used = message.response_metadata.get("prompt_eval_count")

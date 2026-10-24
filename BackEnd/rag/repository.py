@@ -33,10 +33,13 @@ def vector_literal(values: list[float]) -> str:
 class PgServiceRepository:
     """welfare_services / welfare_chunks 테이블을 다룬다. 호출마다 연결을 열고 닫아 서버리스에 연결을 남기지 않는다."""
 
-    def __init__(self, connect: Callable, embed_model: str = "bge-m3", embed_dim: int = 1024):
+    def __init__(self, connect: Callable, embed_model: str = "bge-m3", embed_dim: int = 1024,
+                 *, documents_enabled: bool = False, document_scope: str | None = None):
         self._connect = connect
         self.embed_model = embed_model
         self.embed_dim = embed_dim
+        self.documents_enabled = documents_enabled
+        self.document_scope = document_scope
 
     def init_schema(self) -> None:
         with closing(self._connect()) as conn, conn, conn.cursor() as cur:
@@ -134,8 +137,22 @@ class PgServiceRepository:
                             "FROM welfare_chunks c JOIN welfare_services s USING(service_id) "
                             "ORDER BY c.chunk_id LIMIT %s", (MAX_CATALOG_ROWS + 1,))
                 rows = cur.fetchall()
+                documents, document_links = [], {}
+                if self.documents_enabled:
+                    from BackEnd.documents.retrieval import active_document_chunks
+
+                    documents, document_links = active_document_chunks(cur, self.embed_model, self.document_scope)
         if len(rows) > MAX_CATALOG_ROWS:
             raise EvidenceConsistencyError("원문 상한을 넘어 불완전한 검색을 중단합니다.")
+        if self.document_scope:
+            wanted = {c.service_id for c in documents}
+            services = [r for r in services if r.service_id in wanted]
+            rows = []
+        else:
+            services = [r for r in services if not r.service_id.startswith("TEST_")]
+            wanted = {r.service_id for r in services}
+            rows = [r for r in rows if r[1] in wanted]
+            documents = [c for c in documents if c.service_id in wanted and not c.test_only]
         grouped, raw_by_service = {}, {r.service_id: [] for r in services}
         for row in rows:
             grouped.setdefault(row[1], []).append(read_chunk(row[0], row[1], row[2], row[3], row[4].isoformat() if row[4] else ""))
@@ -146,12 +163,25 @@ class PgServiceRepository:
                 chunks.extend(active_chunks(group))
             except EvidenceConsistencyError:
                 unavailable[sid] = "invalid_or_conflicting_version"
+        for sid in {c.service_id for c in documents}:
+            detail = [c for c in chunks if c.service_id == sid and c.official]
+            from BackEnd.documents.contracts import stable_hash
+
+            policy = {"hash": stable_hash([c.storage() for c in detail]) if detail else "",
+                      "years": sorted({c.basis_year for c in detail})}
+            if not self.document_scope and (sid in unavailable or document_links[sid] != policy):
+                unavailable[sid] = "document_api_source_conflict"
+                chunks = [c for c in chunks if c.service_id != sid]
+                continue
+            chunks = [c for c in chunks if c.service_id != sid or c.source_kind == "csv_summary"]
+            chunks.extend(c for c in documents if c.service_id == sid)
         models = {r[0]: r[5] for r in rows}
         # 다른 임베딩 모델의 활성본이 있더라도 이전 v1 상세로 되돌리지 않는다.
-        searchable = [c for c in chunks if models[c.chunk_id] == self.embed_model]
+        searchable = [c for c in chunks if c.document_id or models[c.chunk_id] == self.embed_model]
         stamp = fingerprint(json.dumps([asdict(r) for r in services],
                                        ensure_ascii=False, sort_keys=True)
-                            + "\n".join(str(r[0]) + r[2] + r[5] for r in rows))
+                            + "\n".join(str(r[0]) + r[2] + r[5] for r in rows)
+                            + "\n".join(c.storage() for c in documents))
         versions = {}
         for chunk in chunks:
             if chunk.version:
@@ -285,6 +315,24 @@ class PgServiceRepository:
         if allowed_ids == []:
             return []
         params = (literal, self.embed_model, allowed_ids, literal, k)
+        if self.documents_enabled:
+            condition = "d.id=%s" if self.document_scope else "d.active AND NOT d.test_only"
+            parameters = (self.embed_model, allowed_ids, self.embed_model, allowed_ids)
+            if self.document_scope:
+                parameters += (self.document_scope,)
+            parameters += (literal, literal, k)
+            with closing(self._connect()) as conn, conn, conn.cursor() as cur:
+                cur.execute("WITH corpus AS (SELECT c.chunk_id,c.service_id,c.content,c.embedding,s.url,s.source_updated_at "
+                            "FROM welfare_chunks c JOIN welfare_services s USING(service_id) "
+                            "WHERE c.embed_model=%s AND c.chunk_id=ANY(%s) UNION ALL "
+                            "SELECT c.chunk_id,c.service_id,c.content,c.embedding,d.source_url,d.source_updated_at "
+                            "FROM rag_document_chunks c JOIN rag_documents d ON d.id=c.document_id "
+                            "JOIN rag_document_jobs j ON j.id=d.active_job_id AND j.id=c.job_id "
+                            "WHERE c.embed_model=%s AND c.chunk_id=ANY(%s) AND j.state='succeeded' "
+                            "AND c.index_key=j.result->>'index_key' AND " + condition + ") "
+                            "SELECT chunk_id,service_id,content,url,source_updated_at,1-(embedding<=>%s::vector) "
+                            "FROM corpus ORDER BY embedding<=>%s::vector,chunk_id LIMIT %s", parameters)
+                return [read_chunk(r[0], r[1], r[2], r[3], r[4].isoformat() if r[4] else "", float(r[5])) for r in cur.fetchall()]
         with closing(self._connect()) as conn, conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT c.chunk_id,c.service_id,c.content,s.url,s.source_updated_at, "

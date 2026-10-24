@@ -7,7 +7,6 @@ from BackEnd.rag.chat import ChatService
 from BackEnd.rag.ollama import OllamaError
 from BackEnd.rag.reranker import RerankerError
 from BackEnd.rag.evidence import EvidenceChunk
-from BackEnd.rag.chat import evidence_sentences
 
 PENSION = ServiceRecord(
     service_id="WLF00001164",
@@ -102,17 +101,18 @@ class FakeOllama:
             raise OllamaError("embed down")
         return [[0.1] * 4 for _ in texts]
 
-    def chat(self, system, user):
+    def chat(self, system, user, *, schema=None):
         self.chat_calls += 1
         self.prompt = json.loads(user)
         if self.chat_fail:
             raise OllamaError("chat down")
         if self.reply is not None:
             return self.reply
-        evidence = {e["chunk_id"]: e for e in self.prompt["evidence"]}
+        evidence = {row["chunk_id"]: row for row in self.prompt["evidence"]}
+        choices = {(row["properties"]["intent_id"]["enum"][0], row["properties"]["chunk_id"]["enum"][0]): row["properties"]["sentence"]["enum"]
+                   for row in schema["properties"]["facts"]["items"]["anyOf"]} if schema else {}
         return {"facts": [{"intent_id": item["intent_id"], "chunk_id": item["core_id"],
-                           "quote": next(iter(evidence_sentences(evidence[item["core_id"]]["text"]))),
-                           "condition_ids": item["condition_ids"]}
+                           "sentence": choices.get((item["intent_id"], item["core_id"]), evidence[item["core_id"]]["sentences"])[0]}
                           for item in self.prompt["intents"]], "question_field": "none"}
 
 
@@ -125,7 +125,7 @@ class FakeReranker:
         self.calls.append((query, passages))
         if self.fail:
             raise RerankerError("reranker down")
-        return self.scores if self.scores is not None else [0.9] * len(passages)
+        return self.scores if self.scores is not None and len(self.calls) == 1 else [0.9] * len(passages)
 
 
 def make(repo=None, reranker=None, **kwargs):
@@ -282,7 +282,36 @@ def test_same_snapshot_supplies_context_and_chunk_metadata_to_llm():
     service.answer("연금", None)
     assert repo.context_calls == 0
     evidence = llm.prompt["evidence"][0]
-    assert {"chunk_id", "text", "source_url", "score"} <= evidence.keys()
+    assert {"chunk_id", "sentences", "source_kind", "basis_year"} <= evidence.keys()
+
+
+@pytest.mark.parametrize("sentence", [None, True, ["원문"], "누구나 999만원을 받습니다."])
+def test_model_sentence_outside_source_does_not_verify_a_claim(sentence):
+    service, _ = make(FakeRepo(chunks=[TARGET, CRITERIA, BENEFIT]),
+                      reply={"facts": [{"intent_id": "q1", "chunk_id": "e1", "sentence": sentence}]})
+    assert service.answer("기초연금 혜택", None)["reason"] == "unverified_quote"
+
+
+def test_quantity_question_does_not_add_a_redundant_eligibility_intent():
+    from BackEnd.rag.search import query_intents
+
+    assert query_intents("자료 상자는 몇 개를 얼마나 자주 받나요?") == [("benefit", {"benefit"})]
+
+
+def test_model_cannot_choose_a_source_sentence_outside_reranked_candidates():
+    from dataclasses import replace
+
+    body = replace(BENEFIT, text="가상 월 10만원을 제공합니다. 제공 횟수는 매월 1회입니다. 단위는 서로 다릅니다.")
+
+    class SentenceReranker(FakeReranker):
+        def score(self, query, passages):
+            self.calls.append((query, passages))
+            return [0.9] * len(passages) if len(self.calls) == 1 else [0.8, 0.7, 0.004]
+
+    service, _ = make(FakeRepo(chunks=[TARGET, CRITERIA, body]), reranker=SentenceReranker(),
+                      reply={"facts": [{"intent_id": "q1", "chunk_id": "e1", "sentence": "단위는 서로 다릅니다."}]})
+    response = service.answer("기초연금 혜택", None)
+    assert response["reason"] == "unverified_quote"
 
 
 def test_empty_catalog_checks_fresh_snapshot_without_model_calls():

@@ -11,6 +11,8 @@ from BackEnd.documents.contracts import DocumentError, PARSER_VERSION, stable_ha
 from BackEnd.rag.embeddings import validate_embeddings
 from BackEnd.rag.evidence import active_chunks, read_chunk, validate_version
 
+DOCUMENT_FIELDS = "id,service_id,name,source_url,basis_year,source_updated_at,file_hash,file_size,suffix,test_only,object_key,parser_version,parse_config,dedupe_key,uploaded_by,status,analysis_job_id,active_job_id,active,created_at,local_ingestion"
+
 
 def api_policy(cur, service_id: str) -> dict:
     cur.execute("SELECT chunk_id,content FROM welfare_chunks WHERE service_id=%s ORDER BY chunk_id", (service_id,))
@@ -27,6 +29,8 @@ class DocumentStore:
 
     @staticmethod
     def _admin(cur, actor):
+        if actor is None:
+            return
         cur.execute("SELECT 1 FROM rag_document_admins WHERE user_id=%s AND active FOR SHARE", (actor,))
         if not cur.fetchone():
             raise DocumentError("admin_permission_required")
@@ -36,7 +40,7 @@ class DocumentStore:
             cur.execute("SELECT 1 FROM rag_document_admins WHERE user_id=%s AND active", (actor,))
             return bool(cur.fetchone())
 
-    def register(self, metadata: dict, file_hash: str, size: int, suffix: str, actor: str, config: dict) -> dict:
+    def register(self, metadata: dict, file_hash: str, size: int, suffix: str, actor: str | None, config: dict, original: bytes) -> dict:
         identity = stable_hash([metadata, file_hash, PARSER_VERSION, config])
         document_id = str(uuid4())
         key = f"originals/{document_id}/{file_hash}.{suffix}"
@@ -46,12 +50,12 @@ class DocumentStore:
             if not cur.fetchone():
                 raise DocumentError("linked_service_not_found")
             cur.execute("INSERT INTO rag_documents(id,service_id,name,source_url,basis_year,source_updated_at,file_hash,file_size,suffix,"
-                        "object_key,parser_version,parse_config,dedupe_key,uploaded_by,test_only) VALUES "
-                        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-                        "ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=EXCLUDED.dedupe_key RETURNING *",
+                        "object_key,parser_version,parse_config,dedupe_key,uploaded_by,test_only,original_bytes,local_ingestion) VALUES "
+                        "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                        "ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=EXCLUDED.dedupe_key RETURNING " + DOCUMENT_FIELDS,
                         (document_id, metadata["service_id"], metadata["name"], metadata["source_url"], metadata["basis_year"],
                          metadata.get("source_updated_at"), file_hash, size, suffix, key, PARSER_VERSION, Json(config), identity, actor,
-                         metadata["test_only"]))
+                         metadata["test_only"], original, actor is None))
             return dict(cur.fetchone())
 
     @staticmethod
@@ -74,20 +78,15 @@ class DocumentStore:
     def queue_analysis(self, document_id, actor):
         with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             self._admin(cur, actor)
-            cur.execute("SELECT * FROM rag_documents WHERE id=%s FOR UPDATE", (document_id,))
+            cur.execute("SELECT " + DOCUMENT_FIELDS + " FROM rag_documents WHERE id=%s FOR UPDATE", (document_id,))
             doc = cur.fetchone()
             if not doc:
                 raise DocumentError("document_not_found")
             return self._queue(cur, document_id, "analyze", stable_hash([doc["file_hash"], doc["parser_version"], doc["parse_config"]]), {}, actor)
 
-    def upload_failed(self, document_id):
-        with closing(self.connect()) as conn, conn, conn.cursor() as cur:
-            cur.execute("UPDATE rag_documents SET status='upload_failed' WHERE id=%s AND status='uploading' AND NOT active",
-                        (document_id,))
-
     def status(self, document_id):
         with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT * FROM rag_documents WHERE id=%s", (document_id,))
+            cur.execute("SELECT " + DOCUMENT_FIELDS + " FROM rag_documents WHERE id=%s", (document_id,))
             doc = cur.fetchone()
             if not doc:
                 raise DocumentError("document_not_found")
@@ -111,7 +110,7 @@ class DocumentStore:
     def queue_index(self, document_id, actor, request: dict, analysis_job_id, analysis_hash):
         with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             self._admin(cur, actor)
-            cur.execute("SELECT * FROM rag_documents WHERE id=%s FOR UPDATE", (document_id,))
+            cur.execute("SELECT " + DOCUMENT_FIELDS + " FROM rag_documents WHERE id=%s FOR UPDATE", (document_id,))
             doc = cur.fetchone()
             if not doc or str(doc["analysis_job_id"]) != str(analysis_job_id):
                 raise DocumentError("analysis_version_changed")
@@ -129,7 +128,8 @@ class DocumentStore:
             cur.execute("SELECT active_job_id FROM rag_documents WHERE service_id=%s AND active", (doc["service_id"],))
             current = cur.fetchone()
             payload = {"review": request, "analysis_job_id": str(analysis_job_id), "analysis_hash": analysis_hash,
-                       "reviewed_by": actor, "reviewed_at": datetime.now(timezone.utc).isoformat(),
+                       "reviewed_by": actor or "local", "review_mode": "local" if actor is None else "supabase_auth",
+                       "reviewed_at": datetime.now(timezone.utc).isoformat(),
                        "api_policy": policy, "previous_active_job": str(current["active_job_id"]) if current else ""}
             return self._queue(cur, document_id, "index", identity, payload, actor)
 
@@ -152,24 +152,27 @@ class DocumentStore:
             cur.execute("UPDATE rag_documents SET status=%s WHERE id=%s", (row["kind"] + "_queued", document_id))
             return str(row["id"])
 
-    def claim(self, seconds: int):
+    def claim(self, seconds: int, service_id: str | None = None):
         token = str(uuid4())
         with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("WITH failed AS (UPDATE rag_document_jobs SET state='failed',error_code='lease_expired_after_max_attempts',"
                         "lease_token=NULL,lease_until=NULL WHERE state='running' AND lease_until<now() AND attempts>=3 "
-                        "RETURNING document_id,kind) UPDATE rag_documents d SET status=failed.kind||'_failed' FROM failed WHERE d.id=failed.document_id")
+                        "AND (%s IS NULL OR document_id IN(SELECT id FROM rag_documents WHERE service_id=%s)) "
+                        "RETURNING document_id,kind) UPDATE rag_documents d SET status=failed.kind||'_failed' FROM failed WHERE d.id=failed.document_id",
+                        (service_id, service_id))
             cur.execute("SELECT j.* FROM rag_document_jobs j WHERE j.attempts<3 AND j.available_at<=now() "
                         "AND (j.state='queued' OR (j.state='running' AND j.lease_until<now())) "
+                        "AND (%s IS NULL OR j.document_id IN(SELECT id FROM rag_documents WHERE service_id=%s)) "
                         "AND NOT EXISTS(SELECT 1 FROM rag_document_jobs other WHERE other.document_id=j.document_id "
                         "AND other.id<>j.id AND other.state='running' AND other.lease_until>=now()) "
-                        "ORDER BY j.created_at FOR UPDATE SKIP LOCKED LIMIT 1")
+                        "ORDER BY j.created_at FOR UPDATE SKIP LOCKED LIMIT 1", (service_id, service_id))
             row = cur.fetchone()
             if not row:
                 return None
             cur.execute("UPDATE rag_document_jobs SET state='running',attempts=attempts+1,lease_token=%s,"
                         "lease_until=now()+%s*interval '1 second',error_code=NULL WHERE id=%s RETURNING *", (token, seconds, row["id"]))
             job = dict(cur.fetchone())
-            cur.execute("SELECT * FROM rag_documents WHERE id=%s", (job["document_id"],))
+            cur.execute("SELECT " + DOCUMENT_FIELDS + " FROM rag_documents WHERE id=%s", (job["document_id"],))
             job["document"] = dict(cur.fetchone())
             cur.execute("UPDATE rag_documents SET status=%s WHERE id=%s", ("analyzing" if job["kind"] == "analyze" else "indexing", job["document_id"]))
             return job
@@ -178,8 +181,10 @@ class DocumentStore:
         with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             job = dict(self._lease(cur, job_id, token))
             self._admin(cur, job["created_by"])
-            cur.execute("SELECT * FROM rag_documents WHERE id=%s", (job["document_id"],))
+            cur.execute("SELECT " + DOCUMENT_FIELDS + " FROM rag_documents WHERE id=%s", (job["document_id"],))
             job["document"] = dict(cur.fetchone())
+            if job["created_by"] is None and not job["document"]["local_ingestion"]:
+                raise DocumentError("local_job_document_mismatch")
             return job
 
     def stage(self, job_id, token, stage, **values):
@@ -235,14 +240,34 @@ class DocumentStore:
                         "available_at=now()+%s*interval '1 second' WHERE id=%s", (state, code[:100], 30 * job["attempts"], job_id))
             cur.execute("UPDATE rag_documents SET status=%s WHERE id=%s", (job["kind"] + ("_queued" if state == "queued" else "_failed"), job["document_id"]))
 
-    def finish_analysis(self, job_id, token, result):
+    def original(self, document_id, max_bytes):
+        with closing(self.connect()) as conn, conn, conn.cursor() as cur:
+            cur.execute("SELECT original_bytes FROM rag_documents WHERE id=%s AND octet_length(original_bytes)<=%s",
+                        (document_id, max_bytes))
+            row = cur.fetchone()
+            if not row or row[0] is None:
+                raise DocumentError("document_source_not_in_database")
+            return bytes(row[0])
+
+    def analysis_data(self, document_id):
+        with closing(self.connect()) as conn, conn, conn.cursor() as cur:
+            cur.execute("SELECT analysis_json,markdown FROM rag_documents WHERE id=%s", (document_id,))
+            row = cur.fetchone()
+            if not row or row[0] is None or row[1] is None:
+                raise DocumentError("analysis_not_ready")
+            if row[0].get("markdown") != row[1]:
+                raise DocumentError("markdown_artifact_mismatch")
+            return row[0]
+
+    def finish_analysis(self, job_id, token, result, analysis):
         with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             job = self._lease(cur, job_id, token)
             self._admin(cur, job["created_by"])
             cur.execute("UPDATE rag_document_jobs SET state='succeeded',result=%s,finished_at=now(),lease_token=NULL,lease_until=NULL "
                         "WHERE id=%s", (Json(result), job_id))
-            cur.execute("UPDATE rag_documents SET analysis_job_id=%s,status=%s WHERE id=%s",
-                        (job_id, "quality_blocked" if result["blockers"] else "review_required", job["document_id"]))
+            cur.execute("UPDATE rag_documents SET analysis_job_id=%s,status=%s,analysis_json=%s,markdown=%s WHERE id=%s",
+                        (job_id, "quality_blocked" if result["blockers"] else "review_required", Json(analysis),
+                         analysis["markdown"], job["document_id"]))
 
     def reused_vectors(self, model, digest, hashes):
         if not hashes:
@@ -271,7 +296,7 @@ class DocumentStore:
         with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             job = self._lease(cur, job_id, token)
             self._admin(cur, job["created_by"])
-            cur.execute("SELECT * FROM rag_documents WHERE id=%s FOR UPDATE", (job["document_id"],))
+            cur.execute("SELECT " + DOCUMENT_FIELDS + " FROM rag_documents WHERE id=%s FOR UPDATE", (job["document_id"],))
             doc = cur.fetchone()
             cur.execute("SELECT name,url FROM welfare_services WHERE service_id=%s FOR UPDATE", (doc["service_id"],))
             service = cur.fetchone()

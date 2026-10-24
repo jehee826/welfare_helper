@@ -14,18 +14,17 @@ from BackEnd.core.settings import get_settings
 from BackEnd.documents.analysis import analyze_file, read_analysis
 from BackEnd.documents.contracts import DocumentError, stable_hash, validate_file
 from BackEnd.documents.indexing import document_children
-from BackEnd.documents.storage import PrivateStorage
 from BackEnd.documents.store import get_document_store
 
 
 def process_job(job_id, token, temp_dir):
     settings, store = get_settings(), get_document_store()
     job = store.claimed_job(job_id, token)
-    doc, storage = job["document"], PrivateStorage(settings)
+    doc = job["document"]
     stage = lambda name, **values: store.stage(job_id, token, name, **values)
     if job["kind"] == "analyze":
         stage("fetching_original")
-        original = storage.get(doc["object_key"], settings.documents_max_file_mb * 1024 * 1024)
+        original = store.original(str(doc["id"]), settings.documents_max_file_mb * 1024 * 1024)
         if stable_hash(original) != doc["file_hash"]:
             raise DocumentError("original_hash_mismatch")
         validate_file(original, doc["suffix"], settings.documents_max_file_mb * 1024 * 1024)
@@ -36,14 +35,12 @@ def process_job(job_id, token, temp_dir):
         if len(content) > settings.documents_max_characters * 20 + 20 * 1024 * 1024:
             raise DocumentError("analysis_artifact_size_limit")
         digest = stable_hash(analysis)
-        key = f"analyses/{doc['id']}/{job_id}/{digest}.json"
         stage("saving_analysis")
-        storage.put(key, content, "application/json")
-        store.finish_analysis(job_id, token, {"artifact_key": key, "analysis_hash": digest,
-            "blockers": analysis["blockers"], "warnings": analysis["warnings"], "blocks": len(analysis["blocks"]), "pages": analysis["pages"]})
+        store.finish_analysis(job_id, token, {"artifact_store": "postgres", "analysis_hash": digest,
+            "blockers": analysis["blockers"], "warnings": analysis["warnings"], "blocks": len(analysis["blocks"]), "pages": analysis["pages"]}, analysis)
         return
     stage("validating_review")
-    analysis_job, analysis = read_analysis(store, storage, str(doc["id"]), settings.documents_max_characters * 20 + 20 * 1024 * 1024)
+    analysis_job, analysis = read_analysis(store, str(doc["id"]), settings.documents_max_characters * 20 + 20 * 1024 * 1024)
     payload = job["payload"]
     if str(analysis_job["id"]) != payload["analysis_job_id"] or stable_hash(analysis) != payload["analysis_hash"]:
         raise DocumentError("analysis_version_changed")

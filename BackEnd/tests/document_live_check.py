@@ -1,4 +1,4 @@
-"""명시적으로 실행하는 격리 검증. Supabase Auth/Storage 실제 통합을 대체했다고 주장하지 않는다."""
+"""로컬 접수와 TEST_ 문서만 사용하는 실제 Docling·Postgres·모델 검증."""
 
 import argparse
 import json
@@ -11,12 +11,14 @@ import threading
 import time
 from uuid import uuid4
 
-import httpx
 import psycopg2
+from psycopg2.extensions import parse_dsn
 from fastapi.testclient import TestClient
 
-from BackEnd.core.settings import Settings
+from BackEnd.core.settings import Settings, get_settings
+from BackEnd.core.db import connect
 from BackEnd.documents import api, worker
+from BackEnd.documents import auth
 from BackEnd.documents.auth import require_document_admin
 from BackEnd.documents.contracts import DocumentError, stable_hash
 from BackEnd.documents.indexing import document_children
@@ -28,54 +30,50 @@ from BackEnd.rag.repository import PgServiceRepository
 from BackEnd.rag.reranker import LocalReranker
 
 ROOT = Path(__file__).resolve().parents[2]
-ACTOR = "00000000-0000-4000-8000-000000000001"
 SERVICE = "TEST_DOCLING_MD_01"
+USE_SUPABASE = False
 
 
 def local_connection():
+    if USE_SUPABASE:
+        settings = get_settings()
+        parts = parse_dsn(settings.database_url.get_secret_value())
+        ref = "prnnxajhbtvrxuaejihy"
+        host, user = parts.get("host", ""), parts.get("user", "")
+        assert host == "db." + ref + ".supabase.co" or host.endswith(".pooler.supabase.com") and user.endswith("." + ref)
+        return connect(settings)
     # 격리된 검증 DB만 사용하며 실제 .env나 임의 DSN은 받지 않는다.
     return psycopg2.connect(host="127.0.0.1", port=15433, dbname="document_check", user="document_check",
                             password="document-check-only", connect_timeout=5)
 
 
-class LocalStorageDouble:
-    def __init__(self, root):
-        self.root = Path(root).resolve()
-
-    def path(self, key):
-        path = (self.root / key).resolve()
-        if not path.is_relative_to(self.root):
-            raise DocumentError("invalid_test_object_key")
-        return path
-
-    def put(self, key, data, content_type):
-        path = self.path(key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() and path.read_bytes() != data:
-            raise DocumentError("test_object_conflict")
-        path.write_bytes(data)
-
-    def get(self, key, max_bytes):
-        data = self.path(key).read_bytes()
-        if len(data) > max_bytes:
-            raise DocumentError("test_object_size_limit")
-        return data
+def official_snapshot(cur):
+    values = []
+    for table, key in (("welfare_services", "service_id"), ("welfare_chunks", "chunk_id")):
+        cur.execute(f"SELECT count(*),md5(string_agg(to_jsonb(t)::text,E'\\n' ORDER BY {key})) FROM {table} t WHERE left(service_id,5)<>'TEST_'")
+        values.append(cur.fetchone())
+    return values
 
 
 def bootstrap():
     with local_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT current_database()")
-        assert cur.fetchone()[0] == "document_check"
-        cur.execute("SELECT to_regclass('public.welfare_services')")
-        if cur.fetchone()[0] is None:
+        cur.execute("SELECT current_database(),to_regclass('public.welfare_services')")
+        database, table = cur.fetchone()
+        if not USE_SUPABASE:
+            assert database == "document_check"
+        if table is None and not USE_SUPABASE:
             cur.execute((ROOT / "BackEnd/db/schema.sql").read_text(encoding="utf-8"))
             cur.execute("CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; "
                         "CREATE SCHEMA auth; CREATE TABLE auth.users(id uuid PRIMARY KEY)")
             cur.execute((ROOT / "BackEnd/db/migrations/0001_document_ingestion.sql").read_text(encoding="utf-8"))
-        cur.execute("INSERT INTO auth.users(id) VALUES(%s) ON CONFLICT DO NOTHING", (ACTOR,))
-        cur.execute("INSERT INTO rag_document_admins(user_id) VALUES(%s) ON CONFLICT DO NOTHING", (ACTOR,))
+        cur.execute("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='rag_documents' AND column_name='original_bytes')")
+        if not cur.fetchone()[0]:
+            assert not USE_SUPABASE, "apply reviewed 0002 migration before cloud testing"
+            cur.execute((ROOT / "BackEnd/db/migrations/0002_document_postgres_artifacts.sql").read_text(encoding="utf-8"))
+        baseline = official_snapshot(cur)
         cur.execute("INSERT INTO welfare_services(service_id,name,summary,ministry,url) VALUES(%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                     (SERVICE, "모의 별빛학습꾸러미", "개발 검증 전용 가상 자료", "가상 검증", "https://example.invalid/docling-test"))
+        return baseline
 
 
 def docker_analysis(path, config, settings, progress):
@@ -98,7 +96,7 @@ def docker_analysis(path, config, settings, progress):
 
 
 def perform_job(store, expected):
-    job = store.claim(300)
+    job = store.claim(300, SERVICE)
     assert job and job["kind"] == expected
     stop = threading.Event()
 
@@ -122,7 +120,7 @@ def check_recovery(client, did, store, analysis, request, settings, tokenizer, r
     previous, _ = store.status(did)
     queued = client.post(f"/api/v1/admin/documents/{did}/index", json={**request, "reindex_revision": "recovery-check"})
     assert queued.status_code == 202, queued.text
-    first = store.claim(300)
+    first = store.claim(300, SERVICE)
     with local_connection() as conn, conn.cursor() as cur:
         cur.execute("UPDATE rag_document_jobs SET lease_until=now()-interval '1 second' WHERE id=%s", (str(first["id"]),))
     try:
@@ -132,7 +130,7 @@ def check_recovery(client, did, store, analysis, request, settings, tokenizer, r
         assert str(error) == "job_lease_lost"
     store.fail(str(first["id"]), str(first["lease_token"]), "expired_worker_failure")
     assert store.job_state(str(first["id"])) == "running"
-    current = store.claim(300)
+    current = store.claim(300, SERVICE)
     assert current["id"] == first["id"] and current["lease_token"] != first["lease_token"]
     digest = store.progress(str(previous["active_job_id"]))["embed_digest"]
     children = document_children(current["document"], current["payload"], analysis, store.service_name(SERVICE), digest,
@@ -157,7 +155,7 @@ def check_recovery(client, did, store, analysis, request, settings, tokenizer, r
     store.fail(str(current["id"]), str(current["lease_token"]), "test_fault_after_staging")
     with local_connection() as conn, conn.cursor() as cur:
         cur.execute("UPDATE rag_document_jobs SET available_at=now() WHERE id=%s", (str(current["id"]),))
-    last = store.claim(300)
+    last = store.claim(300, SERVICE)
     assert last["attempts"] == 3
     store.fail(str(last["id"]), str(last["lease_token"]), "test_fault_after_staging")
     assert store.job_state(str(last["id"])) == "failed"
@@ -211,24 +209,21 @@ def check_answers(client, did, chunks, report, result_file, rounds, case=None):
     assert not failures, failures
 
 
-def run(fixture: Path, result_file: Path, document_id=None, rounds=2, case=None):
-    bootstrap()
-    settings = Settings(_env_file=None, documents_enabled=True, ollama_base_url="http://127.0.0.1:11435",
+def run(fixture: Path, result_file: Path, document_id=None, rounds=2, case=None, supabase=False, skip_answers=False):
+    global USE_SUPABASE
+    USE_SUPABASE = supabase
+    baseline = bootstrap()
+    settings = Settings(_env_file=None, documents_enabled=True, documents_local_mode=True, ollama_base_url="http://127.0.0.1:11435",
                         ollama_llm="qwen2.5:1.5b-instruct", ollama_timeout=600, llm_num_ctx=16384,
-                        rerank_cache_dir=str(ROOT / ".reranker_cache"), supabase_url="https://example.invalid",
-                        supabase_service_key="test-double-only")
+                        rerank_cache_dir=str(ROOT / ".reranker_cache"))
     store = DocumentStore(local_connection)
-    with tempfile.TemporaryDirectory(prefix="document-check-storage-") as folder:
-        storage = LocalStorageDouble(folder)
+    with TestClient(app, base_url="http://127.0.0.1:8000", client=("127.0.0.1", 50000)) as client:
         api.get_settings = lambda: settings
+        auth.get_settings = lambda: settings
         worker.get_settings = lambda: settings
         worker.get_document_store = lambda: store
-        worker.PrivateStorage = lambda _: storage
-        api.PrivateStorage = lambda _: storage
         worker.analyze_file = docker_analysis
-        app.dependency_overrides[require_document_admin] = lambda: ACTOR
         app.dependency_overrides[get_document_store] = lambda: store
-        client = TestClient(app)
         if document_id:
             repo = PgServiceRepository(local_connection, documents_enabled=True, document_scope=document_id)
             report = {"model": settings.ollama_llm, "llm_num_ctx": settings.llm_num_ctx, "query_only": True, "document_id": document_id}
@@ -239,7 +234,8 @@ def run(fixture: Path, result_file: Path, document_id=None, rounds=2, case=None)
             return
         metadata = {"service_id": SERVICE, "name": "가상 Docling 검증 문서", "source_url": "https://example.invalid/docling-test",
                     "basis_year": "2026", "test_only": True, "edition": "TEST-" + uuid4().hex[:8]}
-        report = {"isolation": "local PostgreSQL + Storage double + overridden Auth identity; real Docling/Ollama/vector DB",
+        report = {"isolation": "TEST_ / test_only; real Postgres artifacts; real local HTTP gate; no Auth/Storage key",
+                  "supabase": supabase,
                   "model": settings.ollama_llm, "llm_num_ctx": settings.llm_num_ctx}
         started = time.monotonic()
         try:
@@ -256,6 +252,11 @@ def run(fixture: Path, result_file: Path, document_id=None, rounds=2, case=None)
             for marker in ("BORDER-EXCEPTION-73", "TABLE-UNIT-29", "MISSING-DETAIL-41", "END-PROVENANCE-58"):
                 assert marker in extracted
             assert "장/상자" in extracted and "B코드가 정지" in extracted
+            markdown = client.get(f"/api/v1/admin/documents/{did}/markdown")
+            assert markdown.status_code == 200 and "TABLE-UNIT-29" in markdown.text and "BORDER-EXCEPTION-73" in markdown.text
+            assert DocumentStore(local_connection).analysis_data(did)["markdown"] == markdown.text
+            assert DocumentStore(local_connection).original(did, 20*1024*1024) == fixture.read_bytes()
+            report.update(markdown_characters=len(markdown.text), artifacts_reloaded_from_database=True)
             sections = {key: [] for key in ("target", "criteria", "benefit", "application")}
             current = "target"
             for block in analysis["blocks"]:
@@ -326,7 +327,13 @@ def run(fixture: Path, result_file: Path, document_id=None, rounds=2, case=None)
                 report["semantic_search"].append({"query": question, "marker_rank": rank, "top_similarity": hits[0]["similarity"]})
             result_file.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             active = PgServiceRepository(local_connection, documents_enabled=True, document_scope=did).snapshot().chunks
-            check_answers(client, did, active, report, result_file, rounds, case)
+            with local_connection() as conn, conn.cursor() as cur:
+                assert official_snapshot(cur) == baseline, "existing official data changed"
+            report["official_data_preserved"] = True
+            if skip_answers:
+                report["answer_checks"] = {"executed": False}
+            else:
+                check_answers(client, did, active, report, result_file, rounds, case)
             report["seconds"] = round(time.monotonic() - started, 2)
             result_file.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             print(json.dumps({k: v for k, v in report.items() if k not in {"answers", "semantic_search"}}, ensure_ascii=False))
@@ -341,5 +348,7 @@ if __name__ == "__main__":
     parser.add_argument("--document-id", help="같은 격리 DB의 활성 문서만 재질의한다. 분석/Storage 검증은 재실행하지 않는다.")
     parser.add_argument("--rounds", type=int, choices=range(1, 4), default=2)
     parser.add_argument("--case", type=int, choices=range(1, 6), help="실패 진단용 단일 문항. 전체 검증에서는 생략한다.")
+    parser.add_argument("--supabase", action="store_true", help="확인된 welfare_helper 프로젝트의 TEST_ 전용 자료만 사용한다. DDL은 실행하지 않는다.")
+    parser.add_argument("--skip-answers", action="store_true", help="마이그레이션·저장 검사 전용. Qwen 답변 검증은 실행하지 않는다.")
     args = parser.parse_args()
-    run(args.fixture, args.result, args.document_id, args.rounds, args.case)
+    run(args.fixture, args.result, args.document_id, args.rounds, args.case, args.supabase, args.skip_answers)

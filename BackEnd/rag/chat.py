@@ -529,7 +529,7 @@ class ChatService:
             rendered.add(key)
             record = by_id[chunk.service_id]
             if chunk.usable_detail:
-                label = "가상 검증 문서" if chunk.test_only else "관리자 검토 문서" if chunk.document_id else "공식 API 원문"
+                label = "가상 검증 문서" if chunk.test_only else "검토 문서" if chunk.document_id else "공식 API 원문"
                 parts.append(f"{record.name} {SECTION_LABELS.get(chunk.section, chunk.section)} 원문 ({label}): {chunk.text}")
                 basis = chunk.basis_year + "년" if chunk.basis_year else "미확인"
                 if chunk.source_updated_at:

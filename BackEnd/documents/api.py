@@ -4,13 +4,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import ValidationError
 from pydantic import BaseModel, Field
+from fastapi.responses import PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
 from BackEnd.core.settings import get_settings
 from BackEnd.documents.auth import require_document_admin
 from BackEnd.documents.analysis import read_analysis
 from BackEnd.documents.contracts import DocumentError, DocumentMetadata, IndexRequest, stable_hash, validate_file, validate_review
-from BackEnd.documents.storage import PrivateStorage
 from BackEnd.documents.store import get_document_store
 
 router = APIRouter(prefix="/api/v1/admin/documents", tags=["관리자 문서"])
@@ -97,14 +97,9 @@ async def upload_document(file: UploadFile = File(...), metadata: str = Form(...
 
     def persist():
         config = {"ocr": settings.docling_ocr, "max_pages": settings.documents_max_pages,
-                  "max_characters": settings.documents_max_characters}
-        doc = store.register(parsed.model_dump(mode="json"), stable_hash(content), len(content), suffix, actor, config)
-        try:
-            storage = PrivateStorage(settings)
-            storage.put(doc["object_key"], content, {"pdf": "application/pdf", "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "md": "text/markdown; charset=utf-8"}[suffix])
-        except Exception:
-            store.upload_failed(doc["id"])
-            raise
+                  "max_characters": settings.documents_max_characters, "artifact_store": "postgres-v1",
+                  "local_ingestion": actor is None}
+        doc = store.register(parsed.model_dump(mode="json"), stable_hash(content), len(content), suffix, actor, config, content)
         job = store.queue_analysis(doc["id"], actor)
         return {"id": str(doc["id"]), "job_id": str(job["id"]), "state": job["state"],
                 "test_only": doc["test_only"], "embedding_started": False}
@@ -120,7 +115,7 @@ def document_status(document_id: UUID, offset: int = Query(default=0, ge=0), lim
                     actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
     try:
         doc, jobs = store.status(str(document_id))
-        result = {key: doc[key] for key in ("id", "name", "service_id", "source_url", "basis_year", "source_updated_at", "status", "active", "test_only", "parser_version")}
+        result = {key: doc[key] for key in ("id", "name", "service_id", "source_url", "basis_year", "source_updated_at", "status", "active", "test_only", "parser_version", "local_ingestion")}
         result["jobs"] = [{key: job[key] for key in ("id", "kind", "state", "attempts", "error_code", "created_at", "finished_at")} for job in jobs]
         for output, job in zip(result["jobs"], jobs):
             output["progress"] = {key: value for key, value in job["result"].items()
@@ -128,7 +123,7 @@ def document_status(document_id: UUID, offset: int = Query(default=0, ge=0), lim
         result["api_source"] = store.policy(doc["service_id"])
         if doc["analysis_job_id"]:
             settings = get_settings()
-            job, analysis = read_analysis(store, PrivateStorage(settings), str(document_id), settings.documents_max_characters * 20 + 20 * 1024 * 1024)
+            job, analysis = read_analysis(store, str(document_id), settings.documents_max_characters * 20 + 20 * 1024 * 1024)
             result["analysis"] = {"hash": job["result"]["analysis_hash"], "blockers": analysis["blockers"],
                                   "warnings": analysis["warnings"], "pages": analysis["pages"], "total_blocks": len(analysis["blocks"]),
                                   "blocks": analysis["blocks"][offset:offset + limit], "offset": offset,
@@ -142,7 +137,7 @@ def document_status(document_id: UUID, offset: int = Query(default=0, ge=0), lim
 def index_document(document_id: UUID, request: IndexRequest, actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
     try:
         settings = get_settings()
-        job, analysis = read_analysis(store, PrivateStorage(settings), str(document_id), settings.documents_max_characters * 20 + 20 * 1024 * 1024)
+        job, analysis = read_analysis(store, str(document_id), settings.documents_max_characters * 20 + 20 * 1024 * 1024)
         if request.analysis_hash != job["result"]["analysis_hash"]:
             raise DocumentError("analysis_version_changed")
         payload = request.model_dump(mode="json")
@@ -157,6 +152,16 @@ def index_document(document_id: UUID, request: IndexRequest, actor: str = Depend
 def retry_document(document_id: UUID, actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
     try:
         return {"job_id": store.retry(str(document_id), actor), "state": "queued"}
+    except Exception as exc:
+        document_failure(exc)
+
+
+@router.get("/{document_id}/markdown", response_class=PlainTextResponse)
+def document_markdown(document_id: UUID, actor=Depends(require_document_admin), store=Depends(get_document_store)):
+    try:
+        settings = get_settings()
+        _, analysis = read_analysis(store, str(document_id), settings.documents_max_characters * 20 + 20 * 1024 * 1024)
+        return analysis["markdown"]
     except Exception as exc:
         document_failure(exc)
 

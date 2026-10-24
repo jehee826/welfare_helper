@@ -41,11 +41,13 @@ def normalize(value: str) -> str:
                      for line in unicodedata.normalize("NFC", value).splitlines() if line.strip())
 
 
-def read_analysis(store, storage, document_id, max_bytes):
+def read_analysis(store, document_id, max_bytes):
     job = store.analysis_result(document_id)
     result = job["result"]
     try:
-        analysis = json.loads(storage.get(result["artifact_key"], max_bytes))
+        analysis = store.analysis_data(document_id)
+        if len(json.dumps(analysis, ensure_ascii=False).encode()) > max_bytes:
+            raise DocumentError("analysis_artifact_size_limit")
     except (ValueError, KeyError):
         raise DocumentError("analysis_artifact_invalid") from None
     if stable_hash(analysis) != result["analysis_hash"]:
@@ -141,4 +143,4 @@ def analyze_file(path: Path, config: dict, settings, progress=lambda stage: None
             "runtime_versions": {name: importlib.metadata.version(name) for name in ("docling-slim", "docling-core")},
             "model_files": manifests, "pages": pages, "blocks": blocks, "characters": characters,
             "blockers": sorted(set(blockers)), "warnings": sorted(set(warnings)),
-            "docling_document": document.export_to_dict()}
+            "markdown": document.export_to_markdown(), "docling_document": document.export_to_dict()}

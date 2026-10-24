@@ -81,7 +81,8 @@ class EvidenceChunk:
             return False
         try:
             UUID(self.document_id)
-            UUID(self.reviewed_by)
+            if self.reviewed_by != "local":
+                UUID(self.reviewed_by)
             dated = datetime.fromisoformat(self.reviewed_at).tzinfo is not None
             collected = datetime.fromisoformat(self.collected_at).tzinfo is not None
             url = urlparse(self.source_url)

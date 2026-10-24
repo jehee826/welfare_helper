@@ -1,3 +1,5 @@
+import base64
+import json
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -12,7 +14,19 @@ def supabase_headers(settings) -> tuple[str, dict]:
     if (parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password
             or parsed.path or parsed.query or parsed.fragment or not key):
         raise DocumentError("supabase_server_configuration_required")
-    return base, {"apikey": key, "Authorization": "Bearer " + key}
+    headers = {"apikey": key}
+    if key.startswith("sb_secret_") and len(key) > len("sb_secret_"):
+        return base, headers
+    # 서버 설정의 레거시 키 유형만 구분한다. JWT의 실제 검증은 Supabase가 수행한다.
+    try:
+        parts = key.split(".")
+        claims = json.loads(base64.b64decode(parts[1] + "=" * (-len(parts[1]) % 4), altchars=b"-_", validate=True)) if len(parts) == 3 else {}
+        if not isinstance(claims, dict) or claims.get("role") != "service_role":
+            raise ValueError
+    except (ValueError, TypeError):
+        raise DocumentError("supabase_server_key_required") from None
+    headers["Authorization"] = "Bearer " + key
+    return base, headers
 
 
 class PrivateStorage:

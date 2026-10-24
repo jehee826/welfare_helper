@@ -96,3 +96,35 @@ def test_reranker_health_does_not_start_inference(monkeypatch):
     monkeypatch.setattr(LocalReranker, "score", lambda *a: (_ for _ in ()).throw(AssertionError("추론하면 안 됩니다.")))
     response = TestClient(app).get("/health/reranker")
     assert response.status_code == 200 and response.json()["inference_checked"] is False
+
+
+def test_runtime_endpoint_whitelists_settings_without_external_work(monkeypatch):
+    import json
+
+    from BackEnd.core.settings import Settings
+
+    settings = Settings(
+        _env_file=None, ollama_llm="selected-test-model",
+        database_url="postgresql://private-user:private-password@private-host/private-db",
+        database_password="private-password", bokjiro_service_key="private-api-key",
+    )
+    monkeypatch.setattr("BackEnd.main.get_settings", lambda: settings)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("설정 조회에서 DB·모델 작업을 시작했습니다.")
+
+    monkeypatch.setattr("BackEnd.main.connect", unexpected)
+    monkeypatch.setattr("BackEnd.main.get_chat_service", unexpected)
+    monkeypatch.setattr("BackEnd.main.OllamaClient", unexpected)
+    monkeypatch.setattr("BackEnd.main.LocalReranker", unexpected)
+    response = TestClient(app).get("/health/runtime")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["llm"]["model"] == "selected-test-model"
+    assert body["embedding"] == {"model": "bge-m3", "dimension": 1024}
+    assert body["configuration_only"] is True and body["readiness_checked"] is False
+    assert body["retrieval"]["candidate_limit"] == settings.retrieve_top_n
+    assert body["reranker"]["revision"] == settings.rerank_revision
+    serialized = json.dumps(body)
+    assert "private-" not in serialized
+    assert "database_url" not in serialized and "rerank_cache_dir" not in serialized

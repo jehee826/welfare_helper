@@ -48,10 +48,14 @@ python -m BackEnd.ingest.details --service-id WLF00001164 --write
 `DATABASE_URL`에는 비밀번호를 제외한 접속 주소를 넣고 `DATABASE_PASSWORD`에 비밀번호를 별도로 주입할 수 있습니다. 예를 들어 `postgresql://postgres.<project-ref>@<pooler-host>:5432/postgres` 형태이며, 실제 호스트·사용자명은 Connect 값을 사용합니다. 비밀번호는 URI 문자열에 이어 붙이지 않고 psycopg2의 password 인자로 전달하므로 예약 문자를 인코딩할 필요가 없습니다. 기존 비밀번호 포함 URL도 지원하며, `DATABASE_PASSWORD`가 있으면 그 값이 우선됩니다. 로컬 DB_* 경로의 `DB_PASSWORD`는 그대로 유지합니다.
 
 ```cmd
-docker compose -f docker-compose.yml -f docker-compose.supabase.yml -f docker-compose.notebook.yml up --build backend ollama
+docker compose -f docker-compose.yml -f docker-compose.supabase.yml -f docker-compose.notebook.yml up -d --build backend ollama
 ```
 
-Supabase 모드에서는 로컬 PostgreSQL 의존성과 시작 시 CSV 적재가 없습니다. 연결 값이 없으면 로컬 DB로 대체하지 않고 설정 오류로 종료합니다. 노트북 오버라이드는 Qwen 2.5 태그를 사용하며 `NOTEBOOK_LLM`으로 실제 설치 태그를 지정할 수 있습니다. 기본 gemma3 설정을 바꾸지 않고 컨텍스트 2048·후보 6개·CPU 스레드 2개·Ollama 메모리 2GB로 제한합니다. Compose up은 이미지·설정 변경 시 해당 컨테이너를 재생성할 수 있으므로 기존 실행 상태와 데이터 마운트를 확인한 뒤 사용합니다.
+Supabase 모드에서는 로컬 PostgreSQL 의존성과 시작 시 CSV 적재가 없습니다. 연결 값이 없으면 로컬 DB로 대체하지 않고 설정 오류로 종료합니다. 기존 notebook 파일은 자원 제한용이며 컨텍스트 2048·출력 300·후보 6개·CPU 스레드 2개·Ollama 2 CPU·메모리 2GB·동시 추론 및 적재 모델 각 1개 제한을 유지합니다. 큰 모델은 메모리 한도를 넘어 실행하지 못할 수 있습니다.
+
+모델을 바꿀 때는 사용자가 `.env`의 `OLLAMA_LLM` 이름 하나만 수정합니다. 예를 들어 `qwen2.5:1.5b-instruct` 또는 `gemma3:4b`를 지정하면 backend의 선택 모델과 Ollama 준비 목록에 같은 값이 전달됩니다. 모델 이름으로 정확도나 GPU 사용 가능성을 보장하지 않습니다. 선택 모델이 없으면 기존 Ollama 시작 스크립트가 다운로드할 수 있습니다.
+
+수정 후 Windows CMD의 저장소 루트에서 위와 같은 Compose up 명령을 다시 실행해 backend·ollama 설정을 재적용합니다. `.env` 저장이나 `docker restart`만으로 환경변수 갱신을 보장할 수 없습니다. Compose up은 변경된 컨테이너를 재생성할 수 있으며, 기존 `ollama_data/`, `postgres_data/`, 리랭커 캐시 마운트는 유지합니다. `down -v`나 데이터 폴더 초기화는 하지 않습니다. 생성 LLM만 바꾸고 임베딩 모델·청크 내용이 같으면 재임베딩할 필요가 없습니다. Supabase·bge-m3 1024차원·리랭커 모델/리비전/임계값/캐시는 그대로 사용합니다.
 
 로컬 DB 모드는 `DATABASE_URL`을 비우고 `docker compose --profile local up --build`로 실행합니다. 기존 로컬 초기 CSV 적재 편의는 유지하며 `INGEST_ON_STARTUP=false`로 끌 수 있습니다. 기존 데이터 폴더를 보존합니다.
 
@@ -85,6 +89,8 @@ Swagger에서 `GET /health`와 `GET /health/db`를 확인한 뒤 `POST /api/v1/c
 ```json
 {"query": "기초연금은 어떤 서비스인가요?", "profile": null}
 ```
+
+`GET /health/runtime`은 프로세스에 적용된 llm(모델·컨텍스트·출력·온도·스레드), embedding(모델·차원), retrieval(후보·유사도 기준), reranker(모델·리비전·임계값·입력 길이·스레드)를 반환합니다. DB 접속값·비밀번호·API 키·서버 경로는 반환하지 않습니다. `configuration_only=true`, `readiness_checked=false`이며 모델 추론·연결·적재·다운로드를 실행하거나 모델 준비·정확도를 보증하지 않습니다. 모델 변경 후 Swagger에서 적용된 설정을 확인합니다.
 
 `GET /health/reranker`는 캐시 경로·파일 준비만 확인하며 추론 성공을 뜻하지 않습니다. `query`를 `기초연금 문의처`, `기초연금 신청 조건`, `기초연금 신청 방법`, `우주여행 항공권 예약`으로 바꿔 확인할 수 있습니다. 상세 근거가 없거나 무관하면 보류해야 합니다. 빈 질문이나 공백만 있는 질문은 422 응답으로 거부합니다.
 

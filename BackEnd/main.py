@@ -93,6 +93,35 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/health/runtime")
+def runtime_settings():
+    """프로세스에 적용된 공개 설정만 반환하며 연결·준비 상태를 검사하지 않는다."""
+    settings = get_settings()
+    return {
+        "configuration_only": True,
+        "readiness_checked": False,
+        "llm": {
+            "model": settings.ollama_llm,
+            "context_tokens": settings.llm_num_ctx,
+            "max_output_tokens": settings.llm_num_predict,
+            "temperature": settings.llm_temperature,
+            "threads": settings.llm_num_thread,
+        },
+        "embedding": {"model": settings.ollama_embed, "dimension": settings.embed_dim},
+        "retrieval": {
+            "candidate_limit": settings.retrieve_top_n,
+            "min_dense_similarity": settings.min_dense_sim,
+        },
+        "reranker": {
+            "model": settings.rerank_model,
+            "revision": settings.rerank_revision,
+            "min_score": settings.min_rerank_score,
+            "max_length": settings.rerank_max_length,
+            "threads": settings.rerank_threads,
+        },
+    }
+
+
 @app.get("/health/reranker")
 def reranker_health():
     settings = get_settings()

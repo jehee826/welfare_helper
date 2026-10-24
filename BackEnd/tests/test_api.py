@@ -128,3 +128,21 @@ def test_runtime_endpoint_whitelists_settings_without_external_work(monkeypatch)
     serialized = json.dumps(body)
     assert "private-" not in serialized
     assert "database_url" not in serialized and "rerank_cache_dir" not in serialized
+
+
+def test_debug_route_requires_explicit_enablement_and_separate_token(monkeypatch):
+    from BackEnd.core.settings import Settings
+
+    monkeypatch.delenv("VERCEL", raising=False)
+    token = "test-only-token-" * 3
+    settings = Settings(_env_file=None, rag_diagnostics_enabled=True, rag_diagnostics_token=token)
+    monkeypatch.setattr("BackEnd.main.get_settings", lambda: settings)
+    stub = StubChat()
+    stub.answer_with_diagnostics = lambda *a: ({"kind": "fallback"}, {"request_id": "test-id"})
+    client = client_with(stub)
+    assert client.post("/debug/rag", json={"query": "테스트"}).status_code == 404
+    response = client.post("/debug/rag", json={"query": "테스트"}, headers={"X-Rag-Debug-Token": token})
+    assert response.status_code == 200
+    assert token not in response.text
+    monkeypatch.setenv("VERCEL", "1")
+    assert client.post("/debug/rag", json={"query": "테스트"}, headers={"X-Rag-Debug-Token": token}).status_code == 404

@@ -1,15 +1,18 @@
 import logging
+import hmac
+import os
 from contextlib import closing
 from functools import lru_cache
 from typing import Literal
 
 import psycopg2
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
-from BackEnd.rag.chat import ChatService
+from BackEnd.rag.chat import ChatService, RagExecutionError
 from BackEnd.rag.ollama import OllamaClient
 from BackEnd.rag.repository import PgServiceRepository
 from BackEnd.rag.reranker import LocalReranker, RerankerError
@@ -85,6 +88,7 @@ def get_chat_service() -> ChatService:
     return ChatService(
         repo, llm, min_similarity=settings.min_dense_sim, top_n=settings.retrieve_top_n,
         reranker=reranker, min_rerank_score=settings.min_rerank_score,
+        dense_k=settings.dense_top_k, keyword_k=settings.keyword_top_k, core_k=settings.core_evidence_k,
     )
 
 
@@ -109,8 +113,12 @@ def runtime_settings():
         },
         "embedding": {"model": settings.ollama_embed, "dimension": settings.embed_dim},
         "retrieval": {
-            "candidate_limit": settings.retrieve_top_n,
+            "candidate_limit": min(settings.retrieve_top_n, 40),
+            "dense_limit": settings.dense_top_k,
+            "keyword_limit": settings.keyword_top_k,
+            "core_evidence_limit": settings.core_evidence_k,
             "min_dense_similarity": settings.min_dense_sim,
+            "dense_prefilter_enabled": False,
         },
         "reranker": {
             "model": settings.rerank_model,
@@ -159,3 +167,26 @@ def chat(request: ChatRequest, service: ChatService = Depends(get_chat_service))
             status_code=503,
             detail="상담 데이터를 불러오지 못했어요. 잠시 후 다시 시도하거나 보건복지상담센터 129로 문의해 주세요.",
         ) from None
+
+
+def require_rag_diagnostics(x_rag_debug_token: str = Header(default="")) -> None:
+    settings = get_settings()
+    token = settings.rag_diagnostics_token.get_secret_value() if settings.rag_diagnostics_token else ""
+    if (not settings.rag_diagnostics_enabled or os.environ.get("VERCEL")
+            or len(token) < 32 or not hmac.compare_digest(token.encode(), x_rag_debug_token.encode())):
+        raise HTTPException(status_code=404, detail="사용할 수 없는 경로입니다.")
+
+
+@app.post("/debug/rag", dependencies=[Depends(require_rag_diagnostics)])
+def rag_diagnostics(request: ChatRequest, service: ChatService = Depends(get_chat_service)):
+    try:
+        response, diagnostics = service.answer_with_diagnostics(
+            request.query, request.profile.model_dump() if request.profile else None,
+            [message.model_dump() for message in request.history],
+        )
+        return {"response": response, "diagnostics": diagnostics}
+    except RagExecutionError as exc:
+        return JSONResponse(status_code=503, content={"response": None, "diagnostics": exc.diagnostics})
+    except Exception as exc:
+        logger.error("rag diagnostic failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="진단 실행 중 오류가 발생했습니다. DB·검색기·모델 상태를 확인해 주세요.") from None

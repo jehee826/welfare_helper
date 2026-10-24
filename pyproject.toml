@@ -10,6 +10,7 @@ dependencies = [
     "pydantic-settings",
     "langchain-core==1.6.13",
     "langchain-ollama==1.1.0",
+    "kiwipiepy==0.24.1",
 ]
 
 [project.optional-dependencies]

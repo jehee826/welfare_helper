@@ -4,9 +4,15 @@ import math
 from pathlib import Path
 from threading import Lock
 
+from BackEnd.rag.chunking import split_ranges
+
 
 class RerankerError(RuntimeError):
     """리랭커를 사용할 수 없거나 점수가 유효하지 않을 때 발생한다."""
+
+
+class RerankerInputError(RerankerError):
+    """질문 또는 문서가 원문 보존 입력 창에 들어가지 않는다."""
 
 
 class LocalReranker:
@@ -18,6 +24,7 @@ class LocalReranker:
         self.threads = threads
         self._session = None
         self._tokenizer = None
+        self._count_tokenizer = None
         self._lock = Lock()
 
     def model_files(self) -> tuple[Path, Path]:
@@ -29,8 +36,23 @@ class LocalReranker:
         return files
 
     def score(self, query: str, passages: list[str]) -> list[float]:
+        return self.score_with_diagnostics(query, passages)[0]
+
+    def count_tokens(self, text: str) -> int:
+        with self._lock:
+            if self._count_tokenizer is None:
+                from tokenizers import Tokenizer
+
+                self._count_tokenizer = Tokenizer.from_file(str(self.model_files()[0]))
+                self._count_tokenizer.no_truncation()
+            return len(self._count_tokenizer.encode(text, add_special_tokens=False).ids)
+
+    def score_with_diagnostics(self, query: str, passages: list[str]) -> tuple[list[float], list[dict]]:
         if not passages:
-            return []
+            return [], []
+        query_tokens = self.count_tokens(query)
+        if query_tokens > 128:
+            raise RerankerInputError("질문이 128토큰을 넘습니다. 의도별로 범위를 좁혀 주세요.")
         # 첫 요청의 중복 모델 로딩과 동시 추론에 따른 메모리 급증을 막는다.
         with self._lock:
             try:
@@ -40,7 +62,7 @@ class LocalReranker:
                     from tokenizers import Tokenizer
 
                     tokenizer = Tokenizer.from_file(str(files[0]))
-                    tokenizer.enable_truncation(max_length=self.max_length, strategy="only_second")
+                    tokenizer.no_truncation()
                     options = ort.SessionOptions()
                     options.intra_op_num_threads = self.threads
                     options.inter_op_num_threads = 1
@@ -52,24 +74,45 @@ class LocalReranker:
                     )
                     self._tokenizer, self._session = tokenizer, session
 
-                scores = []
+                scores, diagnostics = [], []
                 import numpy as np
                 for passage in passages:
-                    encoded = self._tokenizer.encode(query, passage)
-                    values = {
-                        "input_ids": encoded.ids,
-                        "attention_mask": encoded.attention_mask,
-                        "token_type_ids": encoded.type_ids,
-                    }
-                    inputs = {arg.name: np.asarray([values[arg.name]], dtype=np.int64)
-                              for arg in self._session.get_inputs()}
-                    logits = self._session.run(None, inputs)[0].reshape(-1)
-                    if len(logits) != 1 or not math.isfinite(float(logits[0])):
-                        raise ValueError("리랭커 점수가 유효하지 않습니다.")
-                    value = float(logits[0])
-                    scores.append(1 / (1 + math.exp(-value)) if value >= 0
-                                  else math.exp(value) / (1 + math.exp(value)))
-                return scores
+                    special = len(self._tokenizer.encode(query, "").ids) - query_tokens
+                    budget = min(400, self.max_length - query_tokens - special - 16)
+                    header, body = "", passage
+                    lines = passage.split("\n", 2)
+                    if len(lines) == 3 and lines[0].startswith("서비스명:") and lines[1].startswith("섹션:"):
+                        header, body = "\n".join(lines[:2]) + "\n", lines[2]
+                        while body.startswith("[제목") and "\n" in body:
+                            heading, _, body = body.partition("\n")
+                            header += heading + "\n"
+                    count = lambda text: len(self._tokenizer.encode(text, add_special_tokens=False).ids)
+                    try:
+                        windows = split_ranges(body, header, count, target=len(body), max_chars=max(1, len(body)),
+                                               max_tokens=budget, overlap=False)
+                    except ValueError:
+                        raise RerankerInputError("원문을 빠짐없이 입력 창으로 나누지 못했습니다.") from None
+                    window_scores, lengths = [], []
+                    for window in windows:
+                        encoded = self._tokenizer.encode(query, header + body[window.start:window.end])
+                        if len(encoded.ids) > self.max_length - 16:
+                            raise RerankerInputError("리랭커 쌍 입력 한도를 넘었습니다.")
+                        lengths.append(len(encoded.ids))
+                        values = {"input_ids": encoded.ids, "attention_mask": encoded.attention_mask,
+                                  "token_type_ids": encoded.type_ids}
+                        inputs = {arg.name: np.asarray([values[arg.name]], dtype=np.int64)
+                                  for arg in self._session.get_inputs()}
+                        logits = self._session.run(None, inputs)[0].reshape(-1)
+                        if len(logits) != 1 or not math.isfinite(float(logits[0])):
+                            raise ValueError("리랭커 점수가 유효하지 않습니다.")
+                        value = float(logits[0])
+                        window_scores.append(1 / (1 + math.exp(-value)) if value >= 0
+                                             else math.exp(value) / (1 + math.exp(value)))
+                    scores.append(max(window_scores))
+                    diagnostics.append({"windows": len(windows), "pair_tokens": lengths, "truncated": False})
+                return scores, diagnostics
+            except RerankerInputError:
+                raise
             except Exception as exc:
                 raise RerankerError(f"로컬 리랭커 사용 실패: {type(exc).__name__}") from None
 

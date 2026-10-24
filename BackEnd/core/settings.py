@@ -27,11 +27,16 @@ class Settings(BaseSettings):
     ollama_timeout: float = Field(default=120.0, gt=0)
     embed_dim: int = Field(default=1024, ge=1024, le=1024)
     llm_num_ctx: int = Field(default=8192, ge=512)
-    llm_temperature: float = Field(default=0.2, ge=0, le=2)
-    llm_num_predict: int = Field(default=250, ge=1)
+    llm_temperature: float = Field(default=0.0, ge=0, le=2)
+    llm_num_predict: int = Field(default=512, ge=1)
     llm_num_thread: int = Field(default=2, ge=1, le=16)
 
-    retrieve_top_n: int = Field(default=12, ge=1, le=50)
+    retrieve_top_n: int = Field(default=40, ge=1, le=50)
+    dense_top_k: int = Field(default=30, ge=1, le=30)
+    keyword_top_k: int = Field(default=30, ge=1, le=30)
+    core_evidence_k: int = Field(default=6, ge=1, le=6)
+    rag_diagnostics_enabled: bool = False
+    rag_diagnostics_token: SecretStr | None = None
     min_dense_sim: float = Field(default=0.52, ge=-1, le=1)
     rerank_model: str = "onnx-community/bge-reranker-v2-m3-ONNX"
     rerank_revision: str = "6f5ff65298512715a1e669753bc754d2bc8f367b"

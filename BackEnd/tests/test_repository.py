@@ -101,3 +101,33 @@ def test_official_detail_metadata_round_trips_without_changing_services(repo):
     official = [chunk for chunk in chunks if chunk.official]
     assert len(official) == 3 and all(chunk.collected_at for chunk in official)
     assert len(repo.all_services()) == 1
+
+
+def test_version_activation_retains_history_and_filters_before_dense_top_k(repo):
+    from BackEnd.tests.test_rag_accuracy import children
+
+    repo.sync_snapshot([PENSION], indexed(PENSION))
+    old, new = children(digest="old"), children(digest="new")
+    repo.activate_details(old, {c.chunk_id: VECTOR for c in old}, {PENSION.service_id: set()})
+    repo.activate_details(new, {c.chunk_id: VECTOR for c in new}, {PENSION.service_id: {old[0].version}})
+    snapshot = repo.snapshot()
+    assert {c.version for c in snapshot.chunks if c.version} == {new[0].version}
+    all_rows = repo.chunks_for_services([PENSION.service_id])
+    assert any(c.version == old[0].version and not c.active for c in all_rows)
+    allowed = [c.chunk_id for c in snapshot.chunks]
+    assert all(c.chunk_id in allowed for c in repo.dense_search(VECTOR, 30, allowed))
+
+
+def test_same_basis_conflict_and_stale_activation_preserve_previous_version(repo):
+    from BackEnd.tests.test_rag_accuracy import children
+
+    repo.sync_snapshot([PENSION], indexed(PENSION))
+    old = children()
+    repo.activate_details(old, {c.chunk_id: VECTOR for c in old}, {PENSION.service_id: set()})
+    new = children("테스트 변경: 월 20만원입니다.")
+    with pytest.raises(ValueError):
+        repo.activate_details(new, {c.chunk_id: VECTOR for c in new}, {PENSION.service_id: {old[0].version}})
+    assert repo.snapshot().active_versions[PENSION.service_id] == {old[0].version}
+    with pytest.raises(ValueError):
+        repo.activate_details(new, {c.chunk_id: VECTOR for c in new}, {PENSION.service_id: set()}, replace_same_basis=True)
+    assert repo.snapshot().active_versions[PENSION.service_id] == {old[0].version}

@@ -1,4 +1,6 @@
 from contextlib import closing
+from dataclasses import asdict, dataclass, field, replace
+import json
 from pathlib import Path
 from typing import Callable
 
@@ -6,9 +8,21 @@ from psycopg2.extras import Json, execute_values
 
 from BackEnd.ingest.csv_loader import ServiceRecord
 from BackEnd.rag.embeddings import validate_embeddings
-from BackEnd.rag.evidence import EvidenceChunk, read_chunk
+from BackEnd.rag.evidence import (EvidenceChunk, EvidenceConsistencyError, active_chunks,
+                                  fingerprint, read_chunk, validate_version)
 
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
+MAX_CATALOG_ROWS = 50000
+
+
+@dataclass(frozen=True)
+class CatalogSnapshot:
+    services: list[ServiceRecord]
+    chunks: list[EvidenceChunk]
+    stamp: str
+    active_versions: dict[str, set[str]] = field(default_factory=dict)
+    unavailable_services: dict[str, str] = field(default_factory=dict)
+    service_stamps: dict[str, str] = field(default_factory=dict)
 
 
 def vector_literal(values: list[float]) -> str:
@@ -104,6 +118,48 @@ class PgServiceRepository:
                 for row in cur.fetchall()
             ]
 
+    def snapshot(self) -> CatalogSnapshot:
+        """같은 MVCC 시점의 메타데이터를 읽고 활성 자식만 검색에 제공한다."""
+        with closing(self._connect()) as conn:
+            conn.set_session(isolation_level="REPEATABLE READ", readonly=True)
+            with conn, conn.cursor() as cur:
+                cur.execute("SELECT service_id,name,summary,ministry,department,url,contacts,source_updated_at "
+                            "FROM welfare_services ORDER BY service_id LIMIT %s", (MAX_CATALOG_ROWS + 1,))
+                rows = cur.fetchall()
+                if len(rows) > MAX_CATALOG_ROWS:
+                    raise EvidenceConsistencyError("서비스 상한을 넘어 불완전한 검색을 중단합니다.")
+                services = [ServiceRecord(r[0], r[1], r[2], r[3], r[4], r[5], r[6] or [],
+                                          r[7].isoformat() if r[7] else "") for r in rows]
+                cur.execute("SELECT c.chunk_id,c.service_id,c.content,s.url,s.source_updated_at,c.embed_model "
+                            "FROM welfare_chunks c JOIN welfare_services s USING(service_id) "
+                            "ORDER BY c.chunk_id LIMIT %s", (MAX_CATALOG_ROWS + 1,))
+                rows = cur.fetchall()
+        if len(rows) > MAX_CATALOG_ROWS:
+            raise EvidenceConsistencyError("원문 상한을 넘어 불완전한 검색을 중단합니다.")
+        grouped, raw_by_service = {}, {r.service_id: [] for r in services}
+        for row in rows:
+            grouped.setdefault(row[1], []).append(read_chunk(row[0], row[1], row[2], row[3], row[4].isoformat() if row[4] else ""))
+            raw_by_service[row[1]].append(row[0] + row[2] + row[5])
+        chunks, unavailable = [], {}
+        for sid, group in grouped.items():
+            try:
+                chunks.extend(active_chunks(group))
+            except EvidenceConsistencyError:
+                unavailable[sid] = "invalid_or_conflicting_version"
+        models = {r[0]: r[5] for r in rows}
+        # 다른 임베딩 모델의 활성본이 있더라도 이전 v1 상세로 되돌리지 않는다.
+        searchable = [c for c in chunks if models[c.chunk_id] == self.embed_model]
+        stamp = fingerprint(json.dumps([asdict(r) for r in services],
+                                       ensure_ascii=False, sort_keys=True)
+                            + "\n".join(str(r[0]) + r[2] + r[5] for r in rows))
+        versions = {}
+        for chunk in chunks:
+            if chunk.version:
+                versions.setdefault(chunk.service_id, set()).add(chunk.version)
+        service_stamps = {r.service_id: fingerprint(json.dumps(asdict(r), ensure_ascii=False, sort_keys=True)
+                                                   + "\n".join(raw_by_service[r.service_id])) for r in services}
+        return CatalogSnapshot(services, searchable, stamp, versions, unavailable, service_stamps)
+
     def chunks_for_services(self, ids: list[str]) -> list[EvidenceChunk]:
         if not ids:
             return []
@@ -111,11 +167,86 @@ class PgServiceRepository:
             cur.execute(
                 "SELECT c.chunk_id,c.service_id,c.content,s.url,s.source_updated_at "
                 "FROM welfare_chunks c JOIN welfare_services s USING(service_id) "
-                "WHERE c.service_id = ANY(%s) AND c.embed_model = %s ORDER BY c.chunk_id LIMIT 500",
-                (ids[:50], self.embed_model),
+                "WHERE c.service_id = ANY(%s) AND c.embed_model = %s ORDER BY c.chunk_id LIMIT %s",
+                (ids, self.embed_model, MAX_CATALOG_ROWS + 1),
             )
-            return [read_chunk(row[0], row[1], row[2], row[3], row[4].isoformat() if row[4] else "")
-                    for row in cur.fetchall()]
+            rows = cur.fetchall()
+            if len(rows) > MAX_CATALOG_ROWS:
+                raise EvidenceConsistencyError("서비스 원문 상한을 초과했습니다.")
+            return [read_chunk(row[0], row[1], row[2], row[3], row[4].isoformat() if row[4] else "") for row in rows]
+
+    def detail_vectors(self, ids: list[str]) -> dict[tuple[str, str], list[float]]:
+        with closing(self._connect()) as conn, conn, conn.cursor() as cur:
+            cur.execute("SELECT chunk_id,service_id,content,embedding::text FROM welfare_chunks "
+                        "WHERE service_id=ANY(%s) AND embed_model=%s LIMIT %s",
+                        (ids, self.embed_model, MAX_CATALOG_ROWS + 1))
+            rows = cur.fetchall()
+        if len(rows) > MAX_CATALOG_ROWS:
+            raise EvidenceConsistencyError("기존 임베딩 상한을 초과했습니다.")
+        result = {}
+        for cid, sid, content, vector in rows:
+            chunk = read_chunk(cid, sid, content, "")
+            if chunk.version:
+                result[(chunk.embedding_text(), chunk.embed_digest)] = json.loads(vector)
+        return result
+
+    def activate_details(self, chunks: list[EvidenceChunk], vectors: dict[str, list[float]],
+                         expected: dict[str, set[str]], *, replace_same_basis: bool = False,
+                         expected_sources: dict[str, str] | None = None) -> int:
+        groups = {sid: [c for c in chunks if c.service_id == sid] for sid in {c.service_id for c in chunks}}
+        if not groups or set(vectors) != {c.chunk_id for c in chunks} or set(expected) != set(groups):
+            raise ValueError("전체 새 버전·임베딩·기존 버전 정보가 필요합니다.")
+        if expected_sources is not None and set(expected_sources) != set(groups):
+            raise ValueError("수집 전 서비스 원문 스냅샷이 필요합니다.")
+        for group in groups.values():
+            validate_version(group)
+        validate_embeddings(list(vectors.values()), len(vectors), self.embed_dim)
+        with closing(self._connect()) as conn, conn, conn.cursor() as cur:
+            for sid, group in sorted(groups.items()):
+                cur.execute("SELECT service_id,name,summary,ministry,department,url,contacts,source_updated_at "
+                            "FROM welfare_services WHERE service_id=%s FOR UPDATE", (sid,))
+                row = cur.fetchone()
+                if not row:
+                    raise EvidenceConsistencyError("서비스가 삭제되었습니다.")
+                record = ServiceRecord(row[0], row[1], row[2], row[3], row[4], row[5], row[6] or [],
+                                       row[7].isoformat() if row[7] else "")
+                if any(c.service_name != record.name or c.source_url != record.url for c in group):
+                    raise EvidenceConsistencyError("서비스 이름·출처가 수집 대상과 다릅니다.")
+                cur.execute("SELECT chunk_id,content,embed_model FROM welfare_chunks WHERE service_id=%s ORDER BY chunk_id FOR UPDATE", (sid,))
+                previous_rows = cur.fetchall()
+                source_stamp = fingerprint(json.dumps(asdict(record), ensure_ascii=False, sort_keys=True)
+                                           + "\n".join(cid + content + model for cid, content, model in previous_rows))
+                if expected_sources is not None and source_stamp != expected_sources[sid]:
+                    raise EvidenceConsistencyError("수집 중 원문이 변경되었습니다. 검토 후 다시 수집해 주세요.")
+                previous = [read_chunk(cid, sid, content, "") for cid, content, _ in previous_rows]
+                current = [c for c in previous if c.version and c.active]
+                if {c.version for c in current} != expected[sid]:
+                    raise EvidenceConsistencyError("수집 중 활성 버전이 바뀌었습니다. 다시 검토해 주세요.")
+                dated = [c for c in previous if c.official and (not c.version or c.active)]
+                if any(c.basis_year > group[0].basis_year for c in dated):
+                    raise EvidenceConsistencyError("이전 연도의 자료로 활성본을 교체하지 않습니다.")
+                if any(c.version != group[0].version and c.basis_year == group[0].basis_year
+                       and c.source_hash != group[0].source_hash for c in current) and not replace_same_basis:
+                    raise EvidenceConsistencyError("같은 기준연도 원문 변경은 충돌 검토 후 명시적으로 허용해야 합니다.")
+                new_parents = {c.section: c.parent_text for c in group if c.parent_text}
+                if any(not c.version and c.basis_year == group[0].basis_year and c.section in new_parents
+                       and c.text != new_parents[c.section] for c in dated) and not replace_same_basis:
+                    raise EvidenceConsistencyError("기존 v1 원문과 같은 연도 자료가 달라 충돌 검토가 필요합니다.")
+                for old in current:
+                    if old.version != group[0].version:
+                        cur.execute("UPDATE welfare_chunks SET content=%s WHERE chunk_id=%s",
+                                    (replace(old, active=False).storage(), old.chunk_id))
+            execute_values(cur,
+                "INSERT INTO welfare_chunks(chunk_id,service_id,content,embedding,embed_model) VALUES %s "
+                "ON CONFLICT(chunk_id) DO UPDATE SET content=EXCLUDED.content,embedding=EXCLUDED.embedding,embed_model=EXCLUDED.embed_model",
+                [(c.chunk_id, c.service_id, c.storage(), vector_literal(vectors[c.chunk_id]), self.embed_model) for c in chunks],
+                template="(%s,%s,%s,%s::vector,%s)")
+            for sid, group in groups.items():
+                cur.execute("SELECT chunk_id,content FROM welfare_chunks WHERE service_id=%s", (sid,))
+                restored = active_chunks([read_chunk(cid, sid, content, "") for cid, content in cur.fetchall()])
+                if {c.chunk_id for c in restored if c.version} != {c.chunk_id for c in group}:
+                    raise EvidenceConsistencyError("반영 후 활성 자식 집합이 달라 트랜잭션을 취소합니다.")
+        return len(chunks)
 
     def sync_details(self, chunks: list[EvidenceChunk], embeddings: dict[str, list[float]]) -> int:
         """명시적으로 수집한 상세 청크만 갱신한다. 기존 서비스·CSV·누락 청크는 삭제하지 않는다."""
@@ -144,18 +275,23 @@ class PgServiceRepository:
                         raise ValueError("새로운 상세 청크에는 임베딩이 필요합니다.")
         return len(chunks)
 
-    def dense_search(self, embedding: list[float], k: int) -> list[EvidenceChunk]:
+    def dense_search(self, embedding: list[float], k: int, allowed_ids: list[str] | None = None) -> list[EvidenceChunk]:
         validate_embeddings([embedding], 1, self.embed_dim)
         if k < 1:
             raise ValueError("검색 개수는 1 이상이어야 합니다.")
         literal = vector_literal(embedding)
+        if allowed_ids is None:
+            allowed_ids = [c.chunk_id for c in self.snapshot().chunks]
+        if allowed_ids == []:
+            return []
+        params = (literal, self.embed_model, allowed_ids, literal, k)
         with closing(self._connect()) as conn, conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT c.chunk_id,c.service_id,c.content,s.url,s.source_updated_at, "
                 "1 - (c.embedding <=> %s::vector) AS similarity "
                 "FROM welfare_chunks c JOIN welfare_services s USING(service_id) WHERE c.embed_model=%s "
-                "ORDER BY c.embedding <=> %s::vector,c.chunk_id LIMIT %s",
-                (literal, self.embed_model, literal, k),
+                "AND c.chunk_id=ANY(%s) ORDER BY c.embedding <=> %s::vector,c.chunk_id LIMIT %s",
+                params,
             )
             return [read_chunk(row[0], row[1], row[2], row[3], row[4].isoformat() if row[4] else "", float(row[5]))
                     for row in cur.fetchall()]

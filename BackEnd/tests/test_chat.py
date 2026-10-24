@@ -63,8 +63,16 @@ class FakeRepo:
             raise RuntimeError("db down")
         return self.records
 
-    def dense_search(self, embedding, k):
-        return self.dense[:k]
+    def snapshot(self):
+        from BackEnd.rag.evidence import active_chunks, fingerprint
+        from BackEnd.rag.repository import CatalogSnapshot
+
+        records = self.all_services()
+        chunks = active_chunks(self.chunks)
+        return CatalogSnapshot(records, chunks, fingerprint("".join(c.storage() for c in chunks)))
+
+    def dense_search(self, embedding, k, allowed_ids=None):
+        return [c for c in self.dense if allowed_ids is None or c.chunk_id in allowed_ids][:k]
 
     def chunks_for_services(self, ids):
         self.context_calls += 1
@@ -77,6 +85,16 @@ class FakeOllama:
         self.chat_calls = 0
         self.embed_calls = []
         self.prompt = None
+        self.llm_options = {"num_predict": 512}
+
+    def model_digest(self):
+        return "test-digest"
+
+    def context_limit(self):
+        return 8192
+
+    def input_cost(self, system, user):
+        return len((system + user).encode("utf-8")) + 256
 
     def embed(self, texts):
         self.embed_calls.extend(texts)
@@ -91,8 +109,11 @@ class FakeOllama:
             raise OllamaError("chat down")
         if self.reply is not None:
             return self.reply
-        return {"facts": [{"chunk_id": e["chunk_id"], "quote": next(iter(evidence_sentences(e["text"])))}
-                          for e in self.prompt["evidence"][:3]], "question_field": "none"}
+        evidence = {e["chunk_id"]: e for e in self.prompt["evidence"]}
+        return {"facts": [{"intent_id": item["intent_id"], "chunk_id": item["core_id"],
+                           "quote": next(iter(evidence_sentences(evidence[item["core_id"]]["text"]))),
+                           "condition_ids": item["condition_ids"]}
+                          for item in self.prompt["intents"]], "question_field": "none"}
 
 
 class FakeReranker:
@@ -108,9 +129,12 @@ class FakeReranker:
 
 
 def make(repo=None, reranker=None, **kwargs):
+    import re
+
     llm = FakeOllama(**kwargs)
     return ChatService(repo or FakeRepo(), llm, 0.45, 12,
-                       reranker=reranker or FakeReranker()), llm
+                       reranker=reranker or FakeReranker(),
+                       analyzer=lambda text: re.findall(r"(?=([가-힣a-z0-9]{2}))", text.lower())), llm
 
 
 def test_summary_answer_keeps_csv_label_database_contacts_and_links():
@@ -252,21 +276,21 @@ def test_reranker_reorders_service_cards():
     assert result["services"][0]["id"] == CARE.service_id
 
 
-def test_one_context_lookup_and_chunk_metadata_are_passed_to_llm():
+def test_same_snapshot_supplies_context_and_chunk_metadata_to_llm():
     repo = FakeRepo()
     service, llm = make(repo)
     service.answer("연금", None)
-    assert repo.context_calls == 1
+    assert repo.context_calls == 0
     evidence = llm.prompt["evidence"][0]
     assert {"chunk_id", "text", "source_url", "score"} <= evidence.keys()
 
 
-def test_empty_catalog_is_cached_without_model_calls():
+def test_empty_catalog_checks_fresh_snapshot_without_model_calls():
     repo = FakeRepo(records=[])
     service, llm = make(repo)
     service.answer("연금", None)
     service.answer("주거", None)
-    assert repo.calls == 1 and llm.chat_calls == 0
+    assert repo.calls == 4 and llm.chat_calls == 0
 
 
 def test_database_failure_is_not_treated_as_no_results():

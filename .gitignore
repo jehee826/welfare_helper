@@ -15,6 +15,10 @@ postgres_data/
 # 로컬 ERD 설계 파일
 /복지챗봇.erd
 
+# 로컬 개발·테스트 환경
+.pytest_cache/
+.reranker_cache/
+
 .CLAUDE.md
 
 # 파이썬 패키지 빌드 산출물 제외

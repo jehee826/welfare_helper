@@ -1,0 +1,7 @@
+.reranker_cache/
+.venv/
+.git/
+.env
+.env.*
+postgres_data/
+ollama_data/

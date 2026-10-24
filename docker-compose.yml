@@ -4,6 +4,7 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile.back
     container_name: welfare-backend
+    command: ["sh", "-c", "python -m BackEnd.ingest.run && exec uvicorn BackEnd.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/BackEnd"]
     env_file:
       - .env
     environment:
@@ -17,12 +18,13 @@ services:
       - "8000:8000"
     volumes:
       - ./BackEnd:/app/BackEnd
+      - ./docs:/app/docs:ro
       - ./.reranker_cache:/app/.reranker_cache
     depends_on:
       postgres:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
     restart: none
 
   ollama:
@@ -38,6 +40,12 @@ services:
       OLLAMA_HOST: 0.0.0.0
       OLLAMA_PULL_MODELS: "${OLLAMA_LLM} ${OLLAMA_EMBED}"
       # OLLAMA_NUM_PARALLEL: 4 동접 처리를 위한 Ollama 컨테이너 다중화
+    healthcheck:
+      test: ['CMD-SHELL', 'for model in $$OLLAMA_PULL_MODELS; do ollama show "$$model" >/dev/null 2>&1 || exit 1; done']
+      start_period: 10m
+      interval: 5s
+      timeout: 5s
+      retries: 3
     # GPU가 있는 하드웨어로 실행시 주석 해제
     # deploy:
     #   resources:

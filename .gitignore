@@ -21,8 +21,17 @@ postgres_data/
 
 .CLAUDE.md
 
+# 개인 지침과 로컬 스킬
+/AGENTS.md
+/CLAUDE.md
+/.agents/
+/.claude/
+
 # 파이썬 패키지 빌드 산출물 제외
 *.egg-info/
 
 .vercel
 .env*
+
+# 로컬 설계·수동 평가 문서
+/docs/design/

@@ -1,15 +1,9 @@
-"""공용 DB는 읽기 모드로 시작하고 로컬 DB에서만 초기 CSV 적재를 수행한다."""
+"""스키마 변경·CSV 적재 없이 기존 DB를 사용한다."""
 
 import os
 import sys
-import time
-from contextlib import closing
 
-import psycopg2
-
-from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
-from BackEnd.ingest.run import main as ingest
 from BackEnd.rag.reranker import download_model
 
 
@@ -24,22 +18,9 @@ def prepare() -> int:
             return 1
         print("공용 DB의 기존 자료를 사용합니다. 시작 시 적재·스키마 변경을 하지 않습니다.")
         return 0
-    if not settings.ingest_on_startup:
-        return 0
-    # 로컬 프로필에서는 DB 컨테이너의 준비 시간을 기다린다.
-    for attempt in range(15):
-        try:
-            with closing(connect(settings)) as connection, connection, connection.cursor() as cursor:
-                cursor.execute("SELECT 1")
-            return ingest([])
-        except DatabaseNotConfigured:
-            print("로컬 DB 설정이 없습니다.", file=sys.stderr)
-            return 1
-        except psycopg2.Error:
-            if attempt < 14:
-                time.sleep(2)
-    print("로컬 DB가 준비되지 않았습니다.", file=sys.stderr)
-    return 1
+    if settings.ingest_on_startup:
+        print("INGEST_ON_STARTUP은 더 이상 지원하지 않습니다. CSV 자동 적재 없이 시작합니다.")
+    return 0
 
 
 def main() -> int:

@@ -1,133 +1,87 @@
+"""새 스냅샷의 검색 경계와 폐기된 쓰기 경로를 확인한다. 통합 확인은 읽기 전용이다."""
+
 import os
-from dataclasses import replace
-from urllib.parse import urlparse
+from contextlib import closing
 
 import psycopg2
 import pytest
+from psycopg2.extensions import parse_dsn
 
-from BackEnd.rag.repository import PgServiceRepository
-from BackEnd.tests.test_chat import CARE, PENSION
+from BackEnd.rag.evidence import EvidenceConsistencyError
+from BackEnd.rag.repository import CatalogSnapshot, PgServiceRepository
+from BackEnd.tests.test_chat import PENSION
+from BackEnd.tests.test_rag_accuracy import children
 
-TEST_DSN = os.environ.get("RAG_TEST_DATABASE_URL", "")
 VECTOR = [1.0] + [0.0] * 1023
 
 
-@pytest.fixture
-def repo():
-    if not TEST_DSN:
-        pytest.skip("RAG_TEST_DATABASE_URL로 지정한 일회용 로컬 DB에서 실행합니다.")
-    target = urlparse(TEST_DSN)
-    if target.hostname not in ("127.0.0.1", "localhost") or target.path != "/rag_test":
-        pytest.fail("테스트는 로컬 rag_test 데이터베이스에서만 실행할 수 있습니다.")
-    repository = PgServiceRepository(lambda: psycopg2.connect(TEST_DSN))
-    repository.init_schema()
-    with psycopg2.connect(TEST_DSN) as conn, conn.cursor() as cursor:
-        cursor.execute("TRUNCATE welfare_services CASCADE")
-    return repository
+def forbidden_connection():
+    pytest.fail('이 경로는 DB에 접속하면 안 됩니다.')
 
 
-def indexed(*records):
-    return {record.service_id: (record.summary, VECTOR) for record in records}
-
-
-def test_snapshot_retains_missing_services_by_default_and_prunes_only_explicitly(repo):
-    repo.sync_snapshot([PENSION, CARE], indexed(PENSION, CARE))
-    result = repo.sync_snapshot([PENSION], {})
-    assert result == {"upserted": 1, "embedded": 0, "removed": 0, "total": 2}
-    assert {record.service_id for record in repo.all_services()} == {PENSION.service_id, CARE.service_id}
-    assert repo.sync_snapshot([PENSION], {}, prune=True)["removed"] == 1
-    assert set(repo.indexed_chunks()) == {PENSION.service_id}
-
-
-def test_search_excludes_embeddings_from_other_models(repo):
-    repo.sync_snapshot([PENSION], indexed(PENSION))
-    other = PgServiceRepository(lambda: psycopg2.connect(TEST_DSN), embed_model="other-model")
-    other.sync_snapshot([CARE], indexed(CARE))
-    assert [(c.service_id, c.score) for c in repo.dense_search(VECTOR, 5)] == [(PENSION.service_id, 1.0)]
-    assert [(c.service_id, c.score) for c in other.dense_search(VECTOR, 5)] == [(CARE.service_id, 1.0)]
-
-
-def test_dense_results_keep_chunk_ids_bodies_and_scores(repo):
-    repo.sync_snapshot([PENSION, CARE], indexed(PENSION, CARE))
-    with psycopg2.connect(TEST_DSN) as conn, conn.cursor() as cursor:
-        cursor.execute(
-            "INSERT INTO welfare_chunks SELECT chunk_id || ':extra', service_id, content, embedding, embed_model "
-            "FROM welfare_chunks WHERE service_id = %s",
-            (PENSION.service_id,),
-        )
-    chunks = repo.dense_search(VECTOR, 2)
-    assert len(chunks) == 2 and len({chunk.chunk_id for chunk in chunks}) == 2
-    assert all(chunk.text and chunk.source_url and chunk.score == 1.0 for chunk in chunks)
-
-
-def test_invalid_snapshot_rolls_back_existing_metadata(repo):
-    repo.sync_snapshot([PENSION], indexed(PENSION))
-    with pytest.raises(psycopg2.Error):
-        repo.sync_snapshot([
-            replace(PENSION, name="변경되면 안 되는 이름"),
-            replace(CARE, updated_at="invalid-date"),
-        ], {})
-    assert [record.name for record in repo.all_services()] == [PENSION.name]
-
-
-def test_empty_snapshot_is_rejected_without_connecting():
-    def unexpected():
-        pytest.fail("빈 스냅샷에서 DB에 접속했습니다.")
-
-    with pytest.raises(ValueError, match="빈 스냅샷"):
-        PgServiceRepository(unexpected).sync_snapshot([], {}, prune=True)
-
-
-@pytest.mark.parametrize("vector", [
-    [1.0, 0.0], [float("nan")] * 1024, [0.0] * 1024,
+@pytest.mark.parametrize('method,args,kwargs', [
+    ('init_schema',(),{}), ('indexed_chunks',(),{}),
+    ('sync_snapshot',([],{}),{'prune':True}), ('activate_details',([],{},{}),{}),
+    ('upsert_details',([],{}),{}),
 ])
-def test_invalid_vectors_are_rejected_without_connecting(vector):
-    def unexpected():
-        pytest.fail("잘못된 임베딩으로 DB에 접속했습니다.")
+def test_legacy_schema_and_ingest_paths_cannot_modify_a_database(method,args,kwargs):
+    with pytest.raises(ValueError,match='문서 API'):
+        getattr(PgServiceRepository(forbidden_connection),method)(*args,**kwargs)
 
+
+@pytest.mark.parametrize('vector', [[1.0,0.0], [float('nan')]*1024, [0.0]*1024])
+def test_invalid_query_vector_is_rejected_before_database_access(vector):
     with pytest.raises(ValueError):
-        PgServiceRepository(unexpected).dense_search(vector, 5)
+        PgServiceRepository(forbidden_connection).dense_search(vector,5)
 
 
-def test_official_detail_metadata_round_trips_without_changing_services(repo):
-    from BackEnd.tests.test_chat import APPLICATION, TARGET, CRITERIA
-
-    repo.sync_snapshot([PENSION], indexed(PENSION))
-    count = repo.sync_details([APPLICATION, TARGET, CRITERIA], {
-        chunk.chunk_id: VECTOR for chunk in (APPLICATION, TARGET, CRITERIA)
-    })
-    assert count == 3
-    chunks = repo.chunks_for_services([PENSION.service_id])
-    official = [chunk for chunk in chunks if chunk.official]
-    assert len(official) == 3 and all(chunk.collected_at for chunk in official)
-    assert len(repo.all_services()) == 1
+def test_dense_search_uses_supplied_snapshot_and_allowed_ids():
+    first, second = children()[:2]
+    snapshot = CatalogSnapshot([PENSION],[first,second],'snapshot-1',
+                               embeddings={first.chunk_id:VECTOR,second.chunk_id:[0.0,1.0]+[0.0]*1022})
+    repository = PgServiceRepository(forbidden_connection)
+    result = repository.dense_search(VECTOR,30,[second.chunk_id],snapshot=snapshot)
+    assert [r.chunk_id for r in result] == [second.chunk_id]
+    assert result[0].score == 0.0
+    assert result[0].storage() == second.storage()
 
 
-def test_version_activation_retains_history_and_filters_before_dense_top_k(repo):
-    from BackEnd.tests.test_rag_accuracy import children
-
-    repo.sync_snapshot([PENSION], indexed(PENSION))
-    old, new = children(digest="old"), children(digest="new")
-    repo.activate_details(old, {c.chunk_id: VECTOR for c in old}, {PENSION.service_id: set()})
-    repo.activate_details(new, {c.chunk_id: VECTOR for c in new}, {PENSION.service_id: {old[0].version}})
-    snapshot = repo.snapshot()
-    assert {c.version for c in snapshot.chunks if c.version} == {new[0].version}
-    all_rows = repo.chunks_for_services([PENSION.service_id])
-    assert any(c.version == old[0].version and not c.active for c in all_rows)
-    allowed = [c.chunk_id for c in snapshot.chunks]
-    assert all(c.chunk_id in allowed for c in repo.dense_search(VECTOR, 30, allowed))
+def test_missing_snapshot_vector_cannot_be_fetched_from_a_newer_database():
+    child = children()[0]
+    snapshot = CatalogSnapshot([PENSION],[child],'snapshot-1',embeddings={})
+    with pytest.raises(EvidenceConsistencyError,match='같은 스냅샷'):
+        PgServiceRepository(forbidden_connection).dense_search(VECTOR,5,snapshot=snapshot)
 
 
-def test_same_basis_conflict_and_stale_activation_preserve_previous_version(repo):
-    from BackEnd.tests.test_rag_accuracy import children
+def test_multiple_embedding_digests_cannot_be_compared_together():
+    first, second = children(digest='model-a')[0], children(digest='model-b')[0]
+    snapshot = CatalogSnapshot([PENSION],[first,second],'snapshot-1',
+                               embeddings={first.chunk_id:VECTOR,second.chunk_id:VECTOR})
+    with pytest.raises(EvidenceConsistencyError,match='digest'):
+        PgServiceRepository(forbidden_connection).dense_search(VECTOR,5,snapshot=snapshot)
 
-    repo.sync_snapshot([PENSION], indexed(PENSION))
-    old = children()
-    repo.activate_details(old, {c.chunk_id: VECTOR for c in old}, {PENSION.service_id: set()})
-    new = children("테스트 변경: 월 20만원입니다.")
-    with pytest.raises(ValueError):
-        repo.activate_details(new, {c.chunk_id: VECTOR for c in new}, {PENSION.service_id: {old[0].version}})
-    assert repo.snapshot().active_versions[PENSION.service_id] == {old[0].version}
-    with pytest.raises(ValueError):
-        repo.activate_details(new, {c.chunk_id: VECTOR for c in new}, {PENSION.service_id: set()}, replace_same_basis=True)
-    assert repo.snapshot().active_versions[PENSION.service_id] == {old[0].version}
+
+def test_optional_local_database_has_only_new_schema_and_current_chunks():
+    dsn = os.environ.get('RAG_TEST_DATABASE_URL','')
+    if not dsn:
+        pytest.skip('새 스키마를 별도로 준비한 로컬 rag_test DB에서만 읽기 확인합니다.')
+    options = parse_dsn(dsn)
+    if (options.get('host') not in ('127.0.0.1','localhost','::1') or options.get('dbname') != 'rag_test'
+            or options.get('hostaddr') not in (None,'','127.0.0.1','::1') or options.get('service')):
+        pytest.fail('대상은 로컬 rag_test여야 하며 원격 hostaddr/service 우회는 허용하지 않습니다.')
+
+    def connection():
+        conn = psycopg2.connect(**(options | {'connect_timeout':'5'}))
+        conn.set_session(readonly=True)
+        return conn
+
+    with closing(connection()) as conn, conn, conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.welfare_programs'),to_regclass('public.rag_documents'),"
+                    "to_regclass('public.welfare_document_vectors'),to_regclass('public.welfare_services'),"
+                    "to_regclass('public.welfare_chunks'),to_regclass('public.rag_document_chunks')")
+        tables = cur.fetchone()
+        assert all(tables[:3]) and not any(tables[3:])
+    snapshot = PgServiceRepository(connection).snapshot()
+    assert not any(c.test_only for c in snapshot.chunks)
+    assert not any(s.service_id.startswith('TEST_') for s in snapshot.services)
+    assert set(snapshot.embeddings) == {c.chunk_id for c in snapshot.chunks}

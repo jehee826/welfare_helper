@@ -16,20 +16,22 @@ from BackEnd.main import app
 
 
 def metadata(**values):
-    return DocumentMetadata(service_id="TEST_DOCUMENT", name="가상 문서", source_url="https://example.invalid/document",
-                            basis_year="2026", test_only=True, **values)
+    data = {"service_id":"TEST_DOCUMENT", "name":"가상 문서", "source_url":"https://example.invalid/document",
+            "source_organization":"목업 기관", "basis_year":"2026", "test_only":True}
+    return DocumentMetadata(**(data | values))
 
 
-def test_test_corpus_cannot_be_attached_to_government_service():
+def test_test_flag_is_kept_for_real_program_ids_and_required_for_test_ids():
+    flagged = DocumentMetadata(service_id="WLF00001164", name="가상", source_url="https://example.invalid/x",
+                               source_organization="목업 기관", basis_year="2026", test_only=True)
+    assert flagged.test_only
     with pytest.raises(ValueError):
-        DocumentMetadata(service_id="WLF00001164", name="가상", source_url="https://example.invalid/x", basis_year="2026", test_only=True)
-    with pytest.raises(ValueError):
-        DocumentMetadata(service_id="TEST_DOCUMENT", name="가상", source_url="https://example.invalid/x", basis_year="2026")
+        DocumentMetadata(service_id="TEST_DOCUMENT", name="가상", source_url="https://example.invalid/x", source_organization="목업 기관", basis_year="2026")
 
 
 def test_secret_source_urls_are_rejected():
     with pytest.raises(ValueError):
-        DocumentMetadata(service_id="TEST_DOCUMENT", name="가상", source_url="https://example.invalid/x?token=private", basis_year="2026", test_only=True)
+        DocumentMetadata(service_id="TEST_DOCUMENT", name="가상", source_url="https://example.invalid/x?token=private", source_organization="목업 기관", basis_year="2026", test_only=True)
 
 
 def test_markdown_is_accepted_as_input_for_docling_not_direct_embedding():
@@ -77,15 +79,12 @@ def test_upload_only_saves_source_and_queues_analysis(monkeypatch):
     actor, did, jid, calls = str(uuid4()), str(uuid4()), str(uuid4()), []
 
     class Store:
-        def register(self, meta, digest, size, suffix, user, config, original):
+        def register(self, meta, digest, size, suffix, user, config, original, *, document_id=None):
             calls.append("register")
             assert meta["test_only"] and suffix == "md" and user == actor
             assert original == b"# test\nsource"
-            return {"id": did, "object_key": "private/original", "test_only": True}
-
-        def queue_analysis(self, document_id, user):
-            calls.append("queue")
-            return {"id": jid, "state": "queued"}
+            assert document_id is None and meta["source_organization"] == "목업 기관"
+            return ({"document_id":did,"program_id":1,"active_job_id":None}, {"job_id":jid,"state":"queued"})
 
     settings = Settings(_env_file=None, documents_enabled=True)
     monkeypatch.setattr("BackEnd.documents.api.get_settings", lambda: settings)
@@ -95,7 +94,7 @@ def test_upload_only_saves_source_and_queues_analysis(monkeypatch):
         response = TestClient(app).post("/api/v1/admin/documents", files={"file": ("sample.md", b"# test\nsource", "text/markdown")},
                                        data={"metadata": metadata().model_dump_json()})
         assert response.status_code == 202 and response.json()["embedding_started"] is False
-        assert calls == ["register", "queue"]
+        assert calls == ["register"]
     finally:
         app.dependency_overrides.clear()
 
@@ -216,3 +215,113 @@ def test_public_mode_sends_user_jwt_as_bearer_without_replacing_it_with_server_k
     monkeypatch.setattr(httpx, "get", user_request)
     monkeypatch.setattr("BackEnd.documents.store.get_document_store", lambda: Store())
     assert require_document_admin(None, HTTPAuthorizationCredentials(scheme="Bearer", credentials="test-user-session")) == actor
+
+
+def test_program_lookup_is_available_before_document_id_routes(monkeypatch):
+    settings = Settings(_env_file=None, documents_enabled=True)
+    monkeypatch.setattr("BackEnd.documents.api.get_settings", lambda: settings)
+
+    class Store:
+        def programs(self, test_only, offset, limit):
+            assert test_only is True and offset == 0 and limit == 50
+            return {"items":[{"program_id":1,"service_id":"TEST_MOCK_LIVING","test_only":True}],"next_offset":None}
+
+    app.dependency_overrides[require_document_admin] = lambda: None
+    app.dependency_overrides[get_document_store] = lambda: Store()
+    try:
+        response = TestClient(app).get("/api/v1/admin/documents/programs?test_only=true")
+        assert response.status_code == 200
+        assert response.json()["items"][0]["service_id"] == "TEST_MOCK_LIVING"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_unpublished_document_cannot_launch_scoped_models(monkeypatch):
+    from BackEnd.documents.api import scoped_repository
+
+    monkeypatch.setattr("BackEnd.documents.api.get_settings", lambda: Settings(_env_file=None))
+
+    class Store:
+        def status(self, _):
+            return {"active_job_id":None}, []
+
+    with pytest.raises(DocumentError, match="document_not_published"):
+        scoped_repository(Store(), str(uuid4()))
+
+
+def test_table_mapping_uses_original_cells_instead_of_html_annotation():
+    from BackEnd.documents.analysis import attach_markdown_ranges
+    from BackEnd.ingest.official import plain_text
+
+    markdown = "| 항목 | 수량 |\n| --- | --- |\n| 가상 카드 | 7장 |\n"
+    cells = [{"text":text,"start_row_offset_idx":r,"start_col_offset_idx":c}
+             for r,row in enumerate((("항목","수량"),("가상 카드","7장"))) for c,text in enumerate(row)]
+    block = {"id":"table-0","label":"table","table":{"table_cells":cells},
+             "text":plain_text("<table><tr><th>항목</th><th>수량</th></tr><tr><td>가상 카드</td><td>7장</td></tr></table>")}
+    assert "표 시작" in block["text"] and "열1" in block["text"]
+    blockers = []
+    attach_markdown_ranges([block],markdown,blockers)
+    assert blockers == []
+    assert block["markdown_text"] == markdown.rstrip("\n")
+    assert markdown[block["char_start"]:block["char_end"]] == block["markdown_text"]
+
+
+def test_missing_table_is_blocked_instead_of_pointing_to_similar_prose():
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    block = {"id":"table-0","label":"table","text":"가상 카드 7장",
+             "table":{"table_cells":[{"text":"가상 카드 7장","start_row_offset_idx":0,"start_col_offset_idx":0}]}}
+    blockers = []
+    attach_markdown_ranges([block],"가상 카드 7장",blockers)
+    assert blockers == ["markdown_table_range_missing"] and "char_start" not in block
+
+
+def test_markdown_range_keeps_numeric_signs_and_units():
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    source = "# 가상 조건\n- 기준값 -1.5 이상이면 적용.\n"
+    block = {"id":"text-0","label":"text","text":"기준값 -1.5 이상이면 적용."}
+    blockers = []
+    attach_markdown_ranges([block],source,blockers)
+    assert blockers == [] and "-1.5" in block["markdown_text"]
+    assert source[block["char_start"]:block["char_end"]] == block["markdown_text"]
+
+
+def test_status_gives_a_review_template_that_requires_human_choices(monkeypatch):
+    from BackEnd.documents.contracts import IndexRequest, PARSER_VERSION
+
+    did,jid = str(uuid4()),str(uuid4())
+    analysis={"blocks":[{"id":k,"text":"가상 원문","markdown_text":"가상 원문"} for k in review()["sections"]],
+              "blockers":[],"warnings":[],"pages":[],"markdown":"가상 원문"}
+    job={"job_id":jid,"state":"awaiting_review","attempts":1,"error_code":None,
+         "created_at":"2026-10-27T00:00:00+00:00","finished_at":None,"reviewed_at":None,
+         "parser_version":PARSER_VERSION,"embedding_model":None,"embedding_digest":None}
+
+    class Store:
+        def status(self,_):
+            return {"document_id":did,"program_id":1,"document_name":"가상 원문","service_id":"TEST_DOCUMENT",
+                    "source_url":"https://example.invalid/document","source_organization":"목업 기관",
+                    "basis_year":2026,"source_updated_at":None,"active_job_id":None,
+                    "test_only":True,"program_test_only":True,"local_ingestion":True},[job]
+
+        def policy(self,_):
+            return {"hash":"","years":[]}
+
+        def analysis_result(self,_):
+            return {**job,"analysis":analysis,"analysis_hash":stable_hash(analysis)}
+
+    monkeypatch.setattr("BackEnd.documents.api.get_settings",lambda:Settings(_env_file=None,documents_enabled=True))
+    app.dependency_overrides[require_document_admin]=lambda:None
+    app.dependency_overrides[get_document_store]=lambda:Store()
+    try:
+        response=TestClient(app).get(f"/api/v1/admin/documents/{did}")
+        assert response.status_code==200
+        template=response.json()["analysis"]["review_template"]
+        assert template["analysis_hash"]==stable_hash(analysis)
+        assert not template["confirm_complete"] and not template["confirm_source_and_service"]
+        with pytest.raises(ValueError):
+            IndexRequest(**template)
+        chosen={**template,**review(),"review_note":"원문과 조건 및 제외 항목을 대조했습니다."}
+        validate_review(analysis,IndexRequest(**chosen).model_dump())
+    finally:
+        app.dependency_overrides.clear()

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     database_password: SecretStr | None = None
     database_mode: Literal["auto", "local", "supabase"] = "auto"
-    ingest_on_startup: bool = True
+    ingest_on_startup: bool = False
     db_host: str = ""
     db_port: int = 5432
     db_name: str = ""

@@ -41,16 +41,73 @@ def normalize(value: str) -> str:
                      for line in unicodedata.normalize("NFC", value).splitlines() if line.strip())
 
 
+def attach_markdown_ranges(blocks, markdown, blockers):
+    """가공된 표 설명을 검색하지 않고 실제 Markdown과 원본 셀을 대조한다."""
+    from bisect import bisect_left
+
+    # Docling이 내보낸 파이프 표 전체를 경계로 잡아 헤더·단위·구분선을 유지한다.
+    table_ranges, start, lines, cursor = [], None, [], 0
+    for line in markdown.splitlines(keepends=True) + [""]:
+        if re.fullmatch(r"[ \t]*\|[^\r\n]*\|[ \t]*[\r\n]*", line):
+            if start is None:
+                start = cursor
+            lines.append(line)
+        else:
+            if start is not None and len(lines) >= 2 and any(
+                re.fullmatch(r"[ \t|:-]+", value.strip()) and "-" in value for value in lines
+            ):
+                end = cursor - (len(lines[-1]) - len(lines[-1].rstrip("\r\n")))
+                table_ranges.append((start, end))
+            start, lines = None, []
+        cursor += len(line)
+    projected, positions = [], []
+    for index, character in enumerate(markdown):
+        if not character.isspace() and character not in "*_`|":
+            projected.append(character)
+            positions.append(index)
+    projected = "".join(projected)
+    cursor = 0
+    for block in blocks:
+        if block["label"] == "table":
+            cells = (block.get("table") or {}).get("table_cells", [])
+            cells = sorted(cells, key=lambda c:(c["start_row_offset_idx"], c["start_col_offset_idx"]))
+            signature = "".join(c for cell in cells for c in cell.get("text", "") if c.isalnum())
+            matches = [(a,b) for a,b in table_ranges if a >= cursor
+                       and "".join(c for c in markdown[a:b] if c.isalnum()) == signature]
+            if not signature or not matches:
+                blockers.append("markdown_table_range_missing")
+                continue
+            start, end = matches[0]
+        else:
+            needle = "".join(c for c in block["text"] if not c.isspace() and c not in "*_`|")
+            if not needle:
+                if block["text"].strip():
+                    blockers.append("markdown_block_range_missing")
+                continue
+            position = projected.find(needle, bisect_left(positions, cursor))
+            if position < 0:
+                blockers.append("markdown_block_range_missing")
+                continue
+            start = positions[position]
+            end = positions[position + len(needle) - 1] + 1
+            line_start = markdown.rfind("\n", 0, start) + 1
+            line_end = markdown.find("\n", end)
+            if not markdown[line_start:start].strip(" #*>|_`-\t") and line_start >= cursor:
+                start = line_start
+            tail = markdown[end:line_end if line_end >= 0 else len(markdown)]
+            if not any(c.isalnum() for c in tail):
+                end += len(tail)
+        block["char_start"], block["char_end"] = start, end
+        block["markdown_text"] = markdown[start:end]
+        cursor = end
+
+
 def read_analysis(store, document_id, max_bytes):
     job = store.analysis_result(document_id)
-    result = job["result"]
-    try:
-        analysis = store.analysis_data(document_id)
-        if len(json.dumps(analysis, ensure_ascii=False).encode()) > max_bytes:
-            raise DocumentError("analysis_artifact_size_limit")
-    except (ValueError, KeyError):
-        raise DocumentError("analysis_artifact_invalid") from None
-    if stable_hash(analysis) != result["analysis_hash"]:
+    analysis = job["analysis"]
+    if len(json.dumps(analysis, ensure_ascii=False).encode()) > max_bytes:
+        raise DocumentError("analysis_artifact_size_limit")
+    if stable_hash(analysis) != job["analysis_hash"]:
         raise DocumentError("analysis_artifact_hash_mismatch")
     return job, analysis
 
@@ -139,8 +196,10 @@ def analyze_file(path: Path, config: dict, settings, progress=lambda stage: None
             blockers.append("empty_or_unparsed_pdf_pages")
     else:
         warnings.append("unpaginated_source_use_block_anchors")
+    markdown = document.export_to_markdown()
+    attach_markdown_ranges(blocks, markdown, blockers)
     return {"parser_version": PARSER_VERSION, "docling_version": "2.141.0", "source_format": path.suffix[1:],
             "runtime_versions": {name: importlib.metadata.version(name) for name in ("docling-slim", "docling-core")},
             "model_files": manifests, "pages": pages, "blocks": blocks, "characters": characters,
             "blockers": sorted(set(blockers)), "warnings": sorted(set(warnings)),
-            "markdown": document.export_to_markdown(), "docling_document": document.export_to_dict()}
+            "markdown": markdown, "docling_document": document.export_to_dict()}

@@ -1,23 +1,5 @@
-CREATE EXTENSION IF NOT EXISTS vector;
-
-CREATE TABLE IF NOT EXISTS welfare_services (
-    service_id        TEXT PRIMARY KEY,
-    name              TEXT NOT NULL,
-    summary           TEXT NOT NULL,
-    ministry          TEXT NOT NULL,
-    department        TEXT NOT NULL DEFAULT '',
-    url               TEXT NOT NULL DEFAULT '',
-    contacts          JSONB NOT NULL DEFAULT '[]'::jsonb,
-    source_updated_at DATE,
-    synced_at         TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS welfare_chunks (
-    chunk_id    TEXT PRIMARY KEY,
-    service_id  TEXT NOT NULL REFERENCES welfare_services (service_id) ON DELETE CASCADE,
-    content     TEXT NOT NULL,
-    embedding   vector(1024) NOT NULL,
-    embed_model TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS welfare_chunks_service_id_idx ON welfare_chunks (service_id);
+-- 읽기 전용 확인용이다. 애플리케이션은 DDL이나 이전 마이그레이션을 자동 실행하지 않는다.
+-- 새 DB 구축은 검토된 재구축 SQL을 사용자가 SQL Editor에서 직접 실행한다.
+SELECT name AS required_table, to_regclass('public.' || name) IS NOT NULL AS present
+FROM (VALUES ('departments'), ('welfare_programs'), ('counselors'), ('counselor_connections'),
+    ('rag_document_admins'), ('rag_documents'), ('rag_document_jobs'), ('welfare_document_vectors')) t(name);

@@ -23,18 +23,26 @@ def stable_hash(value) -> str:
 
 class DocumentMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    service_id: str = Field(pattern=r"^(WLF\d{8}|TEST_[A-Z0-9_]+)$")
+    service_id: str = Field(min_length=1, max_length=200, description="제도 조회 응답의 service_id를 그대로 사용합니다.")
     name: str = Field(min_length=1, max_length=160)
     source_url: str = Field(max_length=1000)
-    basis_year: str = Field(pattern=r"^(19|20)\d{2}$")
+    source_organization: str = Field(min_length=1, max_length=300)
+    basis_year: str | None = Field(default=None, pattern=r"^(19|20)\d{2}$")
     source_updated_at: date | None = None
+    valid_from: date | None = None
+    valid_until: date | None = None
+    region_scope: str | None = Field(default=None, max_length=300)
     edition: str = Field(default="", max_length=80)
     test_only: bool = False
 
     @model_validator(mode="after")
     def test_namespace(self):
-        if self.test_only != self.service_id.startswith("TEST_"):
+        if self.service_id.startswith("TEST_") and not self.test_only:
             raise ValueError("가상 문서는 test_only와 TEST_ 전용 서비스 연결이 필요합니다.")
+        if not self.source_organization.strip():
+            raise ValueError("원문 발행 기관이 필요합니다.")
+        if self.valid_from and self.valid_until and self.valid_from > self.valid_until:
+            raise ValueError("효력 시작일이 종료일보다 늦을 수 없습니다.")
         return self
 
     @field_validator("source_url")
@@ -45,6 +53,13 @@ class DocumentMetadata(BaseModel):
                         for key, _ in parse_qsl(parsed.query))
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or sensitive or parsed.fragment:
             raise ValueError("출처는 인증정보·서명·fragment 없는 공개 원본 HTTPS 주소를 사용합니다.")
+        return value
+
+    @field_validator("service_id", "source_organization")
+    @classmethod
+    def validate_reference(cls, value):
+        if not value.strip() or value != value.strip() or any(ord(c) < 32 for c in value):
+            raise ValueError("식별자와 발행 기관에는 공백 여백·제어 문자를 넣지 않습니다.")
         return value
 
     @field_validator("name", "edition")
@@ -66,6 +81,13 @@ class IndexRequest(BaseModel):
     reconciled_api_version: str = Field(default="", max_length=64)
     reconciliation_note: str = Field(default="", max_length=1000)
     reindex_revision: str = Field(default="", max_length=80)
+
+    @field_validator("review_note")
+    @classmethod
+    def validate_review_note(cls, value):
+        if len(value.strip()) < 10:
+            raise ValueError("10자 이상의 실제 검토 메모를 작성합니다.")
+        return value.strip()
 
 
 def validate_file(data: bytes, suffix: str, max_bytes: int) -> None:

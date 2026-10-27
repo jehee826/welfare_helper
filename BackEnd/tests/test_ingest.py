@@ -1,44 +1,26 @@
+import pytest
+
 from BackEnd.ingest import run
+from BackEnd.ingest.csv_loader import CsvFormatError
 
 
-def test_dry_run_validates_real_csv_without_models_or_database(monkeypatch, capsys):
-    def unexpected(*args, **kwargs):
-        raise AssertionError("dry-run에서 외부 서비스를 호출했습니다.")
-
-    monkeypatch.setattr(run, "get_settings", unexpected)
-    monkeypatch.setattr(run, "connect", unexpected)
+def test_dry_run_counts_metadata_without_a_model_or_database(capsys, monkeypatch):
+    monkeypatch.setattr(run, "load_csv", lambda *args, **kwargs: [object(),object()])
     assert run.main(["--dry-run"]) == 0
-    assert "367건" in capsys.readouterr().out
+    assert "2건" in capsys.readouterr().out
 
 
-def test_unchanged_chunks_do_not_call_embedding_and_metadata_is_still_synced(monkeypatch):
-    from BackEnd.core.settings import Settings
-    from BackEnd.ingest.csv_loader import chunk_text, load_csv
+@pytest.mark.parametrize("arguments", [[], ["--prune"], ["--allow-shared-write"], ["--check-embeddings"],
+                                       ["--dry-run","--prune"]])
+def test_removed_write_modes_are_rejected_before_reading_input(monkeypatch, arguments):
+    monkeypatch.setattr(run, "load_csv", lambda *a, **kw: pytest.fail("차단한 쓰기 경로가 입력을 읽었습니다."))
+    assert run.main(arguments) == 1
 
-    records = load_csv()
-    calls = {}
 
-    class Repo:
-        def __init__(self, *args, **kwargs):
-            pass
+def test_invalid_csv_cannot_look_like_a_completed_import(monkeypatch,capsys):
+    def fail(*args,**kwargs):
+        raise CsvFormatError("필수 컬럼이 없습니다.")
 
-        def init_schema(self):
-            pass
-
-        def indexed_chunks(self):
-            return {r.service_id: (chunk_text(r), "bge-m3") for r in records}
-
-        def sync_snapshot(self, received, chunks, *, prune):
-            calls.update(records=received, chunks=chunks, prune=prune)
-            return {"upserted": len(received), "embedded": len(chunks), "removed": 0, "total": len(received)}
-
-    def unexpected(*args, **kwargs):
-        raise AssertionError("변경 없는 청크를 재임베딩했습니다.")
-
-    monkeypatch.setattr(run, "get_settings", lambda: Settings(_env_file=None))
-    monkeypatch.setattr(run, "PgServiceRepository", Repo)
-    monkeypatch.setattr(run.OllamaClient, "embed", unexpected)
-    assert run.main([]) == 0
-    assert len(calls["records"]) == 367
-    assert calls["chunks"] == {}
-    assert calls["prune"] is False
+    monkeypatch.setattr(run,"load_csv",fail)
+    assert run.main(["--dry-run"]) == 1
+    assert "확인 실패" in capsys.readouterr().err

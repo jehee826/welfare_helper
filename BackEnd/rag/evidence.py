@@ -86,8 +86,10 @@ class EvidenceChunk:
             dated = datetime.fromisoformat(self.reviewed_at).tzinfo is not None
             collected = datetime.fromisoformat(self.collected_at).tzinfo is not None
             url = urlparse(self.source_url)
-            return bool(dated and collected and self.document_name and self.source_blocks
-                        and re.fullmatch(r"(?:19|20)\d{2}", self.basis_year)
+            source_dated = bool(re.fullmatch(r"(?:19|20)\d{2}", self.basis_year))
+            if self.source_updated_at:
+                source_dated = date.fromisoformat(self.source_updated_at).isoformat() == self.source_updated_at
+            return bool(dated and collected and self.document_name and self.source_blocks and source_dated
                         and re.fullmatch(r"[0-9a-f]{64}", self.analysis_hash)
                         and re.fullmatch(r"[0-9a-f]{64}", self.review_hash)
                         and url.scheme == "https" and url.hostname and not url.username and not url.password)

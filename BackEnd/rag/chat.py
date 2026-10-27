@@ -322,7 +322,8 @@ class ChatService:
                 digest = self.llm.model_digest()
             except OllamaError:
                 return self._fallback("임베딩 모델 버전을 확인하지 못했어요.", [], [], "model_not_ready")
-            chunks = [c for c in chunks if not c.version or c.embed_digest == digest]
+            mismatched_services = {c.service_id for c in chunks if c.version and c.embed_digest != digest}
+            chunks = [c for c in chunks if c.service_id not in mismatched_services]
         embedding_mismatch = (any(c.version and c.embed_digest != digest for c in snapshot.chunks)
                               or bool(snapshot.active_versions and not any(c.version for c in snapshot.chunks)))
         by_chunk = {c.chunk_id: c for c in chunks}
@@ -347,7 +348,11 @@ class ChatService:
             dense = []
             if allowed:
                 try:
-                    dense = self.repo.dense_search(self.llm.embed([subquery])[0], self.dense_k, sorted(allowed))
+                    query_vector = self.llm.embed([subquery])[0]
+                    if snapshot.embeddings is not None:
+                        dense = self.repo.dense_search(query_vector, self.dense_k, sorted(allowed), snapshot=snapshot)
+                    else:
+                        dense = self.repo.dense_search(query_vector, self.dense_k, sorted(allowed))
                     for c in dense:
                         if c.chunk_id not in by_chunk or c.storage() != by_chunk[c.chunk_id].storage():
                             raise EvidenceConsistencyError("벡터와 원문 스냅샷이 다릅니다.")

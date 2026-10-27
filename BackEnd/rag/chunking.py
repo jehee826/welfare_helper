@@ -118,12 +118,12 @@ def split_sections(sections: list[EvidenceChunk], service_name: str, embed_diges
     result = []
     for section in ordered:
         header = f"서비스명: {service_name}\n섹션: {section.section}\n"
-        headings = list(re.finditer(r"(?m)^\[제목([1-6])\] [^\n]+", section.text))
+        headings = list(re.finditer(r"(?m)^(?:\[제목([1-6])\]|(#{1,6}))[ \t]+[^\n]+", section.text))
         blocks, stack, cursor = [], {}, 0
         for heading in headings:
             if heading.start() > cursor:
                 blocks.append((cursor, heading.start(), "\n".join(stack[level] for level in sorted(stack))))
-            level = int(heading.group(1))
+            level = int(heading.group(1)) if heading.group(1) else len(heading.group(2))
             stack = {depth: value for depth, value in stack.items() if depth < level}
             stack[level] = heading.group()
             cursor = heading.start()

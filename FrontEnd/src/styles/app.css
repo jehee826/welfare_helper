@@ -192,6 +192,10 @@ button {
 .field { display: grid; gap: var(--space-1); border: 0; padding: 0; margin: 0; min-width: 0; }
 .field__label { font-weight: 600; font-size: 0.9rem; padding: 0; }
 .field__error { color: var(--danger); font-size: 0.85rem; }
+.field input:disabled { background: var(--line); color: var(--ink-muted); cursor: not-allowed; }
+
+.checkbox { display: flex; align-items: center; gap: var(--space-2); font-size: 0.9rem; }
+.checkbox input { width: 1.1rem; height: 1.1rem; }
 
 .field input,
 .field select,
@@ -450,8 +454,16 @@ button {
   .header__nav { gap: 6px; flex-wrap: nowrap; }
   .header .btn--sm { padding: 0 10px; font-size: 0.78rem; white-space: nowrap; }
   .grid-2 { grid-template-columns: minmax(0, 1fr); }
+  .table--programs th:nth-child(2),
+  .table--programs td:nth-child(2),
   .table--programs th:nth-child(3),
   .table--programs td:nth-child(3),
   .table--programs th:nth-child(4),
   .table--programs td:nth-child(4) { display: none; }
+  .table--programs .program-docs { display: block; margin-top: var(--space-1); }
+  .table--programs td:first-child { word-break: keep-all; overflow-wrap: anywhere; }
 }
+
+.program-docs { display: none; }
+
+.scope-notice { word-break: keep-all; }

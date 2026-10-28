@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Contact } from "../api/types";
+import { FALLBACK_SCOPE_NOTICE } from "../lib/notice";
 import { ContactList } from "./ContactList";
 
 export function FallbackCard({ text, contacts }: { text: string; contacts: Contact[] }) {
@@ -9,6 +10,7 @@ export function FallbackCard({ text, contacts }: { text: string; contacts: Conta
     <div className="bubble bubble--bot bubble--fallback">
       <p className="badge">확인이 필요해요</p>
       <p className="bubble__text">{text}</p>
+      <p className="muted small scope-notice">{FALLBACK_SCOPE_NOTICE}</p>
       <ContactList contacts={contacts} />
       {requested ? (
         <p className="notice" role="status">

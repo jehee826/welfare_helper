@@ -17,12 +17,14 @@ from BackEnd.rag.factory import build_chat_service
 from BackEnd.rag.repository import PgServiceRepository
 from BackEnd.rag.reranker import LocalReranker, RerankerError
 from BackEnd.documents.api import DocumentBodyLimit, router as document_router
+from BackEnd.admin.programs import router as program_router
 
 logger = logging.getLogger("welfare_helper")
 
 app = FastAPI(title="welfare_helper")
 app.add_middleware(DocumentBodyLimit)
 app.include_router(document_router)
+app.include_router(program_router)
 
 
 class ProfileIn(BaseModel):

@@ -20,7 +20,7 @@ export function AnswerCard({ text, services }: { text: string; services: Welfare
                   복지로에서 보기 ↗
                 </a>
               )}
-              <span className="muted small">기준일 {s.updatedAt}</span>
+              {s.updatedAt && <span className="muted small">기준일 {s.updatedAt}</span>}
             </div>
           </li>
         ))}

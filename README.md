@@ -21,7 +21,7 @@
 python -m BackEnd.ingest.run --dry-run
 ```
 
-CSV는 이름·기관·요약·문의처 등 탐색용 메타데이터다. 이 CLI는 CP949(UTF-8은 `--encoding utf-8-sig`) 파일의 형식만 확인하고 DB·모델을 호출하지 않는다. CSV 적재·`--prune`·overview 임베딩과 자동 DDL은 지원하지 않는다. 기존 DB를 옛 CSV로 덮거나 공식 자료를 자동 재투입하지 않는다. 검색 근거는 아래 문서 분석·검토·게시 경로로 등록한다.
+CSV는 이름·기관·요약·문의처 등 탐색용 메타데이터다. 이 CLI는 CP949(UTF-8은 `--encoding utf-8-sig`) 파일의 형식만 확인하고 DB·모델을 호출하지 않는다. CSV 적재·`--prune`·overview 임베딩과 자동 DDL은 지원하지 않는다. 기존 DB를 옛 CSV로 덮거나 공식 자료를 자동 재투입하지 않는다. 검색 근거는 아래 문서 자동 분석·게시 경로로 등록한다.
 
 검색은 활성 자식 원문만 대상으로 하위 의도별 벡터 `DENSE_TOP_K=30`개와 한국어 본문 BM25 `KEYWORD_TOP_K=30`개를 모으고 RRF `1/(60+순위)`로 결합합니다. `RETRIEVE_TOP_N=40`은 요청 전체 후보 상한이며 여러 의도에 균등한 기회를 줍니다. `MIN_DENSE_SIM`은 비교·진단용으로 남기고 앞단 필터에는 사용하지 않습니다. 리랭커의 `MIN_RERANK_SCORE`를 통과한 핵심 근거는 `CORE_EVIDENCE_K=6`개까지, 서비스 카드는 기존 최대 3개로 유지합니다. 필수 조건·예외 부모는 근거 수와 별개로 복원합니다. 이 수치는 미검증 초기값이며 점수는 관련성 지표로, 사실 정확도나 자격 확률이 아닙니다.
 
@@ -29,13 +29,13 @@ LangChain의 `ChatPromptTemplate`·`ChatOllama`·`JsonOutputParser`로 원문 �
 
 서비스명·괄호 안 별칭·띄어쓰기 변형을 ID에 연결하고 모호한 이름은 확인합니다. 임의의 공식 별칭을 만들어 넣지 않습니다. 명시된 서비스는 해당 ID 안에서 검색하며 문의처 질문은 DB 메타데이터만 사용합니다. 소개·금액·자격·신청 의도와 서비스 비교를 최대 3개 하위 의도로 제한하고 넘으면 범위를 묻습니다. 이전 assistant 답변은 사실 근거로 쓰지 않습니다. 본문 분석기는 [Kiwi 0.24.1](https://github.com/bab2min/kiwipiepy/releases/tag/v0.24.1)로 고정했으며 같은 분석을 문서·질의에 적용합니다. Python 3.12/Docker에서의 설치·형태소 품질은 실제 실행 검증이 필요합니다.
 
-검색은 REPEATABLE READ의 같은 시점에 제도·문서 Markdown·검토 작업·벡터를 읽는다. 이 스냅샷의 벡터로 코사인 순위를 계산하여 요청 도중 새 문서의 벡터와 이전 본문이 섞이지 않게 한다. BM25 캐시는 스냅샷과 digest가 같을 때만 재사용하며, 교체·삭제 후 청크가 남지 않도록 요청 종료 시에도 스냅샷을 비교한다. 현재 청크나 문서가 50,000건을 넘으면 불완전한 검색을 중단한다. 전체 벡터를 읽으므로 자료 증가 시 메모리·지연 확인이 필요하다.
+검색은 REPEATABLE READ의 같은 시점에 제도·문서 Markdown·게시 작업·벡터를 읽는다. 이 스냅샷의 벡터로 코사인 순위를 계산하여 요청 도중 새 문서의 벡터와 이전 본문이 섞이지 않게 한다. BM25 캐시는 스냅샷과 digest가 같을 때만 재사용하며, 교체·삭제 후 청크가 남지 않도록 요청 종료 시에도 스냅샷을 비교한다. 현재 청크나 문서가 50,000건을 넘으면 불완전한 검색을 중단한다. 전체 벡터를 읽으므로 자료 증가 시 메모리·지연 확인이 필요하다.
 
 ## 공식 상세 조회
 
-`python -m BackEnd.ingest.details --service-id WLF00001164`는 등록된 일반 제도의 메타데이터를 기준으로 공식 API를 조회하는 읽기 경로다. `BOKJIRO_SERVICE_KEY`가 필요하고 한 번에 5개 ID까지 지정한다. `--write`는 지원하지 않으며 기존 상세·CSV 청크를 직접 만들지 않는다. 공식 조회 유틸리티와 검토 문서의 벡터 게시를 구분한다.
+`python -m BackEnd.ingest.details --service-id WLF00001164`는 등록된 일반 제도의 메타데이터를 기준으로 공식 API를 조회하는 읽기 경로다. `BOKJIRO_SERVICE_KEY`가 필요하고 한 번에 5개 ID까지 지정한다. `--write`는 지원하지 않으며 기존 상세·CSV 청크를 직접 만들지 않는다. 공식 조회 유틸리티와 등록 문서의 벡터 게시를 구분한다.
 
-Docling 원문은 목표 600자·최대 800자, 실제 리랭커 tokenizer 400토큰 이내로 분할한다. 오버랩은 같은 제목 범위의 완결 문장 1개가 80자·40토큰 이내이고 다음 입력에도 들어갈 때만 사용한다. 인용은 원문 문장·필수 부모·조건·예외를 대조하며, 검토됐다는 이유로 공식 정책이나 최종 자격으로 단정하지 않는다.
+Docling 원문은 목표 600자·최대 800자, 실제 리랭커 tokenizer 400토큰 이내로 분할한다. 오버랩은 같은 제목 범위의 완결 문장 1개가 80자·40토큰 이내이고 다음 입력에도 들어갈 때만 사용한다. 인용은 원문 문장·필수 부모·조건·예외를 대조하며, 자동 처리됐다는 이유로 공식 정책이나 최종 자격으로 단정하지 않는다.
 
 ## Supabase와 Docker 실행
 상주 백엔드가 IPv4 환경이면 [공식 연결 안내](https://supabase.com/docs/guides/database/connecting-to-postgres)에 따라 Session pooler를 검토합니다. 호스트·포트·사용자명은 실제 Connect 화면에서 가져오며 지역명으로 조합하지 않습니다. `DATABASE_URL`을 우선 사용하고 TLS를 요구합니다.
@@ -58,57 +58,38 @@ docker compose up -d --build
 
 공용 테이블은 Data API의 노출 스키마·`anon`/`authenticated` grants·RLS 정책을 함께 확인해야 합니다. RLS를 켜고 정책을 주지 않으면 기존 Data API 접근이 차단됩니다. 다른 파트의 직접 호출 여부를 조율한 뒤 공공 자료 읽기 정책과 서버 전용 쓰기 권한을 정하며, 백엔드 시작 코드에서 권한을 일괄 변경하지 않습니다.
 
-## Swagger 문서 수집과 현재 문서 보존
+## 문서 자동 처리와 현재 문서 보존
 
-기본 경로는 **파일 업로드 → Docling 분석 → 명시적 블록 검토 → 임베딩 → 원자적 게시**다. DB는 `docs/복지챗봇.erd`의 8테이블·97컬럼 스키마를 사용한다. `welfare_services`, `welfare_chunks`, `rag_document_chunks`와 이전 `0001`~`0003` SQL을 재생성·재실행하지 않는다. 시작 시 DDL·마이그레이션·CSV 적재는 수행하지 않는다.
+기본 경로는 파일 업로드 → Docling 분석 → 구조 기반 자동 청크 분할 → 임베딩 → 원자 게시다. 블록을 네 복지 섹션에 분류하거나 검토 메모·승인 요청을 작성하지 않는다. 제목·표·쪽·원문 위치를 보존하고, 검색된 원문의 실제 내용으로 답변 근거를 판단한다. 원문에 없는 정보는 보류한다.
 
 ### DB 준비와 인증 경계
 
-DB 계약은 8테이블 스키마와 [후보 정리 보강 SQL](BackEnd/db/migrations/0004_document_candidate_cleanup.sql)을 기준으로 한다. 0004는 실패·취소 후보를 정리할 수 있게 함수 하나를 보강하며 현재 문서·제도·관리자 행을 수정하지 않는다. 이미 적용한 DB에 다시 실행할 필요는 없고, 애플리케이션도 SQL을 자동 적용하지 않는다.
+8테이블·97컬럼을 유지한다. 기존 0004가 적용된 DB에 [자동 처리 보존형 마이그레이션](BackEnd/db/migrations/0005_automatic_document_processing.sql)을 사용자가 직접 적용한다. 기존 테이블·문서·벡터·수동 검토 기록·대기 작업을 초기화하지 않는다. 앱은 DDL을 실행하지 않는다. GET /api/v1/admin/documents/processing의 ready=true가 새 계약 준비 상태다. 준비 전에는 새 업로드·재처리를 automatic_processing_schema_required로 차단한다.
 
-Compose의 로컬 등록은 기존 `DATABASE_URL`·`DATABASE_PASSWORD`만 사용하며 서버 API 키·Storage·Auth 가입을 추가 필수 조건으로 요구하지 않는다. 루프백 포트·Host·접속자 검사와 교차 Origin·Forwarded 차단을 유지한다. 공개 모드는 `DOCUMENTS_LOCAL_MODE=false`와 사용자 JWT·DB 관리자 허용 목록을 확인하며, 빈 허용 목록에 계정을 자동 등록하지 않는다. SQL 함수의 `local_ingestion` 분기를 공개 인증 우회에 사용하지 않는다.
+새 작업은 parse_config.processing_mode=automatic으로 구분한다. 분석 해시·출처 fingerprint·실제 처리 시각·모델/토크나이저 설정을 기록하며 reviewed_by/reviewed_at은 NULL이다. 사람 검토를 했다고 표시하지 않는다. 기존 수동 검토 게시본은 기존 출처 검증을 유지한다. 이전 awaiting_review·진행 작업은 몰래 자동 처리하지 않는다.
 
-### PC에서 Swagger로 파일부터 답변까지
+Compose 로컬 모드는 루프백 포트·Host·접속자 검사와 교차 Origin·Forwarded 차단을 유지한다. 공개 모드는 사용자 JWT와 DB 관리자 허용 목록을 확인하며 빈 목록에 임의 계정을 추가하지 않는다. 서버 비밀키를 브라우저로 보내지 않는다.
 
-원격에 해당 커밋이 올라온 뒤 `codex/refactor-rag-chatbot`을 pull하고, 저장소 루트에서 실행한다.
+### 파일에서 답변까지
 
-```cmd
-docker compose up -d --build
-```
+1. 저장소 루트에서 docker compose up -d --build로 서비스를 준비한다. 실제 환경값은 사용자가 관리하며 예시는 .env.example을 참고한다.
+2. 프런트 문서 관리 또는 http://127.0.0.1:8000/docs에서 GET /api/v1/admin/documents/processing을 확인한다.
+3. GET /api/v1/admin/documents/programs로 연결할 제도의 service_id를 확인한다. 일반 제도는 관리자 제도 등록 API로 만들 수 있다. 기존 TEST_ 제도·문서의 test_only 격리 정책은 유지한다.
+4. POST /api/v1/admin/documents에 file과 metadata JSON 문자열을 multipart로 전송한다. metadata의 service_id, name, source_url, source_organization은 실제 값을 쓴다. 확인한 basis_year 또는 source_updated_at은 선택 입력하며 날짜를 만들지 않는다. 신규 문서는 document_id를 생략하고 같은 문서 교체 시 지정한다.
+5. 업로드 응답의 document_id/job_id로 GET /{id}/jobs/{job_id}를 조회한다. 새 상태 흐름은 queued → parsing → embedding → ready → succeeded다. parsing에는 모델 준비·분석·청크 구성이 포함된다. GET /{id}/markdown은 원문을 선택적으로 확인하는 읽기 경로다.
+6. 해당 작업의 succeeded와 문서 active_job_id == job_id를 모두 확인한 뒤 POST /{id}/search 또는 /{id}/query에 query를 보낸다. 교체 실패 시 active=true는 이전 게시본일 수 있다. 일반 제도/문서는 일반 POST /api/v1/chat에도 반영되고 test_only는 문서 범위 경로에서만 조회한다.
 
-`http://127.0.0.1:8000/docs`를 연다. 기본 Compose의 루프백 로컬 등록에서는 **Authorize 없이** 사용한다. 첫 Ollama·리랭커 준비와 첫 PDF의 Docling 모델 준비에는 시간이 걸릴 수 있다. 이 절차를 위한 임베딩/LLM 모델 변경은 `.env.example`의 변수명을 참고하며 실제 `.env`는 사용자가 관리한다.
-
-아래 API 접두사는 `/api/v1/admin/documents`이며 `{id}`는 업로드 응답의 `document_id`다.
-
-1. **`GET /programs?test_only=true`**에서 `items[].service_id`, `program_name`, `test_only`를 확인한다. 현재 목업 ID는 `TEST_MOCK_LIVING`, `TEST_MOCK_HOUSING`, `TEST_MOCK_LEARNING`이다. 목록이 여러 페이지면 `next_offset`으로 이어서 조회한다. 공식 문서는 먼저 실제 제도와 부서를 SQL로 등록하고 `test_only=false` 목록에서 찾아야 한다. 파일 업로드는 제도를 자동 등록하지 않는다. 외부 ID가 없으면 조회 응답의 `PROGRAM_<program_id>`를 그대로 쓴다.
-2. **`POST /api/v1/admin/documents`**의 `file`에서 파일을 선택하고 `metadata`에 아래 JSON을 문자열로 넣는다. 예시는 가상 생활지원 문서 전용이다. 실제 원문의 공개 URL·발행 기관·확인된 기준연도/기준일로 작성한다. `document_id`는 새 문서에서는 비우고 같은 문서 교체 때만 지정한다.
-
-```json
-{"service_id":"TEST_MOCK_LIVING","name":"목업 생활지원 원문","source_url":"https://example.invalid/mock/living","source_organization":"목업 기관","basis_year":"2026","test_only":true}
-```
-
-`source_organization`은 필수다. 날짜를 만들지 않으며, 색인에는 확인된 `basis_year` 또는 `source_updated_at` 중 하나가 필요하다. 선택 필드는 `valid_from`, `valid_until`, `region_scope`다. 공식 제도의 테스트 문서도 `test_only=true`로 표시하면 일반 검색에서 제외된다.
-
-3. **`GET /{id}`**를 다시 조회해 업로드 응답의 `job_id`가 `awaiting_review`인지 확인한다. 분석의 `scope=candidate`, `job_id`, `hash`, `blockers`, `warnings`를 확인한다. `offset`/`limit`와 `next_offset`을 사용해 **모든 블록의 `id`, `text`, `markdown_text`, 표·쪽·조건·예외**를 읽는다. `GET /{id}/markdown`으로 전체 추출본을 대조한다. `blockers`가 있으면 색인하지 않는다. `markdown_table_range_missing` 등은 원문 위치를 추측하지 않고 보류한 상태다.
-4. **`analysis.review_template`을 복사해 `POST /{id}/index` 본문으로 사용한다.** `analysis_hash`는 응답 값을 유지한다. 각 블록 ID를 `sections.target`(대상), `criteria`(선정 기준), `benefit`(지원 내용), `application`(신청)에 원문 순서로 한 번씩 배정한다. 제외한 블록은 `excluded_blocks`에 ID를 키로, 10자 이상 이유를 값으로 적는다. 네 섹션 모두 필요하며 블록을 중복·누락하거나 빈 섹션을 임의로 채우지 않는다. 실제 검토를 마친 뒤 `confirm_complete`와 `confirm_source_and_service`를 `true`로 바꾸고 10자 이상 실제 `review_note`를 작성한다. 수정하지 않은 템플릿은 승인되지 않는다.
-5. **`GET /{id}` 또는 `GET /{id}/jobs/{job_id}`**로 index 응답의 작업을 확인한다. 상태는 `queued → parsing → awaiting_review → embedding → ready → succeeded`이며 검토 직후에는 워커가 가져가기 전까지 `awaiting_review`로 보일 수 있다. **해당 작업의 `succeeded`와 문서의 `active_job_id == index 응답.job_id`**를 모두 확인한다. 교체가 실패해도 `active=true`는 이전 게시본을 가리킬 수 있다. `failed`이면 `error_code`를 확인하고 새 후보/새 검토로 진행한다.
-6. **`POST /{id}/search`**에 `{"query":"제외 조건은 무엇인가요?"}`를 넣어 청크와 출처를 확인하고, **`POST /{id}/query`**에 문서에서 확인할 질문을 넣어 실제 RAG 답변과 diagnostics를 확인한다. 게시 전에는 `document_not_published`로 거부한다. 목업은 **일반 `POST /api/v1/chat`에서 제외**되므로 문서 전용 경로를 사용한다. HTTP 200만 보지 말고 답변의 원문·단위·제외 조건·보류 여부를 대조한다. LLM 문맥·근거·관련성 예산이 부족하면 안전하게 보류할 수 있다.
-
-이 과정에서 Docling 이전의 원문을 직접 임베딩하거나 검토 블록을 임의 텍스트로 대체하는 경로는 제공하지 않는다. 업로드 원본·분석은 DB에 있으므로 다른 PC에서도 동일한 `document_id`와 공개 상태를 조회할 수 있다.
+위 5~6번의 /{id} 접두사는 /api/v1/admin/documents다. 과거 POST /{id}/index는 더 이상 승인 경로가 아니며 409 안내를 반환한다.
 
 ### 교체·실패·검색
 
-제도 하나에 문서 여러 개를 등록할 수 있다. `PUT /{id}`(또는 업로드 Form의 `document_id`)로 같은 문서를 교체하며 ID를 유지한다. 후보의 원문·분석·검토는 현재 검색본과 분리한다. 워커는 `welfare_publish_document(job_id, lease_token)`로 소유권·만료·이전 active 작업을 확인한 뒤 게시한다. 성공하면 이 문서의 이전 원문·작업·벡터를 제거하고 다른 문서는 유지한다. 현재 성공 작업은 근거 확인용이며 버전 이력 보관이 아니다.
+동일 문서는 PUT /{id} 또는 업로드 form의 document_id로 교체한다. 새 벡터가 완성될 때까지 현재 게시본을 유지하고, 유효한 lease와 expected_active_job_id가 일치할 때 한 트랜잭션으로 원문·벡터·포인터를 교체한다. 다른 문서는 건드리지 않는다. 실패·취소 후보의 원본은 정리된다. 최초 등록 실패는 같은 ID로 파일을 재첨부한다. 이전 검토 대기도 명시적 재첨부로 새 자동 처리 작업을 만들며 자동 승인하지 않는다. 기존 게시 원본이 남은 경우 POST /{id}/retry로 새 자동 작업을 만들 수 있다.
 
-`POST /{id}/cancel`은 후보만 취소·정리한다. 실패해도 현재 검색본은 남는다. `POST /{id}/retry`는 현재 게시 원본에서 **새 분석 작업과 새 검토**를 시작한다. 최초 등록 실패로 원본이 정리됐다면 파일을 다시 업로드한다. 검토한 입력·설정을 바꾸려면 후보를 취소하고 새 작업으로 등록한다. `GET /{id}/jobs/{job_id}`는 작업 조회, `DELETE /{id}`는 해당 문서·작업·벡터 삭제다. 교체로 정리된 과거 작업은 조회되지 않는다.
+자동 청크는 content 섹션을 사용한다. 부모는 제목 경계와 최대 1600자·700토큰, 자식은 목표 600자·최대 800자·400토큰으로 나눈다. 실제 원문 문자 범위·블록·쪽·입력 해시·모델 digest·토큰/오버랩을 보존한다. vector+BM25 hybrid 검색과 rerank 후 원문 인용·조건·예외를 검증한다. 신청 방법·지원 대상이라는 수동 섹션명이 없다는 이유로 자동 문서를 배제하지 않는다. 유사도는 정답 확률이 아니며, 검색된 내용이 질문을 뒷받침하지 못하면 보류한다.
 
-벡터 저장소는 `welfare_document_vectors` 하나다. 현재 문서의 `active_job_id`와 같고 작업이 `succeeded`인 행만 검색한다. 실제 입력 SHA-256·모델·digest·Markdown 전역 범위·source_spans·쪽·절·토큰/오버랩 값을 함께 보존한다. 같은 모델·digest·입력만 재사용하며 설정 변경으로 예전 임베딩을 섞지 않는다. Docling 범위나 검토 출처가 맞지 않으면 답변을 보류한다.
+암호화·손상·추출 불가 PDF, 파일/쪽/문자/청크 한도 초과, 표·원문 위치 불일치는 조용히 통과시키지 않는다. 모델·DB·파일 단계의 오류 코드를 확인하고 원인을 해결한 뒤 재첨부한다. HTTP 200만으로 내용 정확도를 합격 처리하지 않는다.
 
-제도 또는 문서가 `test_only`이면 일반 상담에서 제외한다. `POST /{id}/search`·`POST /{id}/query`에서만 명시한 문서 범위로 가상 자료를 다룬다. 목업 3건과 빈 문서 DB만으로 실제 추천을 제공하지 않는다.
-
-이 전환은 정적 검토만 했으며 테스트·컴파일·빌드·컨테이너·모델·문서 처리 실행을 하지 않았다. 테스트는 새 API/스냅샷 계약으로 동기화했으나 실행 결과는 없다. 이전 DB 검증 결과를 새 스키마의 합격 근거로 사용하지 않는다.
-
-`BackEnd/tests/document_live_check.py`는 이미 기동한 루프백 API만 사용하는 수동 보조 도구다. 신규 업로드는 `--fixture`·사용자가 작성한 `--metadata`·저장소 밖 `--result`를 지정하고 사전 등록된 TEST_ 제도만 사용한다. 분석 후 출력의 문서 ID로 Swagger에서 모든 블록을 검토한다. 이후 `--document-id`·사용자가 작성한 `--review`로 승인하거나, 게시된 문서에 `--query`를 지정할 수 있다. DDL·직접 DB 연결·제도 생성·서비스 기동·자동 검토·자동 합격 판정은 하지 않는다. 실제 원문·모델 처리는 실행 중인 서버가 수행하며 결과 파일은 원문을 포함할 수 있다.
+BackEnd/tests/document_live_check.py는 이미 실행된 루프백 API에 테스트 제도 원문을 업로드해 자동 게시를 기다리고 선택 질의를 수집하는 수동 도구다. DDL·DB 직접 쓰기·서비스 기동은 하지 않는다. 결과에는 원문이 포함될 수 있어 저장소 밖 경로를 지정한다. 이 도구의 실행은 실제 분석·임베딩·질의를 수행하므로 사용자가 필요할 때만 실행한다.
 
 ## 로컬 리랭커 준비
 기본 Compose 실행은 백엔드 시작 전에 리랭커 캐시를 확인합니다. 고정된 `RERANK_MODEL`·`RERANK_REVISION`의 파일이 있으면 재사용하고, 없거나 빈 파일이면 필요한 tokenizer·INT8 ONNX 파일을 다운로드합니다. 준비 후 파일을 다시 확인하며 실패하면 오류 유형과 확인할 설정을 로그에 표시하고 백엔드를 시작하지 않습니다. 다운로드에는 네트워크와 캐시 폴더 쓰기 권한·디스크 공간이 필요하며, 파일 확인만으로 실제 추론 성공을 보장하지는 않습니다.
@@ -132,6 +113,18 @@ npx vercel dev -L        # 프론트+백엔드를 http://localhost:3000 하나�
 ```
 또는 `uvicorn BackEnd.main:app --port 8000`과 `cd FrontEnd && npm run dev`를 따로 실행합니다 (Vite가 `/api`를 8000으로 넘김).
 백엔드 없이 화면만 보려면 `FrontEnd/.env`에 `VITE_USE_MOCK=true`.
+
+### 로컬 제도·문서 관리
+
+기존 Compose 백엔드를 켠 상태에서 FrontEnd 폴더의 npm run dev로 프런트를 실행한다. http://127.0.0.1:5173/admin/documents 또는 상단 문서 관리로 들어간다. 제도 등록·관리(/admin/programs)에서 메타데이터를 등록한 뒤 목록을 갱신하고 원문을 올린다. 두 경로는 로컬 Vite 전용이며 목업 관리자 키가 필요 없다. 서버의 인증 경계는 그대로 적용한다.
+
+실제 담당 부서가 없으면 운영자가 확인한 기관·부서를 departments에 먼저 등록한다. 목업 기관을 실제 제도의 담당 기관으로 사용하지 않는다. 문서가 연결된 제도는 근거가 무효화되지 않도록 이름·외부 ID·test_only 변경과 삭제를 막는다.
+
+처리 상태를 화면 상단에서 확인한다. 모델 준비/분석/청크 생성의 세부 진행률이나 ETA는 만들지 않는다. 저장 청크 수·접수 후 경과·마지막 조회 시각은 실제 응답을 표시한다. 정상 상태는 5초마다 조회하고, 일시 실패하면 마지막 정보를 보존해 5·10·20초 간격으로 최대 3회 다시 확인한다. 게시 전이나 조회 지연 중에는 검색을 막는다.
+
+문서·작업 ID를 URL에 유지해 새로고침 후에도 이어서 확인한다. 같은 문서에 원문 다시 올리기는 교체 ID를 채워 준다. 게시 후 일반 상담으로 이동하면 VITE_USE_MOCK 설정과 무관하게 실제 채팅 API로 질문한다. 원문 미리보기는 선택 사항이며 사람이 읽거나 승인해야 임베딩되는 절차는 없다.
+
+PDF 표 분석에는 opencv-python-headless가 필요하다. 누락 의존성은 document_dependency_missing으로 표시하고, 워커 로그에는 정제한 모듈명·단계·작업 ID만 남긴다. 설정은 .env.example을 참고하며 실제 .env를 코드나 로그에 노출하지 않는다. 공개 관리자 로그인 연동과 공개 배포 준비는 별도 범위다.
 
 호스트에서 로컬 DB를 별도 검증할 때는 `DATABASE_MODE=local`로 지정하고 `DATABASE_URL`을 비운 뒤 로컬 `DB_*` 값을 사용합니다. `DATABASE_URL`이 설정되어 있으면 Supabase 등 해당 DB가 우선됩니다. 보존된 PostgreSQL 서비스 정의는 기존 16 버전 데이터 경로와 `pgvector/pgvector:pg16` 이미지를 유지합니다. 기존 데이터 폴더나 볼륨을 초기화하지 않습니다.
 

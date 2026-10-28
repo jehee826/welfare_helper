@@ -21,6 +21,13 @@ def stable_hash(value) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def automatic_source_fingerprint(doc: dict) -> str:
+    """자동 게시 전후에 파일과 문서 연결·출처 설정이 같은지 확인한다."""
+    keys = ("document_id", "service_id", "service_name", "document_name", "source_url", "source_organization",
+            "basis_year", "source_updated_at", "valid_from", "valid_until", "region_scope", "file_sha256", "file_format")
+    return stable_hash({**{key: str(doc.get(key) or "") for key in keys}, "test_only": bool(doc.get("test_only"))})
+
+
 class DocumentMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
     service_id: str = Field(min_length=1, max_length=200, description="제도 조회 응답의 service_id를 그대로 사용합니다.")

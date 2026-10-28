@@ -46,6 +46,9 @@ class EvidenceChunk:
     page_refs: tuple[int, ...] = ()
     source_blocks: tuple[str, ...] = ()
     test_only: bool = False
+    processing_mode: str = ""
+    processing_hash: str = ""
+    parent_index: int = 0
 
     @property
     def official(self) -> bool:
@@ -77,6 +80,20 @@ class EvidenceChunk:
     def usable_detail(self) -> bool:
         if self.official:
             return True
+        if self.source_kind == "automatic_document":
+            try:
+                UUID(self.document_id)
+                collected = datetime.fromisoformat(self.collected_at).tzinfo is not None
+                url = urlparse(self.source_url)
+                return bool(collected and self.document_name and self.source_blocks
+                            and self.processing_mode == "automatic"
+                            and re.fullmatch(r"[0-9a-f]{64}", self.analysis_hash)
+                            and re.fullmatch(r"[0-9a-f]{64}", self.processing_hash)
+                            and not (self.review_hash or self.reviewed_by or self.reviewed_at)
+                            and (not self.source_url or url.scheme == "https" and url.hostname
+                                 and not url.username and not url.password))
+            except (ValueError, TypeError):
+                return False
         if self.source_kind != "reviewed_document":
             return False
         try:
@@ -120,10 +137,10 @@ def read_chunk(chunk_id: str, service_id: str, content: str, url: str,
                     raise ValueError("문서 출처 연결 형식 오류")
                 values[key] = tuple(values.get(key, ()))
             chunk = EvidenceChunk(**values, score=score)
-            strings = names - {"ordinal", "start", "end", "complete", "active", "required_parents", "page_refs", "source_blocks", "test_only"}
+            strings = names - {"ordinal", "start", "end", "complete", "active", "required_parents", "page_refs", "source_blocks", "test_only", "parent_index"}
             if (chunk.chunk_id != chunk_id or chunk.service_id != service_id or not chunk.version
                     or any(not isinstance(getattr(chunk, key), str) for key in strings)
-                    or any(type(getattr(chunk, key)) is not int for key in ("ordinal", "start", "end"))
+                    or any(type(getattr(chunk, key)) is not int for key in ("ordinal", "start", "end", "parent_index"))
                     or type(chunk.complete) is not bool or type(chunk.active) is not bool
                     or type(chunk.test_only) is not bool
                     or any(type(page) is not int or page < 1 for page in chunk.page_refs)
@@ -159,6 +176,9 @@ def fingerprint(value: str) -> str:
 
 
 def validate_version(chunks: list[EvidenceChunk]) -> None:
+    if chunks and all(c.source_kind == "automatic_document" for c in chunks):
+        validate_automatic_version(chunks)
+        return
     if not chunks or len({(c.service_id, c.version, c.source_hash, c.embed_digest, c.basis_year,
                            c.source_updated_at, c.source_url, c.clean_version, c.split_version, c.service_name,
                            c.source_kind, c.document_id, c.analysis_hash, c.review_hash)
@@ -205,11 +225,55 @@ def validate_version(chunks: list[EvidenceChunk]) -> None:
             raise EvidenceConsistencyError("부모 원문 끝이 유실되었습니다.")
 
 
+def validate_automatic_version(chunks: list[EvidenceChunk]) -> None:
+    """자동 문서는 복지 섹션 대신 구조별 부모와 원문 범위의 완전성을 확인한다."""
+    if (not chunks or len({c.chunk_id for c in chunks}) != len(chunks)
+            or len({(c.service_id, c.document_id, c.version, c.source_hash, c.embed_digest,
+                     c.basis_year, c.source_updated_at, c.source_url, c.clean_version,
+                     c.split_version, c.service_name, c.analysis_hash, c.processing_hash,
+                     c.processing_mode, c.test_only) for c in chunks}) != 1):
+        raise EvidenceConsistencyError("자동 처리 원문 버전이 섞였습니다.")
+    parents = sorted((c for c in chunks if c.parent_text), key=lambda c: c.parent_index)
+    if (not parents or [c.parent_index for c in parents] != list(range(len(parents)))
+            or {c.parent_index for c in chunks} != set(range(len(parents)))):
+        raise EvidenceConsistencyError("자동 처리 부모 순서가 불완전합니다.")
+    source_hash = fingerprint("\n".join(c.parent_text for c in parents))
+    first = chunks[0]
+    if (source_hash != first.source_hash
+            or fingerprint(source_hash + first.clean_version + first.split_version + first.service_name
+                           + first.embed_digest + first.document_id)[:24] != first.version):
+        raise EvidenceConsistencyError("자동 처리 원문 해시가 다릅니다.")
+    parent_ids = {c.chunk_id for c in parents}
+    source = "\n".join(c.parent_text for c in parents)
+    for parent in parents:
+        children = sorted((c for c in chunks if c.parent_index == parent.parent_index), key=lambda c: c.ordinal)
+        if parent.ordinal != 0 or [c.ordinal for c in children] != list(range(len(children))):
+            raise EvidenceConsistencyError("자동 처리 자식 순서가 불완전합니다.")
+        covered = 0
+        for child in children:
+            expected_id = (f"{child.service_id}:document:{child.document_id}:{child.version}:content:"
+                           f"{child.parent_index}:{child.ordinal}")
+            if (not child.usable_detail or child.section != "content" or not child.embed_digest
+                    or not child.active or not child.clean_version or not child.split_version
+                    or not child.service_name or child.chunk_id != expected_id
+                    or child.parent_id != parent.chunk_id or len(child.text) > 800
+                    or not 0 <= child.start < child.end <= len(parent.parent_text)
+                    or parent.parent_text[child.start:child.end] != child.text
+                    or any(line not in source for line in child.heading_context.splitlines())
+                    or parent.parent_text[covered:child.start].strip()
+                    or parent.chunk_id not in child.required_parents
+                    or not set(child.required_parents).issubset(parent_ids)):
+                raise EvidenceConsistencyError("자동 처리 원문 범위 또는 부모 연결이 다릅니다.")
+            covered = max(covered, child.end)
+        if parent.parent_text[covered:].strip():
+            raise EvidenceConsistencyError("자동 처리 부모 원문 끝이 유실됐습니다.")
+
+
 def active_chunks(chunks: list[EvidenceChunk]) -> list[EvidenceChunk]:
     result = []
-    groups: dict[str, list[EvidenceChunk]] = {}
+    groups: dict[tuple[str, str], list[EvidenceChunk]] = {}
     for chunk in chunks:
-        groups.setdefault(chunk.service_id, []).append(chunk)
+        groups.setdefault((chunk.service_id, chunk.document_id), []).append(chunk)
     for rows in groups.values():
         if any(c.source_kind == "invalid" for c in rows):
             raise EvidenceConsistencyError("손상된 청크를 확인해 주세요.")

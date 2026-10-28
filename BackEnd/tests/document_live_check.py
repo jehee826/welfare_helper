@@ -33,9 +33,8 @@ def main():
     parser = argparse.ArgumentParser(description='이미 실행 중인 루프백 Swagger의 TEST_ 문서만 다룹니다.')
     parser.add_argument('--base-url',default='http://127.0.0.1:8000')
     parser.add_argument('--fixture',type=Path)
-    parser.add_argument('--metadata',type=Path,help='사용자가 검토한 DocumentMetadata JSON. 신규 업로드에서 필수입니다.')
+    parser.add_argument('--metadata',type=Path,help='사용자가 입력한 실제 DocumentMetadata JSON. 신규 업로드에서 필수입니다.')
     parser.add_argument('--document-id',type=UUID,help='기존 테스트 문서면 업로드를 생략합니다.')
-    parser.add_argument('--review',type=Path,help='모든 블록을 읽고 사용자가 작성한 IndexRequest JSON입니다.')
     parser.add_argument('--query',action='append',default=[],help='게시 후 문서 전용 RAG 질의. 실제 모델이 실행됩니다.')
     parser.add_argument('--result',type=Path,required=True,help='원문을 포함할 수 있으므로 저장소 밖 파일을 지정하세요.')
     parser.add_argument('--timeout',type=int,default=7200)
@@ -77,17 +76,11 @@ def main():
             response.raise_for_status()
             uploaded = response.json()
             document_id, job_id = uploaded['document_id'], uploaded['job_id']
-            state = poll(client,document_id,job_id,'awaiting_review',args.timeout)
-
-        if args.review:
-            review = json.loads(args.review.read_text(encoding='utf-8-sig'))
-            response = client.post(f'{PREFIX}/{document_id}/index',json=review)
-            response.raise_for_status()
-            state = poll(client,document_id,response.json()['job_id'],'succeeded',args.timeout)
+            state = poll(client,document_id,job_id,'succeeded',args.timeout)
 
         output = {'document_id':document_id,'status':state,'runtime_verified':False,'answers':[]}
         if args.query and not state['active_job_id']:
-            parser.error('게시 전입니다. 먼저 모든 블록을 검토하고 --review로 index를 승인하세요.')
+            parser.error('게시 전입니다. 자동 처리 상태를 확인하세요. 이전 검토 대기 문서는 같은 ID로 원문을 재첨부하세요.')
         for question in args.query:
             response = client.post(f'{PREFIX}/{document_id}/query',json={'query':question})
             response.raise_for_status()
@@ -97,7 +90,7 @@ def main():
         result_path.parent.mkdir(parents=True,exist_ok=True)
         result_path.write_text(json.dumps(output,ensure_ascii=False,indent=2),encoding='utf-8')
         print('document_id='+document_id)
-        print('자동 검토·자동 합격 판정 없이 결과를 저장했습니다.')
+        print('자동 처리 요청 결과를 저장했습니다. 답변 정확도의 자동 합격 판정은 하지 않았습니다.')
 
 
 if __name__=='__main__':

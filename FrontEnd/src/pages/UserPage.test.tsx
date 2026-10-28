@@ -75,3 +75,31 @@ describe("이용자 화면", () => {
     expect(within(history).getByText(/아직 상담 기록이 없어요/)).toBeInTheDocument();
   });
 });
+
+describe("안내 범위 고지", () => {
+  it("사는 곳을 고를 때 지역 자체 서비스는 아직 안내하지 않는다고 함께 읽어준다", () => {
+    renderApp();
+    const region = screen.getByLabelText("사는 곳");
+    expect(region).toHaveAccessibleDescription(/중앙부처 복지서비스/);
+    expect(region).toHaveAccessibleDescription(/주민센터/);
+  });
+
+  it("상담 화면 하단에 참고용 안내와 안내 범위, 확인할 곳을 함께 보여준다", async () => {
+    localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(savedProfile));
+    renderApp();
+    const notice = screen.getByText(/AI 안내는 참고용이에요/);
+    expect(notice).toHaveTextContent(/중앙부처 복지서비스/);
+    expect(notice).toHaveTextContent(/129/);
+  });
+
+  it("연락처 안내로 넘어가면 지역 자체 서비스가 범위 밖이라고 알려준다", async () => {
+    const { user } = renderApp();
+    await user.click(screen.getByRole("button", { name: "나중에 입력할게요" }));
+    await user.type(screen.getByLabelText("궁금한 내용"), "반려동물 미용 할인");
+    await user.click(screen.getByRole("button", { name: "질문 보내기" }));
+
+    const log = screen.getByRole("log", { name: "상담 내용" });
+    expect(await within(log).findByText("확인이 필요해요")).toBeInTheDocument();
+    expect(within(log).getByText(/지역 자체 서비스는 아직 안내 범위에 없어요/)).toBeInTheDocument();
+  });
+});

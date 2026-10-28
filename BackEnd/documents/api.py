@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from BackEnd.core.settings import get_settings
 from BackEnd.documents.auth import require_document_admin
 from BackEnd.documents.analysis import read_analysis
-from BackEnd.documents.contracts import DocumentError, DocumentMetadata, IndexRequest, stable_hash, validate_file, validate_review
+from BackEnd.documents.contracts import DocumentError, DocumentMetadata, stable_hash, validate_file
 from BackEnd.documents.store import get_document_store
 
 router = APIRouter(prefix="/api/v1/admin/documents", tags=["관리자 문서"])
@@ -18,6 +18,14 @@ router = APIRouter(prefix="/api/v1/admin/documents", tags=["관리자 문서"])
 
 class DocumentQuery(BaseModel):
     query: str = Field(min_length=1, max_length=300)
+
+
+@router.get("/processing", summary="자동 문서 처리 DB 계약 준비 상태")
+def document_processing(actor=Depends(require_document_admin), store=Depends(get_document_store)):
+    try:
+        return {"mode": "automatic", "ready": store.automatic_ready(), "human_review_required": False}
+    except Exception as exc:
+        document_failure(exc)
 
 
 @router.get("/programs", summary="문서에 연결할 사전 등록 제도 조회")
@@ -83,7 +91,8 @@ def query_document(document_id: UUID, request: DocumentQuery, actor: str = Depen
 def document_failure(exc):
     if isinstance(exc, DocumentError):
         code = str(exc)
-        status = 404 if code in {"document_not_found", "job_not_found_or_replaced"} else 409
+        status = (503 if code == "automatic_processing_schema_required" else
+                  404 if code in {"document_not_found", "job_not_found_or_replaced"} else 409)
         raise HTTPException(status, code) from None
     raise HTTPException(503, "document_service_unavailable") from None
 
@@ -126,6 +135,7 @@ async def upload_document(file: UploadFile = File(...), metadata: str = Form(...
         return {"id":str(doc["document_id"]), "document_id":str(doc["document_id"]),
                 "program_id":doc["program_id"], "job_id":str(job["job_id"]), "state":job["state"],
                 "test_only":parsed.test_only, "embedding_started":False,
+                "processing_mode":"automatic", "human_review_required":False,
                 "current_search_preserved":bool(doc["active_job_id"])}
 
     try:
@@ -145,7 +155,9 @@ def public_job(job):
             "error_code":job["error_code"], "created_at":job["created_at"], "finished_at":job["finished_at"],
             "reviewed_at":job["reviewed_at"], "parser_version":job["parser_version"],
             "embedding_model":job["embedding_model"], "embedding_digest":job["embedding_digest"],
-            "candidate_metadata":job.get("candidate_metadata",{})}
+            "candidate_metadata":job.get("candidate_metadata",{}),
+            "processing_mode":job.get("processing_mode","manual"),
+            "processed_at":job.get("processed_at"), "human_reviewed":bool(job.get("reviewed_at"))}
 
 
 @router.get("/{document_id}")
@@ -173,15 +185,10 @@ def document_status(document_id: UUID, offset: int = Query(default=0, ge=0), lim
                                   "blockers":analysis["blockers"], "warnings":analysis["warnings"], "pages":analysis["pages"],
                                   "total_blocks":len(analysis["blocks"]), "blocks":analysis["blocks"][offset:offset+limit],
                                   "offset":offset, "next_offset":offset+limit if offset+limit<len(analysis["blocks"]) else None}
-            result["analysis"]["review_template"] = {
-                "analysis_hash":job["analysis_hash"],
-                "sections":{key:[] for key in ("target","criteria","benefit","application")},
-                "excluded_blocks":{}, "confirm_complete":False, "confirm_source_and_service":False,
-                "review_note":"",
-            }
-            result["analysis"]["review_instruction"] = (
-                "next_offset이 없을 때까지 모든 블록의 text·markdown_text·표·예외를 확인하세요. 블록 ID를 네 섹션 또는 제외 사유에 한 번씩 넣고, 확인 플래그와 10자 이상 검토 메모를 직접 작성하세요."
-            )
+            result["analysis"]["processing_mode"] = job.get("processing_mode","manual")
+            result["analysis"]["human_review_required"] = False
+            if job.get("processing_mode") != "automatic" and job["state"] != "succeeded":
+                result["analysis"]["instruction"] = "이전 수동 검토 대기 작업입니다. 취소 후 원문을 다시 업로드하면 자동 처리합니다."
         return result
     except Exception as exc:
         document_failure(exc)
@@ -215,19 +222,9 @@ def delete_document(document_id: UUID,actor=Depends(require_document_admin),stor
         document_failure(exc)
 
 
-@router.post("/{document_id}/index", status_code=202, summary="후보 분석의 블록을 검토한 뒤 색인 승인")
-def index_document(document_id: UUID, request: IndexRequest, actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
-    try:
-        settings = get_settings()
-        job, analysis = read_analysis(store, str(document_id), settings.documents_max_characters * 20 + 20 * 1024 * 1024)
-        if request.analysis_hash != job["analysis_hash"]:
-            raise DocumentError("analysis_version_changed")
-        payload = request.model_dump(mode="json")
-        validate_review(analysis, payload)
-        queued = store.queue_index(str(document_id), actor, payload, job["job_id"], request.analysis_hash, settings)
-        return {"id": document_id, "job_id": queued["job_id"], "state": queued["state"]}
-    except Exception as exc:
-        document_failure(exc)
+@router.post("/{document_id}/index", summary="수동 색인 승인 경로 종료 안내")
+def index_document(document_id: UUID, actor: str = Depends(require_document_admin)):
+    raise HTTPException(409, "manual_index_disabled_upload_again")
 
 
 @router.post("/{document_id}/retry", status_code=202)
@@ -236,7 +233,8 @@ def retry_document(document_id: UUID, actor: str = Depends(require_document_admi
         settings = get_settings()
         config = {"ocr":settings.docling_ocr, "max_pages":settings.documents_max_pages,
                   "max_characters":settings.documents_max_characters, "artifact_store":"postgres-current-v2"}
-        return {"job_id":store.retry(str(document_id),actor,config), "state":"queued", "new_review_required":True}
+        return {"job_id":store.retry(str(document_id),actor,config), "state":"queued",
+                "processing_mode":"automatic", "human_review_required":False}
     except Exception as exc:
         document_failure(exc)
 

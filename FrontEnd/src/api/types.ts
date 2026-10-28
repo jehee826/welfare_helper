@@ -40,10 +40,53 @@ export interface MonthlyStat {
   connections: number;
 }
 
+export interface Department {
+  id: number;
+  name: string;
+  ministry: string;
+}
+
+export interface AdminProgram {
+  programId: number;
+  serviceId: string;
+  externalServiceId: string | null;
+  name: string;
+  summary: string;
+  departmentId: number;
+  departmentName: string;
+  ministryName: string;
+  contacts: Contact[];
+  sourceUrl: string | null;
+  sourceUpdatedAt: string | null;
+  testOnly: boolean;
+  updatedAt: string;
+  documentCount: number;
+  publishedCount: number;
+}
+
+export interface ProgramInput {
+  name: string;
+  summary: string;
+  departmentId: number;
+  externalServiceId: string | null;
+  sourceUrl: string | null;
+  sourceUpdatedAt: string | null;
+  contacts: Contact[];
+  testOnly: boolean;
+}
+
+export interface ProgramPage {
+  items: AdminProgram[];
+  hasMore: boolean;
+}
+
 export interface WelfareApi {
   ask(query: string, profile: UserProfile | null): Promise<ChatAnswer>;
   initialSuggestions(profile: UserProfile | null): string[];
-  listPrograms(): Promise<WelfareProgram[]>;
-  savePrograms(programs: WelfareProgram[]): Promise<void>;
+  listPrograms(query?: string): Promise<ProgramPage>;
+  listDepartments(): Promise<Department[]>;
+  createProgram(input: ProgramInput): Promise<AdminProgram>;
+  updateProgram(program: AdminProgram, changes: Partial<ProgramInput>): Promise<AdminProgram>;
+  deleteProgram(programId: number): Promise<void>;
   getMonthlyStats(): Promise<MonthlyStat[]>;
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { ChatAnswer, UserProfile, WelfareApi } from "../api/types";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
+import { CHAT_SCOPE_NOTICE } from "../lib/notice";
 import { AnswerCard } from "./AnswerCard";
 import { FallbackCard } from "./FallbackCard";
 import { SuggestionChips } from "./SuggestionChips";
@@ -122,7 +123,7 @@ export function ChatPanel({ api, profile, onAnswered }: Props) {
           <span aria-hidden="true">↑</span>
         </button>
       </form>
-      <p className="muted small center">AI 안내는 참고용이에요. 실제 자격은 담당 기관에서 확인해 주세요.</p>
+      <p className="muted small center scope-notice">{CHAT_SCOPE_NOTICE}</p>
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { STORAGE_KEYS, readJson, writeJson } from "../lib/storage";
+import { localDocumentAccess } from "../api/documentApi";
 
 export function Header({ children }: { children?: ReactNode }) {
   const [large, setLarge] = useState(() => readJson<boolean>(STORAGE_KEYS.largeText, false));
@@ -16,6 +17,7 @@ export function Header({ children }: { children?: ReactNode }) {
         곁에<span className="brand__sub">복지 길잡이</span>
       </Link>
       <nav className="header__nav" aria-label="주 메뉴">
+        {localDocumentAccess() && <Link className="btn btn--soft btn--sm" to="/admin/documents">문서 관리</Link>}
         <button type="button" className="btn btn--soft btn--sm" aria-pressed={large} onClick={() => setLarge((v) => !v)}>
           {large ? "글자 보통" : "글자 크게"}
         </button>

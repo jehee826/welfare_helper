@@ -64,7 +64,7 @@ def review():
             "excluded_blocks": {}, "confirm_complete": True, "confirm_source_and_service": True}
 
 
-def test_review_must_cover_every_block_and_preserve_quality_gates():
+def test_legacy_review_must_cover_every_block_and_preserve_quality_gates():
     analysis = {"blocks": [{"id": key, "text": "가상 원문"} for key in review()["sections"]], "blockers": []}
     validate_review(analysis, review())
     with pytest.raises(DocumentError):
@@ -92,8 +92,10 @@ def test_upload_only_saves_source_and_queues_analysis(monkeypatch):
     app.dependency_overrides[get_document_store] = lambda: Store()
     try:
         response = TestClient(app).post("/api/v1/admin/documents", files={"file": ("sample.md", b"# test\nsource", "text/markdown")},
-                                       data={"metadata": metadata().model_dump_json()})
+                                       data={"metadata": metadata(basis_year=None).model_dump_json()})
         assert response.status_code == 202 and response.json()["embedding_started"] is False
+        assert response.json()["processing_mode"] == "automatic"
+        assert response.json()["human_review_required"] is False
         assert calls == ["register"]
     finally:
         app.dependency_overrides.clear()
@@ -113,7 +115,7 @@ def test_index_request_does_not_start_models_before_analysis(monkeypatch):
     try:
         request = {**review(), "analysis_hash": "0" * 64, "review_note": "가상 원문 대조 검토입니다."}
         response = TestClient(app).post(f"/api/v1/admin/documents/{did}/index", json=request)
-        assert response.status_code == 409 and response.json()["detail"] == "analysis_not_ready"
+        assert response.status_code == 409 and response.json()["detail"] == "manual_index_disabled_upload_again"
     finally:
         app.dependency_overrides.clear()
 
@@ -287,8 +289,8 @@ def test_markdown_range_keeps_numeric_signs_and_units():
     assert source[block["char_start"]:block["char_end"]] == block["markdown_text"]
 
 
-def test_status_gives_a_review_template_that_requires_human_choices(monkeypatch):
-    from BackEnd.documents.contracts import IndexRequest, PARSER_VERSION
+def test_legacy_status_preserves_analysis_without_enabling_manual_approval(monkeypatch):
+    from BackEnd.documents.contracts import PARSER_VERSION
 
     did,jid = str(uuid4()),str(uuid4())
     analysis={"blocks":[{"id":k,"text":"가상 원문","markdown_text":"가상 원문"} for k in review()["sections"]],
@@ -316,12 +318,44 @@ def test_status_gives_a_review_template_that_requires_human_choices(monkeypatch)
     try:
         response=TestClient(app).get(f"/api/v1/admin/documents/{did}")
         assert response.status_code==200
-        template=response.json()["analysis"]["review_template"]
-        assert template["analysis_hash"]==stable_hash(analysis)
-        assert not template["confirm_complete"] and not template["confirm_source_and_service"]
-        with pytest.raises(ValueError):
-            IndexRequest(**template)
-        chosen={**template,**review(),"review_note":"원문과 조건 및 제외 항목을 대조했습니다."}
-        validate_review(analysis,IndexRequest(**chosen).model_dump())
+        result=response.json()
+        assert "review_template" not in result["analysis"]
+        assert result["analysis"]["human_review_required"] is False
+        assert result["analysis"]["processing_mode"] == "manual"
+        assert "다시 업로드" in result["analysis"]["instruction"]
+        assert result["jobs"][0]["state"] == "awaiting_review"
+        assert result["jobs"][0]["reviewed_at"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_processing_readiness_is_not_shadowed_by_document_uuid_routes():
+    class Store:
+        def automatic_ready(self):
+            return False
+
+    app.dependency_overrides[require_document_admin] = lambda: None
+    app.dependency_overrides[get_document_store] = lambda: Store()
+    try:
+        response = TestClient(app).get("/api/v1/admin/documents/processing")
+        assert response.status_code == 200
+        assert response.json() == {"mode":"automatic", "ready":False, "human_review_required":False}
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_old_schema_rejects_upload_with_actionable_code(monkeypatch):
+    class Store:
+        def register(self, *args, **kwargs):
+            raise DocumentError("automatic_processing_schema_required")
+
+    monkeypatch.setattr("BackEnd.documents.api.get_settings", lambda: Settings(_env_file=None, documents_enabled=True))
+    app.dependency_overrides[require_document_admin] = lambda: None
+    app.dependency_overrides[get_document_store] = lambda: Store()
+    try:
+        response = TestClient(app).post("/api/v1/admin/documents", files={"file":("sample.md",b"source","text/markdown")},
+                                       data={"metadata":metadata(basis_year=None).model_dump_json()})
+        assert response.status_code == 503
+        assert response.json()["detail"] == "automatic_processing_schema_required"
     finally:
         app.dependency_overrides.clear()

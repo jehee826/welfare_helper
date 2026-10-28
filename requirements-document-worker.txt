@@ -1,6 +1,7 @@
 -r requirements.txt
 docling-slim[format-pdf,format-docx,format-markdown,models-local,convert-core]==2.141.0
 docling-core==2.99.0
+opencv-python-headless==4.13.0.92
 tokenizers==0.23.3
 torch==2.10.0
 torchvision==0.25.0

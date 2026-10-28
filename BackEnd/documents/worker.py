@@ -4,23 +4,54 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
 import tempfile
 import time
+from uuid import UUID
 
 from BackEnd.core.settings import get_settings
 from BackEnd.documents.analysis import analyze_file
-from BackEnd.documents.contracts import DocumentError, PARSER_VERSION, stable_hash, validate_file
+from BackEnd.documents.contracts import DocumentError, PARSER_VERSION, automatic_source_fingerprint, stable_hash, validate_file
 from BackEnd.documents.indexing import document_children
 from BackEnd.documents.store import get_document_store
+
+
+def failure_diagnostic(exc, job_id, temp_dir):
+    """예외 본문·원문·경로를 제외하고 운영 진단에 필요한 식별자만 남긴다."""
+    try:
+        phase = json.loads((Path(temp_dir) / "progress.json").read_text(encoding="utf-8")).get("stage")
+    except (OSError, ValueError, AttributeError):
+        phase = None
+    if not isinstance(phase, str) or not re.fullmatch(r"[a-z_]{1,60}", phase):
+        phase = "starting"
+    try:
+        safe_job_id = str(UUID(str(job_id)))
+    except ValueError:
+        safe_job_id = None
+    missing, current, seen = None, exc, set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        name = getattr(current, "name", None)
+        if isinstance(current, ModuleNotFoundError) and isinstance(name, str) and re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", name, flags=re.ASCII) and len(name) <= 150:
+            missing = name
+            break
+        current = current.__cause__ or current.__context__
+    code = "document_dependency_missing" if missing else str(exc) if isinstance(exc, DocumentError) else type(exc).__name__
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,100}", code):
+        code = "document_processing_failed"
+    return {"event": "document_job_failed", "job_id": safe_job_id, "stage": phase,
+            "exception_type": type(exc).__name__, "missing_module": missing, "error_code": code}
 
 
 def process_job(job_id, token, temp_dir):
     settings, store = get_settings(), get_document_store()
     job = store.claimed_job(job_id, token)
     doc = job["document"]
+    if job["parse_config"].get("processing_mode") != "automatic":
+        raise DocumentError("legacy_document_requires_manual_resume")
 
     def stage(name, **values):
         # 진행률은 수명이 짧은 worker 작업 디렉터리에만 두고 DB 설정에는 섞지 않는다.
@@ -31,7 +62,8 @@ def process_job(job_id, token, temp_dir):
 
     if job["state"] == "ready":
         config = job["chunk_config"]
-        if (job["parser_version"] != PARSER_VERSION or config.get("embedding_model") != settings.ollama_embed
+        if (config.get("processing_mode") != "automatic" or job["parser_version"] != PARSER_VERSION
+                or config.get("embedding_model") != settings.ollama_embed
                 or config.get("tokenizer_revision") != settings.rerank_model + "@" + settings.rerank_revision):
             raise DocumentError("index_settings_changed_create_new_job")
         stage("publishing")
@@ -39,7 +71,7 @@ def process_job(job_id, token, temp_dir):
         return
     if job["parser_version"] != PARSER_VERSION:
         raise DocumentError("parser_version_changed_create_new_job")
-    if job["state"] == "parsing":
+    if job["state"] == "parsing" and not job.get("candidate_analysis"):
         stage("fetching_original")
         original = bytes(job["candidate_original"] or b"")
         if stable_hash(original) != doc["file_sha256"]:
@@ -51,22 +83,31 @@ def process_job(job_id, token, temp_dir):
         content = json.dumps(analysis, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()
         if len(content) > settings.documents_max_characters * 20 + 20 * 1024 * 1024:
             raise DocumentError("analysis_artifact_size_limit")
-        stage("awaiting_review")
+        stage("chunking")
         store.finish_analysis(job_id, token, analysis)
-        return
-    stage("validating_review")
+        job = store.claimed_job(job_id, token)
+        doc = job["document"]
+    stage("chunking")
     analysis = job["candidate_analysis"]
     config = job["chunk_config"]
     payload = config.get("payload", {})
     revision = settings.rerank_model + "@" + settings.rerank_revision
-    if (not analysis or stable_hash(analysis) != payload.get("analysis_hash")
+    if (config.get("processing_mode") != "automatic" or payload.get("processing_mode") != "automatic"
+            or not analysis or stable_hash(analysis) != payload.get("analysis_hash")
             or analysis.get("markdown") != job["candidate_markdown"]):
         raise DocumentError("analysis_version_changed")
+    if analysis.get("blockers"):
+        raise DocumentError("analysis_quality_blocked")
+    if (payload.get("source_fingerprint") != automatic_source_fingerprint(doc)
+            or payload.get("source_file_sha256") != doc.get("file_sha256")):
+        raise DocumentError("automatic_source_changed_create_new_job")
+    if job.get("reviewed_by") is not None or job.get("reviewed_at") is not None:
+        raise DocumentError("automatic_review_metadata_forbidden")
     if config.get("embedding_model") != settings.ollama_embed or config.get("tokenizer_revision") != revision:
         raise DocumentError("index_settings_changed_create_new_job")
     if doc["service_name"] != payload["service_name"]:
         raise DocumentError("linked_service_changed_create_new_job")
-    # Docling 분석과 명시적 검토 이후에만 모델·tokenizer를 사용한다.
+    # 원문 품질·범위·설정 검증을 통과한 자동 작업만 임베딩한다.
     from BackEnd.rag.ollama import OllamaClient
     from BackEnd.rag.reranker import LocalReranker
 
@@ -152,13 +193,19 @@ def supervise(job, store, settings):
                     print(json.dumps({"job_id": job_id, "stage": phase, "cache_bytes": cache_bytes}), flush=True)
                     heartbeat = now
                 limit = (settings.documents_download_timeout if phase in {"starting", "downloading_models", "fetching_original"}
-                         else settings.documents_parse_timeout if job["state"] == "parsing" else settings.documents_index_timeout)
+                         else settings.documents_parse_timeout if phase == "parsing" else settings.documents_index_timeout)
                 if now - phase_started > limit:
                     raise DocumentError("job_stage_timeout")
                 time.sleep(1)
             if child.returncode:
-                # 하위 프로세스는 공개 가능한 코드만 DB에 남긴다.
-                store.fail(job_id, token, "worker_process_failed")
+                try:
+                    # 라이브러리 stderr 대신 자식이 정제한 진단만 노출한다.
+                    diagnostic = json.loads((Path(temp) / "failure.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    diagnostic = {"event": "document_job_failed", "job_id": job_id,
+                                  "stage": phase, "error_code": "worker_process_failed"}
+                print(json.dumps(diagnostic), flush=True)
+                store.fail(job_id, token, diagnostic["error_code"])
         except BaseException:
             stop_child(child)
             store.fail(job_id, token, "worker_interrupted_or_timeout")
@@ -178,8 +225,9 @@ def main():
             process_job(args.job, args.lease, args.temp_dir)
             return 0
         except Exception as exc:
-            code = str(exc) if isinstance(exc, DocumentError) else type(exc).__name__
-            get_document_store().fail(args.job, args.lease, code)
+            diagnostic = failure_diagnostic(exc, args.job, args.temp_dir)
+            (Path(args.temp_dir) / "failure.json").write_text(json.dumps(diagnostic), encoding="utf-8")
+            get_document_store().fail(args.job, args.lease, diagnostic["error_code"])
             return 1
     settings = get_settings()
     def shutdown(signum, frame):

@@ -77,10 +77,21 @@ class DocumentStore:
                     'candidate_original,parser_version,parse_config,created_by,local_ingestion) '
                     'VALUES(%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *',
                     (doc['document_id'], doc['active_job_id'], Json(json.loads(json.dumps(metadata, default=str))), original, PARSER_VERSION,
-                     Json(config), actor, actor is None))
+                     Json({**config, 'processing_mode': 'automatic'}), actor, actor is None))
         return dict(cur.fetchone())
 
+    def automatic_ready(self):
+        with self.cursor() as cur:
+            cur.execute("SELECT to_regprocedure('public.welfare_document_processing_contract()') AS contract")
+            if not cur.fetchone()['contract']:
+                return False
+            cur.execute('SELECT public.welfare_document_processing_contract() AS version')
+            return cur.fetchone()['version'] == 'automatic-v1'
+
     def register(self, metadata, file_hash, size, suffix, actor, config, original, *, document_id=None):
+        if not self.automatic_ready():
+            raise DocumentError('automatic_processing_schema_required')
+        replacing = document_id is not None
         document_id = str(document_id) if document_id is not None else None
         if len(original) != size or stable_hash(original) != file_hash:
             raise DocumentError('original_hash_mismatch')
@@ -110,8 +121,14 @@ class DocumentStore:
             if doc['program_id'] != program['program_id']:
                 raise DocumentError('document_program_immutable')
             self._admin(cur, actor, local=doc['local_ingestion'])
-            if self._pending(cur, document_id):
-                raise DocumentError('document_job_already_pending')
+            pending = self._pending(cur, document_id)
+            if pending:
+                if (replacing and pending['state'] == 'awaiting_review'
+                        and pending['parse_config'].get('processing_mode') != 'automatic'):
+                    # 사용자가 새 파일을 명시적으로 첨부한 경우에만 이전 대기 후보를 교체한다.
+                    self._discard(cur, pending['job_id'], 'cancelled', 'legacy_replaced_by_upload')
+                else:
+                    raise DocumentError('document_job_already_pending')
             job = self._new_job(cur, doc, candidate, original, actor, config)
             return doc, job
 
@@ -125,7 +142,9 @@ class DocumentStore:
                         "'job_id',j.job_id,'state',j.state,'attempts',j.attempts,'error_code',j.error_code,"
                         "'created_at',j.created_at,'finished_at',j.finished_at,'reviewed_at',j.reviewed_at,"
                         "'parser_version',j.parser_version,'embedding_model',j.embedding_model,"
-                        "'embedding_digest',j.embedding_digest,'candidate_metadata',j.candidate_metadata)), '[]'::jsonb) "
+                        "'embedding_digest',j.embedding_digest,'candidate_metadata',j.candidate_metadata,"
+                        "'processing_mode',coalesce(j.parse_config->>'processing_mode','manual'),"
+                        "'processed_at',j.chunk_config->'payload'->>'processed_at')), '[]'::jsonb) "
                         'FROM public.rag_document_jobs j WHERE j.document_id=d.document_id) AS jobs '
                         'FROM public.rag_documents d JOIN public.welfare_programs p USING(program_id) '
                         'WHERE d.document_id=%s', (document_id,))
@@ -141,11 +160,12 @@ class DocumentStore:
 
     def analysis_result(self, document_id):
         with self.cursor() as cur:
-            cur.execute('SELECT j.job_id,j.state,j.chunk_config,j.parser_version,'
+            cur.execute("SELECT j.job_id,j.state,j.chunk_config,j.parser_version,coalesce(j.parse_config->>'processing_mode','manual') AS processing_mode,"
                         'CASE WHEN j.state=\'succeeded\' THEN d.analysis_json ELSE j.candidate_analysis END AS analysis '
                         'FROM public.rag_documents d JOIN public.rag_document_jobs j ON j.document_id=d.document_id '
                         "WHERE d.document_id=%s AND (j.state='succeeded' AND j.job_id=d.active_job_id "
-                        "OR j.state IN ('awaiting_review','embedding','ready')) "
+                        "OR j.state IN ('awaiting_review','embedding','ready') "
+                        "OR (j.state='parsing' AND j.parse_config->>'processing_mode'='automatic' AND j.candidate_analysis IS NOT NULL)) "
                         "ORDER BY (j.state<>'succeeded') DESC,j.created_at DESC LIMIT 1", (document_id,))
             row = cur.fetchone()
             if not row or not row['analysis']:
@@ -162,29 +182,12 @@ class DocumentStore:
         return {'hash': '', 'years': []}
 
     def queue_index(self, document_id, actor, request, expected_job_id, analysis_hash, settings):
-        with self.cursor() as cur:
-            doc = self._document(cur, document_id, lock=True)
-            job = self._pending(cur, document_id)
-            if not job or str(job['job_id']) != str(expected_job_id) or job['state'] != 'awaiting_review':
-                raise DocumentError('analysis_version_changed')
-            self._admin(cur, actor, local=job['local_ingestion'])
-            if job['chunk_config'] or job['lease_token']:
-                raise DocumentError('review_locked_create_new_job')
-            if not job['candidate_metadata'].get('basis_year') and not job['candidate_metadata'].get('source_updated_at'):
-                raise DocumentError('confirmed_basis_year_or_source_date_required')
-            if stable_hash(job['candidate_analysis']) != analysis_hash:
-                raise DocumentError('analysis_version_changed')
-            cur.execute('SELECT clock_timestamp() AS reviewed_at')
-            reviewed_at = cur.fetchone()['reviewed_at']
-            payload = {'review': request, 'analysis_hash': analysis_hash, 'reviewed_by': actor or 'local',
-                       'reviewed_at': reviewed_at.isoformat(), 'service_name': doc['service_name']}
-            config = {'payload': payload, 'embedding_model': settings.ollama_embed,
-                      'tokenizer_revision': settings.rerank_model + '@' + settings.rerank_revision}
-            cur.execute('UPDATE public.rag_document_jobs SET reviewed_by=%s,reviewed_at=%s,chunk_config=%s '
-                        'WHERE job_id=%s RETURNING *', (actor, reviewed_at, Json(config), job['job_id']))
-            return dict(cur.fetchone())
+        # 과거 호출자는 자동 승인으로 바꾸지 않고 재업로드를 안내한다.
+        raise DocumentError('manual_index_disabled_upload_again')
 
     def retry(self, document_id, actor, config):
+        if not self.automatic_ready():
+            raise DocumentError('automatic_processing_schema_required')
         with self.cursor() as cur:
             doc = self._document(cur, document_id, lock=True)
             self._admin(cur, actor, local=doc['local_ingestion'])
@@ -224,9 +227,9 @@ class DocumentStore:
             cur.execute('DELETE FROM public.rag_documents WHERE document_id=%s', (document_id,))
 
     def claim(self, seconds, service_id=None):
-        eligible = "j.available_at<=clock_timestamp() AND (j.state='queued' OR (j.state IN ('parsing','embedding','ready') " \
-                   "AND (j.lease_until IS NULL OR j.lease_until<=clock_timestamp())) OR (j.state='awaiting_review' " \
-                   "AND j.chunk_config ? 'payload' AND (j.lease_until IS NULL OR j.lease_until<=clock_timestamp())))"
+        eligible = "j.parse_config->>'processing_mode'='automatic' AND j.available_at<=clock_timestamp() " \
+                   "AND (j.state='queued' OR (j.state IN ('parsing','embedding','ready') " \
+                   "AND (j.lease_until IS NULL OR j.lease_until<=clock_timestamp())))"
         with self.cursor() as cur:
             # 문서 -> 작업 순서로 잠가 게시·취소와 잠금 순서를 맞춘다.
             cur.execute('SELECT d.document_id FROM public.rag_documents d JOIN public.welfare_programs p USING(program_id) '
@@ -312,6 +315,30 @@ class DocumentStore:
             self._admin(cur, job['created_by'], local=job['local_ingestion'])
             if job['state'] != 'parsing':
                 raise DocumentError('job_state_changed')
+            if job['parse_config'].get('processing_mode') == 'automatic':
+                from BackEnd.documents.contracts import automatic_source_fingerprint
+
+                if analysis.get('blockers') or not analysis.get('blocks') or not analysis.get('markdown', '').strip():
+                    raise DocumentError('analysis_quality_blocked')
+                settings = get_settings()
+                doc = self._document(cur, job['document_id'])
+                candidate = {**doc, **job['candidate_metadata']}
+                cur.execute('SELECT clock_timestamp() AS processed_at')
+                processed_at = cur.fetchone()['processed_at'].isoformat()
+                payload = {
+                    'processing_mode': 'automatic', 'analysis_hash': stable_hash(analysis),
+                    'source_fingerprint': automatic_source_fingerprint(candidate),
+                    'source_file_sha256': candidate['file_sha256'], 'service_name': doc['service_name'],
+                    'processed_at': processed_at,
+                }
+                config = {'processing_mode': 'automatic', 'payload': payload,
+                          'embedding_model': settings.ollama_embed,
+                          'tokenizer_revision': settings.rerank_model + '@' + settings.rerank_revision}
+                # 같은 소유권으로 자동 청크·임베딩을 이어간다. 사람 검토 기록은 만들지 않는다.
+                cur.execute('UPDATE public.rag_document_jobs SET candidate_analysis=%s,candidate_markdown=%s,'
+                            'chunk_config=%s WHERE job_id=%s',
+                            (Json(analysis), analysis['markdown'], Json(config), job_id))
+                return
             cur.execute("UPDATE public.rag_document_jobs SET state='awaiting_review',candidate_analysis=%s,candidate_markdown=%s,"
                         'lease_token=NULL,lease_until=NULL WHERE job_id=%s', (Json(analysis), analysis['markdown'], job_id))
 
@@ -322,8 +349,12 @@ class DocumentStore:
                 if (job['embedding_model'], job['embedding_digest']) != (model, digest):
                     raise DocumentError('embedding_identity_changed_create_new_job')
                 return
-            if job['state'] != 'awaiting_review' or not job['chunk_config'].get('payload'):
-                raise DocumentError('review_required')
+            if (job['parse_config'].get('processing_mode') != 'automatic' or job['state'] != 'parsing'
+                    or job['chunk_config'].get('processing_mode') != 'automatic'
+                    or not job['chunk_config'].get('payload')):
+                raise DocumentError('automatic_analysis_required')
+            if job['chunk_config']['embedding_model'] != model:
+                raise DocumentError('embedding_identity_changed_create_new_job')
             cur.execute("UPDATE public.rag_document_jobs SET state='embedding',embedding_model=%s,embedding_digest=%s "
                         'WHERE job_id=%s', (model, digest, job_id))
 
@@ -373,7 +404,8 @@ class DocumentStore:
         with self.cursor() as cur:
             job = self._lease(cur, job_id, token)
             self._admin(cur, job['created_by'], local=job['local_ingestion'])
-            self._admin(cur, job['reviewed_by'], local=job['local_ingestion'])
+            if job['parse_config'].get('processing_mode') != 'automatic':
+                self._admin(cur, job['reviewed_by'], local=job['local_ingestion'])
             doc=self._document(cur,job['document_id'])
             # 제도 이름도 실제 임베딩 입력이므로 게시 중 바뀌지 않도록 공유 잠금을 잡는다.
             cur.execute('SELECT p.program_name,p.test_only,' + SERVICE_ID + ' AS service_id '

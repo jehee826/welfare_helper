@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { Household, IncomeBracket, UserProfile } from "../api/types";
+import { REGION_SCOPE_NOTICE } from "../lib/notice";
 import { HOUSEHOLD_OPTIONS, INCOME_OPTIONS, REGIONS } from "../lib/profile";
 
 interface Props {
@@ -82,7 +83,7 @@ export function ConditionForm({ initial, onSubmit, onSkip, onClear }: Props) {
 
         <label className="field">
           <span className="field__label">사는 곳</span>
-          <select value={region} onChange={(e) => setRegion(e.target.value)}>
+          <select value={region} onChange={(e) => setRegion(e.target.value)} aria-describedby="region-scope">
             {REGIONS.map((r) => (
               <option key={r} value={r}>
                 {r}
@@ -90,6 +91,9 @@ export function ConditionForm({ initial, onSubmit, onSkip, onClear }: Props) {
             ))}
           </select>
         </label>
+        <p id="region-scope" className="muted small scope-notice">
+          {REGION_SCOPE_NOTICE}
+        </p>
 
         <fieldset className="field">
           <legend className="field__label">장애가 있나요?</legend>

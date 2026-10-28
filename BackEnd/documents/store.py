@@ -35,11 +35,6 @@ class DocumentStore:
         if not cur.fetchone():
             raise DocumentError('admin_permission_required')
 
-    def is_admin(self, actor):
-        with self.cursor() as cur:
-            cur.execute('SELECT 1 FROM public.rag_document_admins WHERE user_id=%s AND active', (actor,))
-            return bool(cur.fetchone())
-
     def programs(self, test_only=None, offset=0, limit=50):
         with self.cursor() as cur:
             cur.execute('SELECT p.program_id,' + SERVICE_ID + ' AS service_id,p.program_name,p.summary,'
@@ -180,10 +175,6 @@ class DocumentStore:
     def policy(self, service_id):
         # CSV 필드는 탐색 메타데이터이며 검토 문서보다 우선하는 상세 근거로 승격하지 않는다.
         return {'hash': '', 'years': []}
-
-    def queue_index(self, document_id, actor, request, expected_job_id, analysis_hash, settings):
-        # 과거 호출자는 자동 승인으로 바꾸지 않고 재업로드를 안내한다.
-        raise DocumentError('manual_index_disabled_upload_again')
 
     def retry(self, document_id, actor, config, *, shared_password=False):
         if not self.automatic_ready():

@@ -35,3 +35,6 @@ postgres_data/
 
 # 로컬 설계·수동 평가 문서
 /docs/design/
+
+# ec2 키페어 제외
+welfare_helper__key.pem

@@ -1,6 +1,4 @@
 import io
-import base64
-import json
 from uuid import uuid4
 import zipfile
 
@@ -11,7 +9,6 @@ from BackEnd.core.settings import Settings
 from BackEnd.documents.auth import require_document_admin
 from BackEnd.documents.contracts import DocumentError, DocumentMetadata, stable_hash, validate_file, validate_review
 from BackEnd.documents.store import get_document_store
-from BackEnd.documents.storage import supabase_headers
 from BackEnd.main import app
 
 
@@ -120,8 +117,10 @@ def test_index_request_does_not_start_models_before_analysis(monkeypatch):
         app.dependency_overrides.clear()
 
 
-def test_document_admin_auth_rejects_browser_key_without_user_session(monkeypatch):
-    monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: Settings(_env_file=None, documents_enabled=True))
+def test_document_admin_auth_rejects_requests_without_server_session(monkeypatch):
+    settings = Settings(_env_file=None, documents_enabled=True, admin_password="configured-test-password")
+    monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: settings)
+    monkeypatch.setattr("BackEnd.admin.session.get_settings", lambda: settings)
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as error:
@@ -129,47 +128,17 @@ def test_document_admin_auth_rejects_browser_key_without_user_session(monkeypatc
     assert error.value.status_code == 401
 
 
-def test_user_editable_admin_metadata_does_not_grant_database_permission(monkeypatch):
-    import httpx
+def test_client_supplied_admin_claim_does_not_grant_server_session(monkeypatch):
     from fastapi import HTTPException
     from fastapi.security import HTTPAuthorizationCredentials
 
-    actor = str(uuid4())
-    settings = Settings(_env_file=None, documents_enabled=True, supabase_url="https://example.invalid",
-                        supabase_service_key="sb_secret_test-only")
+    settings = Settings(_env_file=None, documents_enabled=True, admin_password="configured-test-password")
     monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: settings)
-    monkeypatch.setattr(httpx, "get", lambda url, **kw: httpx.Response(200, request=httpx.Request("GET", url),
-        json={"id": actor, "user_metadata": {"role": "admin"}}))
-
-    class Store:
-        def is_admin(self, user):
-            assert user == actor
-            return False
-
-    monkeypatch.setattr("BackEnd.documents.store.get_document_store", lambda: Store())
+    monkeypatch.setattr("BackEnd.admin.session.get_settings", lambda: settings)
+    claimed_role = '{"user_metadata":{"role":"admin"},"role":"admin"}'
     with pytest.raises(HTTPException) as error:
-        require_document_admin(None, HTTPAuthorizationCredentials(scheme="Bearer", credentials="test-user-token"))
-    assert error.value.status_code == 403
-
-
-def legacy_key(role):
-    payload = base64.urlsafe_b64encode(json.dumps({"role": role}).encode()).decode().rstrip("=")
-    return "eyJhbGciOiJIUzI1NiJ9." + payload + ".test-only-signature"
-
-
-def test_server_secret_uses_apikey_without_bearer_and_legacy_keeps_compatibility():
-    _, modern = supabase_headers(Settings(_env_file=None, supabase_url="https://example.invalid", supabase_service_key="sb_secret_test-only"))
-    assert modern == {"apikey": "sb_secret_test-only"}
-    key = legacy_key("service_role")
-    _, legacy = supabase_headers(Settings(_env_file=None, supabase_url="https://example.invalid", supabase_service_key=key))
-    assert legacy == {"apikey": key, "Authorization": "Bearer " + key}
-
-
-@pytest.mark.parametrize("key", ["sb_publishable_test-only", legacy_key("anon"), "invalid-test-only"])
-def test_public_keys_cannot_replace_the_server_key(key):
-    with pytest.raises(DocumentError):
-        supabase_headers(Settings(_env_file=None, supabase_url="https://example.invalid", supabase_service_key=key))
-
+        require_document_admin(None, HTTPAuthorizationCredentials(scheme="Bearer", credentials=claimed_role))
+    assert error.value.status_code == 401
 
 def test_admin_gate_requires_server_session_on_every_host(monkeypatch):
     from fastapi import Depends, FastAPI

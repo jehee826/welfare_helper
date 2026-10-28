@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import type { ChatAnswer, UserProfile, WelfareApi } from "../api/types";
+import type { ChatAnswer, DocumentChatAnswer, UserProfile, WelfareApi } from "../api/types";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { documentError } from "../api/documentApi";
-import type { DocumentChatAnswer } from "../api/documentChatApi";
 import { SuggestionChips } from "./SuggestionChips";
 import { VoiceButton } from "./VoiceButton";
 

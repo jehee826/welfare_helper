@@ -1,4 +1,21 @@
 services:
+  edge:
+    profiles: ["edge"]
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.edge
+    container_name: welfare-edge
+    environment:
+      PUBLIC_API_HOST: ${PUBLIC_API_HOST:-15.164.190.21}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    # 모델 다운로드와 백엔드 준비를 기다리지 않고 인증서를 준비한다.
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -124,3 +141,5 @@ services:
 
 volumes:
   docling_models:
+  caddy_data:
+  caddy_config:

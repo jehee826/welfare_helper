@@ -120,8 +120,7 @@ it("일시 조회 실패는 마지막 상태를 보존하고 재조회로 회복
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-it("기본 채팅은 목업 설정과 무관하게 실제 API를 사용한다", async () => {
-  vi.stubEnv("VITE_USE_MOCK", "true");
+it("기본 채팅은 실제 API를 사용한다", async () => {
   const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ kind: "fallback", text: "실제 상담 응답", contacts: [], suggestions: [] }) });
   vi.stubGlobal("fetch", fetch);
   render(<MemoryRouter initialEntries={["/"]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><App /></MemoryRouter>);

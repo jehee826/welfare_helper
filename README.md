@@ -107,8 +107,6 @@ docker compose up -d --build
 
 암호화·손상·추출 불가 PDF, 파일/쪽/문자/청크 한도 초과, 표·원문 위치 불일치는 조용히 통과시키지 않는다. 모델·DB·파일 단계의 오류 코드를 확인하고 원인을 해결한 뒤 재첨부한다. HTTP 200만으로 내용 정확도를 합격 처리하지 않는다.
 
-BackEnd/tests/document_live_check.py는 이미 실행된 루프백 API에 테스트 제도 원문을 업로드해 자동 게시를 기다리고 선택 질의를 수집하는 수동 도구다. DDL·DB 직접 쓰기·서비스 기동은 하지 않는다. 결과에는 원문이 포함될 수 있어 저장소 밖 경로를 지정한다. 이 도구의 실행은 실제 분석·임베딩·질의를 수행하므로 사용자가 필요할 때만 실행한다.
-
 ## 로컬 리랭커 준비
 기본 Compose 실행은 백엔드 시작 전에 리랭커 캐시를 확인합니다. 고정된 `RERANK_MODEL`·`RERANK_REVISION`의 파일이 있으면 재사용하고, 없거나 빈 파일이면 필요한 tokenizer·INT8 ONNX 파일을 다운로드합니다. 준비 후 파일을 다시 확인하며 실패하면 오류 유형과 확인할 설정을 로그에 표시하고 백엔드를 시작하지 않습니다. 다운로드에는 네트워크와 캐시 폴더 쓰기 권한·디스크 공간이 필요하며, 파일 확인만으로 실제 추론 성공을 보장하지는 않습니다.
 
@@ -196,30 +194,48 @@ pgvector 통합 테스트는 `RAG_TEST_DATABASE_URL`이 지정된 경우에만 �
 
 ### EC2 백엔드의 최초 준비와 갱신
 
-EC2 Linux에는 Git, Docker Engine과 Compose v2 플러그인을 먼저 설치하고 Docker 데몬을 부팅 시 시작하도록 설정합니다. 예를 들어 systemd 환경에서 `sudo systemctl enable --now docker`를 사용하며 실행 계정의 Docker 접근 권한도 준비합니다. CPU 실행이 기본이며 GPU를 요구하지 않습니다. worker의 기본 메모리 상한은 4GB이고 Ollama·리랭커·운영체제 메모리는 별도이므로 모델·이미지·캐시를 위한 메모리와 디스크를 확보해야 합니다. 실제 EC2 사양의 처리 시간·메모리는 별도 확인 대상입니다.
+EC2 Linux에는 Git, Docker Engine과 Compose 플러그인을 먼저 설치하고 Docker 데몬을 부팅 시 시작하도록 설정합니다. 예를 들어 systemd 환경에서 `sudo systemctl enable --now docker`를 사용하며 실행 계정의 Docker 접근 권한과 저장소 읽기 권한(비공개 저장소는 GitHub 인증)도 준비합니다. CPU 실행이 기본이며 GPU를 요구하지 않습니다. worker의 기본 메모리 상한은 4GB이고 Ollama·리랭커·운영체제 메모리는 별도이므로 모델·이미지·캐시를 위한 메모리와 디스크를 확보해야 합니다. 실제 EC2 사양의 처리 시간·메모리는 별도 확인 대상입니다.
 
 `test_only` 문서는 공개 검색에서 제외되므로 공개 가능한 게시 원문이 준비되어야 합니다. EC2의 코드·모델 기동 준비와 공개 RAG 자료 준비는 별개이며, 공개 원문이 없으면 공개 질의는 근거 없음으로 응답할 수 있습니다. 로컬 검증을 위해 기존 플래그를 바꾸지 않으며 공개 원문은 적법한 관리자 경로로 등록합니다.
 
-저장소를 받은 뒤 `.env.example`을 참고해 EC2 서버 환경을 한 번 준비합니다. 기존 DATABASE_URL·별도 DATABASE_PASSWORD, bge-m3 1024차원과 리랭커 리비전을 유지하고 `DOCUMENTS_ENABLED=true`, `ADMIN_PASSWORD`를 설정합니다. OLLAMA_LLM 하나로 생성 모델과 준비 목록을 선택합니다. 공통 관리자 로그인에 Supabase Auth 키·사용자·관리자 행은 필요하지 않으며 기존 데이터와 test_only 플래그를 바꾸지 않습니다.
-
-최초 준비와 이후 코드 갱신은 저장소 루트에서 다음 명령을 사용합니다.
+처음에는 저장소를 clone하고 이 배포 설정이 반영된 브랜치를 체크아웃한 뒤 서버 환경을 준비합니다.
 
 ```sh
-git pull --ff-only
-docker compose up -d --build
-docker compose ps
+git clone https://github.com/jehee826/welfare_helper.git
+cd welfare_helper
+cp .env.example .env
+chmod 600 .env
 ```
 
-별도 프런트 컨테이너나 로컬 PostgreSQL은 시작하지 않습니다. 앱 코드는 이미지에 들어가며 갱신 시 rebuild로 적용됩니다. 기존 `ollama_data/`, `.reranker_cache/`, `postgres_data/`와 `docling_models` 볼륨을 보존합니다. 같은 데이터와 볼륨을 재사용하려면 저장소 경로와 Compose 프로젝트 이름을 유지합니다. 새 EC2에 노트북의 캐시가 없으면 처음 한 번 모델을 내려받으며 Docling 분석 모델은 첫 업로드 때 추가 준비될 수 있습니다. 빌드·다운로드 실패는 명령 종료 상태와 `docker compose logs backend ollama document-worker`에서 확인합니다. 데이터 초기화·`down -v`·재업로드·재임베딩은 시작 절차가 아닙니다.
+서버 `.env`의 `DATABASE_URL`, 별도 `DATABASE_PASSWORD`, `ADMIN_PASSWORD`를 실제 값으로 설정해야 합니다. URL에는 비밀번호를 넣지 않고 Supabase Connect의 Session pooler 주소를 사용합니다. bge-m3 1024차원과 리랭커 리비전을 유지하고 `DOCUMENTS_ENABLED=true`로 둡니다. `OLLAMA_LLM` 하나로 생성 모델과 준비 목록을 선택합니다. 공통 관리자 로그인에 Supabase Auth 키·사용자·관리자 행은 필요하지 않으며 기존 데이터와 test_only 플래그를 바꾸지 않습니다. HTTPS를 사용할 EC2에만 다음 두 값을 추가합니다. 로컬은 `COMPOSE_PROFILES`를 설정하지 않아 기존 세 서비스로 실행합니다.
+
+```dotenv
+COMPOSE_PROFILES=edge
+PUBLIC_API_HOST=15.164.190.21
+```
+
+EC2 보안 그룹과 호스트 방화벽에서 **TCP 80·443은 공개 접근을 허용**하고 **SSH 22는 관리자의 현재 IP(/32)로 제한**합니다. 인증서 검증·갱신에도 80·443 접근이 계속 필요합니다. 외부 이미지·모델·ACME 서버를 위한 HTTPS 아웃바운드와 Supabase 연결 주소의 포트 접근도 준비합니다. 재시작 시 주소가 바뀌지 않도록 Elastic IP 고정을 권장합니다.
+
+이후 코드 갱신은 저장소 루트에서 다음 두 명령으로 반영합니다. 원격 배포 브랜치에 변경이 올라가 있어야 하며 최초 준비 후에도 같은 Compose up 명령으로 시작합니다.
+
+```sh
+git pull --ff-only && docker compose up -d --build
+```
+
+별도 프런트 컨테이너나 로컬 PostgreSQL은 시작하지 않습니다. 앱 코드와 `deploy/Caddyfile`은 이미지에 들어가며 갱신 시 rebuild로 적용됩니다. 기존 `ollama_data/`, `.reranker_cache/`, `postgres_data/`, `docling_models`와 HTTPS의 `caddy_data`·`caddy_config` 볼륨을 보존합니다. 같은 데이터와 볼륨을 재사용하려면 저장소 경로와 Compose 프로젝트 이름을 유지합니다. 새 EC2에 노트북의 캐시가 없으면 처음 한 번 모델을 내려받으며 Docling 분석 모델은 첫 업로드 때 추가 준비될 수 있습니다. 빌드·다운로드 실패는 명령 종료 상태와 `docker compose logs backend ollama document-worker`에서 확인하며 인증서 문제는 `docker compose logs edge`에서 확인합니다. 데이터 초기화·`down -v`·재업로드·재임베딩은 시작 절차가 아닙니다.
 
 Ollama는 설정된 두 모델이 존재한 뒤 healthy가 되고 backend는 그 상태를 기다립니다. backend의 `/health/ready`는 읽기 전용 DB 연결·기존 문서 계약·모델 존재·리랭커 캐시를 확인하며 worker는 backend의 healthy 이후 시작합니다. worker health는 부모 프로세스의 주기적 heartbeat를 확인합니다. 이 검사는 추론·새 임베딩·쓰기 작업을 하지 않으며 PDF 처리 성공이나 답변 품질을 보증하지 않습니다. `/health`는 프로세스 생존만 의미합니다. Compose up의 종료만으로 전체 준비를 판단하지 말고 `docker compose ps`의 healthy와 `/health/ready`의 200 응답을 확인합니다. 초기 모델 준비에는 시간이 걸릴 수 있습니다.
 
-세 서비스는 `unless-stopped`로 Docker 재시작 후 복구됩니다. 수동으로 중지한 서비스는 자동으로 켜지지 않습니다. Docker 데몬 자체의 부팅 설정과 EC2 재부팅 복구는 실제 서버에서 확인해야 합니다. unhealthy 상태 자체가 컨테이너 재시작을 의미하지 않으므로 지속 실패 시 로그와 준비 응답을 확인합니다. [Docker 시작 순서](https://docs.docker.com/compose/how-tos/startup-order/)와 [재시작 정책](https://docs.docker.com/engine/containers/start-containers-automatically/)을 따릅니다.
+기본 세 서비스와 선택적 edge는 `unless-stopped`로 Docker 재시작 후 복구됩니다. 수동으로 중지한 서비스는 자동으로 켜지지 않습니다. Docker 데몬 자체의 부팅 설정과 EC2 재부팅 복구는 실제 서버에서 확인해야 합니다. unhealthy 상태 자체가 컨테이너 재시작을 의미하지 않으므로 지속 실패 시 로그와 준비 응답을 확인합니다. [Docker 시작 순서](https://docs.docker.com/compose/how-tos/startup-order/)와 [재시작 정책](https://docs.docker.com/engine/containers/start-containers-automatically/)을 따릅니다.
 
 ### EC2 HTTPS와 Vercel 연결
 
-기본 backend 공개 포트는 `BACKEND_BIND_HOST=127.0.0.1`, `BACKEND_PORT=8000`입니다. 같은 EC2의 HTTPS 역방향 프록시는 이 루프백으로 전달합니다. ALB가 직접 접근해야 한다면 bind 주소를 `0.0.0.0`으로 변경하고 EC2 보안 그룹의 8000 포트를 ALB 보안 그룹에만 허용합니다. Ollama 11434와 DB 5432를 인터넷에 공개하지 않습니다. CPU 추론은 수분 걸릴 수 있으므로 프록시·ALB의 응답 대기 시간을 모델 호출 대기 예산에 맞춰 준비합니다.
+단일 Compose의 `edge` 프로필은 Caddy 2.11.7 기반 이미지로 TCP 80·443을 열고 내부 `backend:8000`으로 전달합니다. backend의 호스트 바인딩은 `BACKEND_BIND_HOST=127.0.0.1`, `BACKEND_PORT=8000`, Ollama는 `127.0.0.1:11434`를 유지하며 8000·11434·DB 5432를 인터넷에 공개하지 않습니다. Caddy 관리 API는 끄고 2019 포트도 공개하지 않습니다. 프록시 접근 로그는 활성화하지 않으며 질문·본문·인증 헤더를 추가로 기록하지 않습니다.
 
-실제 EC2 주소와 도메인·유효한 인증서를 준비해 HTTPS API 주소를 만든 뒤, Vercel의 `VITE_API_BASE_URL`에 `/api`를 제외한 해당 HTTPS 기본 주소를 넣고 Git 자동 빌드로 반영합니다. **운영 프런트에 localhost·127.0.0.1을 넣지 않습니다.** 이는 방문자 자신의 컴퓨터를 가리키며 HTTPS 프런트에서 HTTP API 호출도 차단될 수 있습니다. EC2 주소·인증서·프록시가 없는 상태에서 실제 공개 연결 성공을 주장하지 않습니다. 이후 프런트를 정적 산출물로 옮길 때도 빌드 시 같은 주소를 주입합니다.
+`edge`는 backend·Ollama에 시작 의존성을 두지 않아 모델 다운로드 중에도 인증서를 준비할 수 있습니다. 백엔드가 준비되기 전에는 HTTPS 연결 후 **502가 나올 수 있습니다**. `docker compose ps`와 `https://15.164.190.21/health/ready`의 200 응답을 별도로 확인합니다. 프록시는 업로드를 52MiB까지 허용해 앱의 최대 50MiB 파일과 multipart 여유를 확보하며 앱 자체 제한을 늘리지는 않습니다. 응답 헤더 대기와 읽기·쓰기 대기는 1800초, 클라이언트 쓰기 유휴 대기도 1800초, 업로드 읽기 유휴 대기는 120초입니다. 이는 [Caddy 전송 설정](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#the-http-transport)과 [서버 timeout 설정](https://caddyserver.com/docs/caddyfile/options#timeouts)을 따르며 전체 RAG 성공이나 브라우저의 무제한 대기를 보증하지 않습니다.
+
+IP에는 Let's Encrypt `shortlived` 프로필로 공인 인증서를 요청합니다. [공식 IP 인증서 안내](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)에 따라 유효 기간은 **160시간(약 6일)**이며 Caddy가 자동 갱신합니다. SNI를 보내지 않는 IP 접속도 `default_sni`로 처리합니다. 자동 갱신을 위해 Caddy를 계속 실행하고 외부 80·443 접근과 ACME 상태·인증서가 담긴 `caddy_data` 및 `caddy_config` 볼륨을 보존해야 합니다. 실제 인증서 발급·외부 HTTPS 연결은 서버에서 별도로 확인해야 합니다.
+
+유효한 HTTPS 응답을 확인한 뒤 Vercel 프런트 빌드 환경에 `VITE_API_BASE_URL=https://15.164.190.21`을 설정하고 재빌드·배포합니다. `/api`를 주소 뒤에 붙이지 않습니다. 로컬 `.env.example`의 `VITE_API_BASE_URL`은 빈 값으로 유지합니다. **운영 프런트에 localhost·127.0.0.1을 넣지 않습니다.** 이는 방문자 자신의 컴퓨터를 가리키며 HTTPS 프런트에서 HTTP API 호출도 차단될 수 있습니다. IP가 바뀌면 EC2의 `PUBLIC_API_HOST`를 바꾸고 같은 Compose 명령으로 재적용해 새 IP 인증서를 발급받으며 Vercel API 주소도 변경·재빌드해야 합니다. 도메인으로 전환할 때도 해당 도메인의 DNS를 EC2로 연결한 뒤 같은 두 환경변수만 바꾸며 앱 코드를 고치지 않습니다. 이후 프런트를 정적 산출물로 옮길 때도 빌드 시 같은 주소를 주입합니다.
 
 `CORS_ALLOWED_ORIGINS`는 공식 https://welfare-helper-iota.vercel.app 및 http://localhost:5173, http://127.0.0.1:5173 중 필요한 Origin만 JSON 배열로 허용합니다. CORS는 서버 인증을 대신하지 않습니다. 공개 채팅은 공개 원문만 읽고 관리자 기능은 공통 비밀번호로 발급한 유효 세션을 요구합니다. 비밀번호·토큰 전송은 실제 공개 환경에서 반드시 HTTPS를 사용합니다.

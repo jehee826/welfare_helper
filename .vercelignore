@@ -1,5 +1,10 @@
 .env
 .env.*
+welfare_helper__key.pem
+*.pem
+*.key
+**/*.pem
+**/*.key
 .git/
 .vercel/
 ollama_data/

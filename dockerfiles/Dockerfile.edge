@@ -1,0 +1,4 @@
+FROM caddy:2.11.7-alpine
+
+# 같은 Compose 빌드 명령으로 프록시 설정 변경도 반영한다.
+COPY deploy/Caddyfile /etc/caddy/Caddyfile

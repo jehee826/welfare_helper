@@ -1,0 +1,34 @@
+{
+	admin off
+	default_sni {$PUBLIC_API_HOST}
+	servers {
+		protocols h1 h2
+		timeouts {
+			read_header 30s
+			read_body_idle 120s
+			write_idle 1800s
+		}
+	}
+}
+
+https://{$PUBLIC_API_HOST} {
+	tls {
+		issuer acme {
+			dir https://acme-v02.api.letsencrypt.org/directory
+			profile shortlived
+		}
+	}
+
+	request_body {
+		max_size 52MiB
+	}
+
+	reverse_proxy backend:8000 {
+		transport http {
+			dial_timeout 10s
+			response_header_timeout 1800s
+			read_timeout 1800s
+			write_timeout 1800s
+		}
+	}
+}

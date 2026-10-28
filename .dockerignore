@@ -3,6 +3,11 @@
 .git/
 .env
 .env.*
+welfare_helper__key.pem
+*.pem
+*.key
+**/*.pem
+**/*.key
 postgres_data/
 ollama_data/
 **/node_modules/

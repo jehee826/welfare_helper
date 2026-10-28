@@ -143,6 +143,7 @@ export function ProgramForm({ initial, departments, error, saving, onSave, onCan
             <input type="checkbox" checked={testOnly} disabled={locked} onChange={(e) => setTestOnly(e.target.checked)} />
             테스트용 제도 (이용자 검색에서 빠져요)
           </label>
+          <p className="muted small">공개 가능한 원문은 테스트용이 아닌 제도에 등록하세요. 테스트용 자료는 관리자 상담에서 확인하며 기존 문서의 공개 범위는 자동으로 바뀌지 않습니다.</p>
           {shownError && (
             <p role="alert" className="field__error">
               {shownError}

@@ -8,10 +8,10 @@ import { appendHistory, buildEntry, clearHistory, loadHistory } from "../lib/his
 import { describeProfile } from "../lib/profile";
 import { STORAGE_KEYS, readJson, removeKey, writeJson } from "../lib/storage";
 
-export function UserPage({ api }: { api: WelfareApi }) {
+export function UserPage({ api, privateSession = false }: { api: WelfareApi; privateSession?: boolean }) {
   const [profile, setProfile] = useState<UserProfile | null>(() => readJson<UserProfile | null>(STORAGE_KEYS.profile, null));
   const [editing, setEditing] = useState(false);
-  const [history, setHistory] = useState(loadHistory);
+  const [history, setHistory] = useState(() => privateSession ? [] : loadHistory());
   const [historyOpen, setHistoryOpen] = useState(false);
   const [chatKey, setChatKey] = useState(0);
 
@@ -31,11 +31,12 @@ export function UserPage({ api }: { api: WelfareApi }) {
   function handleAnswered(question: string, answer: ChatAnswer) {
     const entry = buildEntry(question, answer);
     if (answer.kind === "answer" && !answer.services.length) entry.summary = "등록 문서 답변";
-    setHistory(appendHistory(entry));
+    if (privateSession) setHistory(previous => [entry, ...previous].slice(0, 50));
+    else setHistory(appendHistory(entry));
   }
 
   function handleClearHistory() {
-    clearHistory();
+    if (!privateSession) clearHistory();
     setHistory([]);
   }
 
@@ -70,6 +71,7 @@ export function UserPage({ api }: { api: WelfareApi }) {
           ) : (
             <>
               <p className="profile-line">
+                {privateSession && <span>관리자 상담 · 대화는 이 세션에서만 보관합니다. </span>}
                 {profile ? (
                   <>
                     <span className="muted">내 조건</span> {describeProfile(profile)}

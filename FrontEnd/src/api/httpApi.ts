@@ -1,5 +1,6 @@
 import { ApiError } from "./errors";
 import { apiBaseUrl, requireApiBaseUrl } from "./config";
+import { authenticatedFetch } from "./auth";
 import { createMockApi } from "./mockApi";
 import type { AdminProgram, ChatAnswer, Department, ProgramInput, WelfareApi } from "./types";
 
@@ -83,7 +84,7 @@ export function createHttpApi(options: { baseUrl?: string; fallback?: WelfareApi
 
   async function admin<T>(path: string, init: RequestInit = {}): Promise<T> {
     requireApiBaseUrl(baseUrl);
-    const response = await fetch(`${baseUrl}/api/v1/admin${path}`, {
+    const response = await authenticatedFetch(`${baseUrl}/api/v1/admin${path}`, {
       ...init,
       headers: init.body ? { "Content-Type": "application/json" } : undefined,
     });
@@ -97,7 +98,7 @@ export function createHttpApi(options: { baseUrl?: string; fallback?: WelfareApi
 
     async ask(query, _profile, signal) {
       requireApiBaseUrl(baseUrl);
-      const response = await fetch(`${baseUrl}/api/v1/chat`, {
+      const response = await authenticatedFetch(`${baseUrl}/api/v1/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query }),

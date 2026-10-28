@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Header } from "../components/Header";
 import { DocumentProgress } from "../components/admin/DocumentProgress";
-import { DocumentApiError, documentError, documentRequest, jsonPost, localDocumentAccess } from "../api/documentApi";
+import { DocumentApiError, documentError, documentRequest, jsonPost } from "../api/documentApi";
+import { AdminGate } from "../components/admin/AdminGate";
 import type { DocumentStatus, Job, Program, QueryResult, SearchResult } from "../api/documentApi";
 import "./documents.css";
 
@@ -12,7 +13,7 @@ export function DocumentsPage() {
   return <div className="page"><Header /><main className="admin documents">
     <h1>문서 관리</h1>
     <p>원문을 올리면 자동 분석·청크 분할·임베딩·게시까지 처리합니다. 분류·검토 승인은 필요하지 않습니다.</p>
-    {localDocumentAccess() ? <DocumentRegistration /> : <p role="alert">로컬 개발 서버에서만 사용할 수 있습니다. 공개 관리자는 서버 인증 연동이 필요합니다.</p>}
+    <AdminGate><DocumentRegistration /></AdminGate>
   </main></div>;
 }
 
@@ -101,6 +102,7 @@ function DocumentRegistration() {
         <option value="">{loading ? "불러오는 중" : "제도 선택"}</option>
         {programs.map(p => <option key={p.service_id} value={p.service_id}>{p.program_name} ({p.service_id}){p.test_only ? " · 일반 상담 미노출" : ""}</option>)}
       </select></label>
+      <p>일반 상담 미노출 제도의 문서는 로그인한 관리자 검증에만 사용합니다. 일반 사용자에게 제공할 원문은 공개 가능한 일반 제도에 등록하세요. 기존 문서의 공개 범위는 자동으로 바꾸지 않습니다.</p>
       {!loading && !programs.length && <p>연결할 제도를 제도 등록·관리에서 먼저 등록하세요.</p>}
       <label className="field">문서명<input name="name" maxLength={160} required /></label>
       <label className="field">공개 원문 URL (HTTPS)<input name="source_url" type="url" pattern="https://.*" maxLength={1000} required /></label>

@@ -197,13 +197,13 @@ def test_local_gate_needs_no_cloud_key_but_blocks_other_hosts_origins_and_deploy
     assert client.get("/gate").status_code == 401
 
 
-@pytest.mark.parametrize("key", ["sb_secret_test-only", legacy_key("service_role")])
+@pytest.mark.parametrize("key", ["sb_publishable_test-only"])
 def test_public_mode_sends_user_jwt_as_bearer_without_replacing_it_with_server_key(monkeypatch, key):
     import httpx
     from fastapi.security import HTTPAuthorizationCredentials
 
     actor = str(uuid4())
-    settings = Settings(_env_file=None, documents_enabled=True, supabase_url="https://example.invalid", supabase_service_key=key)
+    settings = Settings(_env_file=None, documents_enabled=True, supabase_url="https://example.invalid", supabase_publishable_key=key)
     monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: settings)
 
     def user_request(url, **kwargs):

@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     documents_enabled: bool = False
     documents_local_mode: bool = False
     supabase_url: str = ""
+    supabase_publishable_key: SecretStr | None = None
     supabase_service_key: SecretStr | None = None
     documents_bucket: str = "document-originals"
     documents_max_file_mb: int = Field(default=20, ge=1, le=50)

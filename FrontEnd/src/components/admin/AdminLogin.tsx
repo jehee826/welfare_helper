@@ -1,57 +1,40 @@
 import { useState, type FormEvent } from "react";
+import { getSupabase } from "../../auth/supabase";
 
-interface Props {
-  expectedKey: string | undefined;
-  onSuccess: () => void;
-}
-
-export function AdminLogin({ expectedKey, onSuccess }: Props) {
-  const [key, setKey] = useState("");
+export function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!expectedKey) {
-      setError("관리자 키가 설정되지 않았어요. VITE_ADMIN_DEMO_KEY 환경변수를 확인해 주세요.");
-      return;
-    }
-    if (key !== expectedKey) {
-      setError("키가 일치하지 않아요. 다시 입력해 주세요.");
-      setKey("");
-      return;
-    }
-    onSuccess();
+    if (busy) return;
+    const client = getSupabase();
+    if (!client) { setError("Supabase 로그인 설정이 필요합니다. 관리자에게 문의해 주세요."); return; }
+    setBusy(true); setError("");
+    try {
+      const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) setError("로그인하지 못했습니다. 이메일과 비밀번호를 확인해 주세요.");
+      else onSuccess();
+    } catch {
+      setError("로그인 서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally { setPassword(""); setBusy(false); }
   }
 
-  return (
-    <section className="card admin-login" aria-labelledby="admin-login-title">
-      <p className="eyebrow">복지관 직원 전용</p>
-      <h1 id="admin-login-title" className="admin-login__title">
-        관리자 로그인
-      </h1>
-      <form onSubmit={handleSubmit} className="stack">
-        <label className="field">
-          <span className="field__label">관리자 키</span>
-          <input
-            type="password"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            autoComplete="current-password"
-            aria-invalid={error ? true : undefined}
-          />
-        </label>
-        {error && (
-          <p role="alert" className="field__error">
-            {error}
-          </p>
-        )}
-        <button type="submit" className="btn btn--primary btn--lg">
-          들어가기
-        </button>
-      </form>
-      <p className="notice small">
-        목업 안내: 키를 브라우저에서 비교하므로 실제 보안 기능이 아니에요. 실제 인증은 백엔드 연동 단계에서 적용해요.
-      </p>
-    </section>
-  );
+  return <section className="card admin-login" aria-labelledby="admin-login-title">
+    <p className="eyebrow">복지관 직원 전용</p>
+    <h1 id="admin-login-title" className="admin-login__title">관리자 로그인</h1>
+    <form onSubmit={handleSubmit} className="stack">
+      <label className="field"><span className="field__label">이메일</span>
+        <input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="username" required disabled={busy} />
+      </label>
+      <label className="field"><span className="field__label">비밀번호</span>
+        <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" aria-invalid={!!error} required disabled={busy} />
+      </label>
+      {error && <p role="alert" className="field__error">{error}</p>}
+      <button type="submit" className="btn btn--primary btn--lg" disabled={busy}>{busy ? "로그인 중…" : "들어가기"}</button>
+    </form>
+    <p className="notice small">등록된 Supabase 계정으로 로그인합니다. 관리자 기능은 서버의 활성 관리자 확인 후 사용할 수 있습니다.</p>
+  </section>;
 }

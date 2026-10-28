@@ -1,6 +1,7 @@
 import { Link, Route, Routes } from "react-router-dom";
 import { createHttpApi } from "./api/httpApi";
-import { localDocumentAccess } from "./api/documentApi";
+import { AdminGate } from "./components/admin/AdminGate";
+import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import type { WelfareApi } from "./api/types";
 import { AdminPage } from "./pages/AdminPage";
 import { UserPage } from "./pages/UserPage";
@@ -16,18 +17,24 @@ function ProgramsPage() {
     <p>제도 정보를 등록한 뒤 원문을 연결해 자동 분석·게시합니다.</p>
     <p>실제 담당 부서가 목록에 없으면 관리자에게 부서 등록을 요청하세요.</p>
     <Link to="/admin/documents">문서 관리로 이동</Link>
-    {localDocumentAccess() ? <ProgramManager api={liveApi} /> : <p role="alert">로컬 개발 서버에서만 사용할 수 있습니다. 공개 관리자는 서버 인증 연동이 필요합니다.</p>}
+    <AdminGate><ProgramManager api={liveApi} /></AdminGate>
   </main></div>;
 }
 
 export function App({ api = liveApi }: { api?: WelfareApi }) {
+  return <AuthProvider><AppRoutes api={api} /></AuthProvider>;
+}
+
+function AppRoutes({ api }: { api: WelfareApi }) {
+  const { session, ready } = useAuth();
+  const chat = ready ? <UserPage key={session?.user.id ?? "public"} api={api} privateSession={!!session} /> : <p role="status">세션 확인 중…</p>;
   return (
     <Routes>
-      <Route path="/" element={<UserPage api={api} />} />
+      <Route path="/" element={chat} />
       <Route path="/admin" element={<AdminPage api={api} />} />
       <Route path="/admin/documents" element={<DocumentsPage />} />
       <Route path="/admin/programs" element={<ProgramsPage />} />
-      <Route path="*" element={<UserPage api={api} />} />
+      <Route path="*" element={chat} />
     </Routes>
   );
 }

@@ -9,6 +9,7 @@ import psycopg2
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from BackEnd.core.db import DatabaseNotConfigured, connect
@@ -18,7 +19,7 @@ from BackEnd.rag.factory import build_chat_service
 from BackEnd.rag.repository import PgServiceRepository
 from BackEnd.rag.reranker import LocalReranker, RerankerError
 from BackEnd.documents.api import DocumentBodyLimit, router as document_router
-from BackEnd.documents.auth import require_document_admin
+from BackEnd.documents.auth import bearer, require_document_admin, require_local_document_admin
 from BackEnd.documents.qa import answer_document
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.admin.programs import router as program_router
@@ -159,20 +160,30 @@ def database_health():
 
 
 @app.post("/api/v1/chat")
-def chat(request: ChatRequest, http_request: Request, service: ChatService = Depends(get_chat_service)):
+def chat(request: ChatRequest, http_request: Request, service: ChatService = Depends(get_chat_service),
+         credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
     settings = get_settings()
-    if settings.documents_enabled and settings.documents_local_mode:
+    include_private = False
+    if "authorization" in http_request.headers and credentials is None:
+        raise HTTPException(401, "Supabase 사용자 access token을 확인해 주세요.")
+    if credentials is not None:
+        # 로그인 요청은 JWT·활성 관리자 권한을 먼저 확인한다. 실패를 익명 검색으로 우회하지 않는다.
+        require_document_admin(http_request, credentials)
+        include_private = True
+    elif settings.documents_enabled and settings.documents_local_mode:
         # 기존 로컬 접근 검사를 통과한 요청만 등록된 검증용 문서까지 조회한다.
         try:
-            require_document_admin(http_request, credentials=None)
+            require_local_document_admin(http_request, settings)
         except HTTPException as exc:
             if exc.status_code != 403:
                 raise
             # 외부 요청은 공개 자료만 조회한다. 관리자 API의 접근 검사는 완화하지 않는다.
         else:
-            repo = PgServiceRepository(lambda: connect(settings), settings.ollama_embed, settings.embed_dim,
-                                       documents_enabled=True, include_local_documents=True)
-            service = build_chat_service(repo, settings)
+            include_private = True
+    if include_private:
+        repo = PgServiceRepository(lambda: connect(settings), settings.ollama_embed, settings.embed_dim,
+                                   documents_enabled=True, include_local_documents=True)
+        service = build_chat_service(repo, settings)
     try:
         return answer_document(service.repo, service, request.query.strip())[0]
     except DocumentError as exc:
@@ -183,6 +194,19 @@ def chat(request: ChatRequest, http_request: Request, service: ChatService = Dep
             status_code=503,
             detail="문서 검색이나 모델 실행에 실패했습니다. 서버 상태를 확인해 주세요.",
         ) from None
+
+
+@app.get("/api/v1/admin/session")
+def admin_session(actor=Depends(require_document_admin)):
+    return {"is_admin": True, "access_mode": "local" if actor is None else "authenticated"}
+
+
+@app.middleware("http")
+async def private_responses(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/v1/admin") or request.url.path == "/api/v1/chat":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def require_rag_diagnostics(x_rag_debug_token: str = Header(default="")) -> None:

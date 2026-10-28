@@ -1,5 +1,6 @@
 import { createMockApi } from "./mockApi";
-import type { UserProfile } from "./types";
+import seedPrograms from "./programs.json";
+import type { UserProfile, WelfareProgram } from "./types";
 
 const senior: UserProfile = {
   age: 70,
@@ -47,13 +48,10 @@ describe("mockApi.ask", () => {
   });
 
   it("신청 방법 정보가 있으면 그 내용으로 답한다", async () => {
-    const api = createMockApi({ latencyMs: 0 });
-    const programs = await api.listPrograms();
-    const updated = programs.map((p) =>
+    const seed = (seedPrograms as WelfareProgram[]).map((p) =>
       p.name === "기초연금" ? { ...p, howToApply: "주민센터 방문 또는 복지로 온라인 신청" } : p,
     );
-    await api.savePrograms(updated);
-    const result = await api.ask("기초연금 신청 방법", null);
+    const result = await createMockApi({ latencyMs: 0, seed }).ask("기초연금 신청 방법", null);
     expect(result.kind).toBe("answer");
     expect(result.text).toContain("주민센터 방문 또는 복지로 온라인 신청");
   });
@@ -62,39 +60,49 @@ describe("mockApi.ask", () => {
 describe("mockApi 관리", () => {
   it("관리자가 추가한 제도가 이용자 검색에 반영된다 (FR-6)", async () => {
     const api = createMockApi({ latencyMs: 0 });
-    const programs = await api.listPrograms();
-    await api.savePrograms([
-      ...programs,
-      {
-        id: "LOCAL-1",
-        name: "행복복지관 반찬나눔",
-        summary: "홀로 사는 어르신께 주 2회 반찬을 전달합니다.",
-        ministry: "행복복지관",
-        department: "사례관리팀",
-        contacts: [{ label: "행복복지관 사례관리팀", phone: "02-000-0000" }],
-        url: "",
-        updatedAt: "2026-10-21",
-        category: "생활",
-        keywords: ["반찬", "식사"],
-        eligibility: "",
-        benefit: "",
-        howToApply: "",
-      },
-    ]);
+    const departments = await api.listDepartments();
+    await api.createProgram({
+      name: "행복복지관 반찬나눔",
+      summary: "홀로 사는 어르신께 주 2회 반찬을 전달합니다.",
+      departmentId: departments[0].id,
+      externalServiceId: null,
+      sourceUrl: null,
+      sourceUpdatedAt: null,
+      contacts: [{ label: "행복복지관 사례관리팀", phone: "02-000-0000" }],
+      testOnly: false,
+    });
     const result = await createMockApi({ latencyMs: 0 }).ask("반찬 지원", null);
     expect(result.kind).toBe("answer");
     if (result.kind !== "answer") return;
     expect(result.services[0].name).toBe("행복복지관 반찬나눔");
   });
 
+  it("수정한 요약이 목록과 이용자 안내에 반영된다", async () => {
+    const api = createMockApi({ latencyMs: 0 });
+    const [first] = (await api.listPrograms("에너지바우처")).items;
+    await api.updateProgram(first, { summary: "겨울철 난방비를 지원합니다." });
+    expect((await api.listPrograms("에너지바우처")).items[0].summary).toBe("겨울철 난방비를 지원합니다.");
+    const result = await api.ask("에너지바우처", null);
+    if (result.kind !== "answer") throw new Error("answer 기대");
+    expect(result.services[0].summary).toBe("겨울철 난방비를 지원합니다.");
+  });
+
   it("삭제한 제도는 더 이상 검색되지 않는다", async () => {
     const api = createMockApi({ latencyMs: 0 });
-    const programs = await api.listPrograms();
-    await api.savePrograms(programs.filter((p) => p.name !== "에너지바우처"));
+    const [target] = (await api.listPrograms("에너지바우처")).items;
+    await api.deleteProgram(target.programId);
+    expect((await api.listPrograms("에너지바우처")).items).toEqual([]);
     const result = await api.ask("에너지바우처", null);
     if (result.kind === "answer") {
       expect(result.services.map((s) => s.name)).not.toContain("에너지바우처");
     }
+  });
+
+  it("검색어로 제도명이나 부서를 찾는다", async () => {
+    const api = createMockApi({ latencyMs: 0 });
+    const names = (await api.listPrograms("연금")).items.map((p) => p.name);
+    expect(names).toContain("기초연금");
+    expect(names).not.toContain("에너지바우처");
   });
 
   it("조건에 맞는 첫 추천 질문을 만든다", () => {

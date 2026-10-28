@@ -1,5 +1,16 @@
 import seedPrograms from "./programs.json";
-import type { ChatAnswer, Contact, MonthlyStat, UserProfile, WelfareApi, WelfareProgram } from "./types";
+import { ApiError } from "./errors";
+import type {
+  AdminProgram,
+  ChatAnswer,
+  Contact,
+  Department,
+  MonthlyStat,
+  ProgramInput,
+  UserProfile,
+  WelfareApi,
+  WelfareProgram,
+} from "./types";
 import { describeProfile } from "../lib/profile";
 import { STORAGE_KEYS, readJson, writeJson } from "../lib/storage";
 
@@ -92,10 +103,98 @@ function detailAnswer(
   };
 }
 
-export function createMockApi(options: { latencyMs?: number } = {}): WelfareApi {
+type MockProgram = WelfareProgram & {
+  programId: number;
+  externalServiceId: string | null;
+  sourceUpdatedAt: string | null;
+  testOnly: boolean;
+  documentCount: number;
+  publishedCount: number;
+};
+
+function withAdminFields(records: WelfareProgram[]): MockProgram[] {
+  let next = records.reduce((max, r) => Math.max(max, (r as Partial<MockProgram>).programId ?? 0), 0);
+  return records.map((record) => {
+    const r = record as WelfareProgram & Partial<MockProgram>;
+    return {
+      ...record,
+      programId: r.programId ?? ++next,
+      externalServiceId: r.externalServiceId !== undefined ? r.externalServiceId : record.id.startsWith("WLF") ? record.id : null,
+      sourceUpdatedAt: r.sourceUpdatedAt !== undefined ? r.sourceUpdatedAt : record.updatedAt || null,
+      testOnly: r.testOnly ?? false,
+      documentCount: r.documentCount ?? 0,
+      publishedCount: r.publishedCount ?? 0,
+    };
+  });
+}
+
+function departmentsOf(records: WelfareProgram[]): Department[] {
+  const pairs = new Map<string, { ministry: string; name: string }>();
+  for (const r of records) pairs.set(JSON.stringify([r.ministry, r.department]), { ministry: r.ministry, name: r.department });
+  return [...pairs.values()]
+    .sort((a, b) => a.ministry.localeCompare(b.ministry, "ko") || a.name.localeCompare(b.name, "ko"))
+    .map((d, i) => ({ id: i + 1, ...d }));
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function createMockApi(options: { latencyMs?: number; seed?: WelfareProgram[] } = {}): WelfareApi {
   const latencyMs = options.latencyMs ?? 600;
+  const seed = options.seed ?? (seedPrograms as WelfareProgram[]);
   const wait = () => new Promise<void>((resolve) => setTimeout(resolve, latencyMs));
-  const load = () => readJson<WelfareProgram[]>(STORAGE_KEYS.programs, seedPrograms as WelfareProgram[]);
+  const loadAll = () => withAdminFields(readJson<WelfareProgram[]>(STORAGE_KEYS.programs, seed));
+  const load = () => loadAll().filter((p) => !p.testOnly);
+  const save = (records: MockProgram[]) => writeJson(STORAGE_KEYS.programs, records);
+  const departments = () => departmentsOf([...seed, ...loadAll()]);
+
+  function toAdmin(record: MockProgram): AdminProgram {
+    const department = departments().find((d) => d.ministry === record.ministry && d.name === record.department);
+    return {
+      programId: record.programId,
+      serviceId: record.externalServiceId ?? `PROGRAM_${record.programId}`,
+      externalServiceId: record.externalServiceId,
+      name: record.name,
+      summary: record.summary,
+      departmentId: department?.id ?? 0,
+      departmentName: record.department,
+      ministryName: record.ministry,
+      contacts: record.contacts,
+      sourceUrl: record.url || null,
+      sourceUpdatedAt: record.sourceUpdatedAt,
+      testOnly: record.testOnly,
+      updatedAt: record.updatedAt,
+      documentCount: record.documentCount,
+      publishedCount: record.publishedCount,
+    };
+  }
+
+  function apply(record: MockProgram, changes: Partial<ProgramInput>): MockProgram {
+    const department = changes.departmentId === undefined ? undefined : departments().find((d) => d.id === changes.departmentId);
+    if (changes.departmentId !== undefined && !department) throw new ApiError("department_not_found", 422, "department_not_found");
+    const externalServiceId = changes.externalServiceId !== undefined ? changes.externalServiceId : record.externalServiceId;
+    return {
+      ...record,
+      id: externalServiceId ?? `PROGRAM_${record.programId}`,
+      externalServiceId,
+      name: changes.name ?? record.name,
+      summary: changes.summary ?? record.summary,
+      ministry: department?.ministry ?? record.ministry,
+      department: department?.name ?? record.department,
+      contacts: changes.contacts ?? record.contacts,
+      url: changes.sourceUrl !== undefined ? (changes.sourceUrl ?? "") : record.url,
+      sourceUpdatedAt: changes.sourceUpdatedAt !== undefined ? changes.sourceUpdatedAt : record.sourceUpdatedAt,
+      testOnly: changes.testOnly ?? record.testOnly,
+      updatedAt: today(),
+    };
+  }
+
+  function find(records: MockProgram[], programId: number): MockProgram {
+    const record = records.find((r) => r.programId === programId);
+    if (!record) throw new ApiError("program_not_found", 404, "program_not_found");
+    return record;
+  }
 
   function initialSuggestions(profile: UserProfile | null): string[] {
     const picks: string[] = [];
@@ -156,12 +255,65 @@ export function createMockApi(options: { latencyMs?: number } = {}): WelfareApi 
       };
     },
 
-    async listPrograms() {
-      return load();
+    async listPrograms(query = "") {
+      const needle = query.trim().toLowerCase();
+      const items = loadAll()
+        .filter(
+          (r) => !needle || [r.name, r.department, r.ministry, r.externalServiceId ?? ""].some((v) => v.toLowerCase().includes(needle)),
+        )
+        .map(toAdmin);
+      return { items, hasMore: false };
     },
 
-    async savePrograms(programs) {
-      writeJson(STORAGE_KEYS.programs, programs);
+    async listDepartments() {
+      return departments();
+    },
+
+    async createProgram(input) {
+      const records = loadAll();
+      const programId = records.reduce((max, r) => Math.max(max, r.programId), 0) + 1;
+      const blank: MockProgram = {
+        id: "",
+        name: "",
+        summary: "",
+        ministry: "",
+        department: "",
+        contacts: [],
+        url: "",
+        updatedAt: today(),
+        category: "",
+        keywords: [],
+        eligibility: "",
+        benefit: "",
+        howToApply: "",
+        programId,
+        externalServiceId: null,
+        sourceUpdatedAt: null,
+        testOnly: false,
+        documentCount: 0,
+        publishedCount: 0,
+      };
+      const created = apply(blank, input);
+      save([created, ...records]);
+      return toAdmin(created);
+    },
+
+    async updateProgram(program, changes) {
+      const records = loadAll();
+      const current = find(records, program.programId);
+      const renamed =
+        (changes.name !== undefined && changes.name !== current.name) ||
+        (changes.externalServiceId !== undefined && changes.externalServiceId !== current.externalServiceId);
+      if (renamed && current.documentCount > 0) throw new ApiError("program_has_documents", 409, "program_has_documents");
+      const updated = apply(current, changes);
+      save(records.map((r) => (r.programId === updated.programId ? updated : r)));
+      return toAdmin(updated);
+    },
+
+    async deleteProgram(programId) {
+      const records = loadAll();
+      if (find(records, programId).documentCount > 0) throw new ApiError("program_has_documents", 409, "program_has_documents");
+      save(records.filter((r) => r.programId !== programId));
     },
 
     async getMonthlyStats() {

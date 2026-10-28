@@ -164,6 +164,9 @@ export function ProgramManager({ api }: { api: WelfareApi }) {
                   <td>
                     <strong>{p.name}</strong>
                     {p.testOnly && <span className="tag">테스트용</span>}
+                    <span className="program-docs muted small">
+                      원문 문서 {p.documentCount}건 <span className="nowrap">(게시 {p.publishedCount})</span>
+                    </span>
                   </td>
                   <td className="muted">
                     {p.ministryName} · {p.departmentName}

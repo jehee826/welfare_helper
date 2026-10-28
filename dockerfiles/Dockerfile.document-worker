@@ -1,0 +1,13 @@
+FROM python:3.12-slim
+WORKDIR /app
+ENV PIP_DEFAULT_TIMEOUT=300 PIP_RETRIES=10
+RUN apt-get update && apt-get install -y --no-install-recommends libglib2.0-0 libgl1 tesseract-ocr tesseract-ocr-kor \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt requirements-document-worker.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip pip install --upgrade pip \
+    && pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install -r requirements-document-worker.txt
+COPY BackEnd/ ./BackEnd/
+ENV HF_HOME=/app/.docling_cache/huggingface \
+    DOCLING_SECURITY_REFUSE_UNPINNED_REMOTE_CODE=1
+CMD ["python", "-m", "BackEnd.documents.worker"]

@@ -3,40 +3,57 @@ services:
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile.back
-    container_name: backend
+    container_name: welfare-backend
+    command: ["python", "-m", "BackEnd.startup"]
     env_file:
       - .env
     environment:
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: ${DB_NAME}
+      DATABASE_MODE: supabase
+      INGEST_ON_STARTUP: "false"
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
+      DOCUMENTS_ENABLED: "true"
+      DOCUMENTS_LOCAL_MODE: "true"
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_NAME: ${DB_NAME:-}
       DB_HOST: postgres
       DB_PORT: 5432
       OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_LLM: ${OLLAMA_LLM:-gemma3:4b}
+      OLLAMA_EMBED: ${OLLAMA_EMBED:-bge-m3}
+      RERANK_CACHE_DIR: /app/.reranker_cache
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./BackEnd:/app/BackEnd
+      - ./docs:/app/docs:ro
+      - ./.reranker_cache:/app/.reranker_cache
     depends_on:
-      postgres:
-        condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
     restart: none
 
   ollama:
     build:
       context: .
       dockerfile: dockerfiles/Dockerfile.ollama
-    container_name: ollama
+    container_name: welfare-ollama
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       - ./ollama_data:/root/.ollama
     environment:
       OLLAMA_HOST: 0.0.0.0
-      OLLAMA_PULL_MODELS: "${OLLAMA_LLM} ${OLLAMA_EMBED}"
-      # OLLAMA_NUM_PARALLEL: 4 동접 처리를 위한 Ollama 컨테이너 다중화
+      OLLAMA_PULL_MODELS: "${OLLAMA_LLM:-gemma3:4b} ${OLLAMA_EMBED:-bge-m3}"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+    healthcheck:
+      test: ['CMD-SHELL', 'for model in $$OLLAMA_PULL_MODELS; do ollama show "$$model" >/dev/null 2>&1 || exit 1; done']
+      start_period: 10m
+      interval: 5s
+      timeout: 5s
+      retries: 3
     # GPU가 있는 하드웨어로 실행시 주석 해제
     # deploy:
     #   resources:
@@ -47,13 +64,42 @@ services:
     #           capabilities: [gpu]
     restart: none
 
-  postgres:
-    image: postgres:16
-    container_name: postgres
+  document-worker:
+    build:
+      context: .
+      dockerfile: dockerfiles/Dockerfile.document-worker
+    container_name: welfare-document-worker
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      DATABASE_MODE: supabase
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
+      INGEST_ON_STARTUP: "false"
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_LLM: ${OLLAMA_LLM:-gemma3:4b}
+      OLLAMA_EMBED: ${OLLAMA_EMBED:-bge-m3}
+      RERANK_CACHE_DIR: /app/.reranker_cache
+      DOCLING_CACHE_DIR: /app/.docling_cache
+      DOCUMENTS_ENABLED: "true"
+      DOCUMENTS_LOCAL_MODE: "true"
+    cpus: ${DOCUMENT_WORKER_CPUS:-2}
+    mem_limit: ${DOCUMENT_WORKER_MEMORY:-4g}
+    volumes:
+      - ./BackEnd:/app/BackEnd
+      - ./.reranker_cache:/app/.reranker_cache:ro
+      - docling_models:/app/.docling_cache
+    init: true
+    restart: unless-stopped
+
+  postgres:
+    profiles: ["local"]
+    image: pgvector/pgvector:pg16
+    container_name: welfare-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-}
+      POSTGRES_DB: ${DB_NAME:-}
     ports:
       - "5432:5432"
     volumes:
@@ -64,3 +110,6 @@ services:
       timeout: 5s
       retries: 10
     restart: none
+
+volumes:
+  docling_models:

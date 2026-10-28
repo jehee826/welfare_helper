@@ -1,6 +1,8 @@
 from functools import lru_cache
+from pathlib import Path
+from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,6 +12,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: SecretStr | None = None
+    database_password: SecretStr | None = None
+    database_mode: Literal["auto", "local", "supabase"] = "auto"
+    ingest_on_startup: bool = False
     db_host: str = ""
     db_port: int = 5432
     db_name: str = ""
@@ -19,14 +24,46 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_llm: str = "gemma3:4b"
     ollama_embed: str = "bge-m3"
-    ollama_timeout: float = 120.0
-    embed_dim: int = 1024
-    llm_num_ctx: int = 8192
-    llm_temperature: float = 0.2
-    llm_num_predict: int = 250
+    ollama_timeout: float = Field(default=120.0, gt=0)
+    embed_dim: int = Field(default=1024, ge=1024, le=1024)
+    llm_num_ctx: int = Field(default=8192, ge=512)
+    llm_temperature: float = Field(default=0.0, ge=0, le=2)
+    llm_num_predict: int = Field(default=512, ge=1)
+    llm_num_thread: int = Field(default=2, ge=1, le=16)
 
-    retrieve_top_n: int = 5
-    min_dense_sim: float = 0.52
+    retrieve_top_n: int = Field(default=40, ge=1, le=50)
+    dense_top_k: int = Field(default=30, ge=1, le=30)
+    keyword_top_k: int = Field(default=30, ge=1, le=30)
+    core_evidence_k: int = Field(default=6, ge=1, le=6)
+    rag_diagnostics_enabled: bool = False
+    rag_diagnostics_token: SecretStr | None = None
+    min_dense_sim: float = Field(default=0.52, ge=-1, le=1)
+    rerank_model: str = "onnx-community/bge-reranker-v2-m3-ONNX"
+    rerank_revision: str = "6f5ff65298512715a1e669753bc754d2bc8f367b"
+    rerank_cache_dir: str = str(Path(__file__).resolve().parents[2] / ".reranker_cache")
+    rerank_max_length: int = Field(default=512, ge=128, le=512)
+    rerank_threads: int = Field(default=2, ge=1, le=8)
+    min_rerank_score: float = Field(default=0.5, ge=0, le=1)
+    bokjiro_service_key: SecretStr | None = None
+    bokjiro_detail_url: str = "https://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfaredetailedV001"
+    bokjiro_timeout: float = Field(default=15, gt=0, le=60)
+
+    documents_enabled: bool = False
+    documents_local_mode: bool = False
+    supabase_url: str = ""
+    supabase_service_key: SecretStr | None = None
+    documents_bucket: str = "document-originals"
+    documents_max_file_mb: int = Field(default=20, ge=1, le=50)
+    documents_max_pages: int = Field(default=100, ge=1, le=300)
+    documents_max_characters: int = Field(default=500000, ge=1000, le=2000000)
+    documents_max_chunks: int = Field(default=2000, ge=4, le=5000)
+    documents_parse_timeout: int = Field(default=300, ge=30, le=1800)
+    documents_index_timeout: int = Field(default=600, ge=30, le=3600)
+    documents_download_timeout: int = Field(default=7200, ge=300, le=86400)
+    documents_poll_seconds: int = Field(default=10, ge=2, le=60)
+    documents_lease_seconds: int = Field(default=90, ge=60, le=300)
+    docling_cache_dir: str = "/app/.docling_cache"
+    docling_ocr: bool = False
 
 
 @lru_cache

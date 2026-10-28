@@ -25,7 +25,13 @@ export function localDocumentAccess() {
 
 export class DocumentApiError extends Error {
   constructor(readonly status: number, readonly code: string) {
-    super(code === "automatic_processing_schema_required"
+    super(code === "document_generation_failed"
+      ? "문서 답변 모델 실행에 실패했습니다. 모델 상태를 확인한 뒤 다시 질문해 주세요."
+      : code === "document_embedding_failed"
+        ? "질문 임베딩에 실패했습니다. 임베딩 모델 상태를 확인한 뒤 다시 질문해 주세요."
+      : code === "document_reranker_failed"
+        ? "검색 결과 순위 계산에 실패했습니다. 리랭커 상태를 확인한 뒤 다시 질문해 주세요."
+      : code === "automatic_processing_schema_required"
       ? "자동 처리 DB 마이그레이션이 필요합니다. 0005 설정을 적용한 뒤 다시 시도하세요."
       : code === "legacy_review_requires_reupload"
         ? "이전 검토 대기 작업입니다. 같은 문서 ID로 원문을 다시 첨부해 자동 처리하세요."

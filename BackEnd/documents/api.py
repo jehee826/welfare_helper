@@ -76,10 +76,11 @@ def search_document(document_id: UUID, request: DocumentQuery, actor: str = Depe
 def query_document(document_id: UUID, request: DocumentQuery, actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
     try:
         from BackEnd.rag.factory import build_chat_service
+        from BackEnd.documents.qa import answer_document
 
         repo = scoped_repository(store, document_id)
         service = build_chat_service(repo, get_settings())
-        response, trace = service.answer_with_diagnostics(request.query, None)
+        response, trace = answer_document(repo, service, request.query)
         doc, _ = store.status(str(document_id))
         if (doc["test_only"] or doc["program_test_only"]) and response["kind"] == "fallback":
             response["contacts"] = []
@@ -91,7 +92,7 @@ def query_document(document_id: UUID, request: DocumentQuery, actor: str = Depen
 def document_failure(exc):
     if isinstance(exc, DocumentError):
         code = str(exc)
-        status = (503 if code == "automatic_processing_schema_required" else
+        status = (503 if code in {"automatic_processing_schema_required", "document_embedding_failed", "document_reranker_failed", "document_generation_failed"} else
                   404 if code in {"document_not_found", "job_not_found_or_replaced"} else 409)
         raise HTTPException(status, code) from None
     raise HTTPException(503, "document_service_unavailable") from None

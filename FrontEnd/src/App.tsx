@@ -24,9 +24,10 @@ function ProgramsPage() {
 export function App({ api = defaultApi }: { api?: WelfareApi }) {
   const [params] = useSearchParams();
   const chatApi = params.get("source") === "documents" ? liveApi : api;
+  const documentId = params.has("document") ? params.get("document") ?? "" : undefined;
   return (
     <Routes>
-      <Route path="/" element={<UserPage api={chatApi} />} />
+      <Route path="/" element={<UserPage key={documentId === undefined ? "welfare" : `document:${documentId}`} api={chatApi} documentId={documentId} />} />
       <Route path="/admin" element={<AdminPage api={api} />} />
       <Route path="/admin/documents" element={<DocumentsPage />} />
       <Route path="/admin/programs" element={<ProgramsPage />} />

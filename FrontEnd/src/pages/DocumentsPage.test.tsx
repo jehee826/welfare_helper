@@ -58,7 +58,7 @@ it("검토 승인 없이 업로드하고 게시된 원문을 검색·질의한�
   fireEvent.click(screen.getByRole("button", { name: "실행" }));
   await screen.findByText("원문에서 확인할 수 없습니다.");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/index"))).toBe(false);
-  expect(screen.getByRole("link", { name: "일반 상담으로 이동" })).toHaveAttribute("href", "/?source=documents");
+  expect(screen.getByRole("link", { name: "이 문서로 대화하기" })).toHaveAttribute("href", `/?document=${id}`);
 });
 
 it("DB 자동 처리 설정이 없으면 새 업로드를 막고 적용 안내를 보여준다", async () => {

@@ -101,6 +101,26 @@ class OllamaClient:
             raise OllamaError(str(exc)) from exc
         return embeddings
 
+    def chat_text(self, system: str, user: str) -> str:
+        """문서 질의는 JSON 선택 형식 없이 모델의 일반 텍스트 응답을 받는다."""
+        self.last_chat_diagnostics = {}
+        try:
+            prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
+            model = ChatOllama(model=self.llm_model, base_url=self.base_url,
+                               client_kwargs={"timeout": self.timeout}, **self.llm_options)
+            message = (prompt | model).invoke({"system": system, "user": user})
+            self.last_chat_diagnostics = {key: message.response_metadata[key]
+                for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated", "total_duration",
+                            "load_duration", "prompt_eval_duration", "eval_duration")
+                if key in message.response_metadata}
+            if not isinstance(message.content, str) or not message.content.strip():
+                raise OllamaError("생성 모델의 텍스트 응답이 비어 있습니다.")
+            return message.content.strip()
+        except OllamaError:
+            raise
+        except Exception as exc:
+            raise OllamaError(f"LangChain Ollama 텍스트 응답 실패: {type(exc).__name__}") from None
+
     def chat(self, system: str, user: str, *, schema: dict | None = None) -> dict:
         self.last_chat_diagnostics = {}
         try:

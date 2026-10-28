@@ -1,57 +1,33 @@
-"""복지로 CSV를 정제·임베딩해 DB(pgvector)에 적재하는 백그라운드 CLI.
-
-사용법 (저장소 루트에서):
-    python -m BackEnd.ingest.run                # 기본 CSV 적재
-    python -m BackEnd.ingest.run --csv 경로.csv
-    python -m BackEnd.ingest.run --dry-run      # DB에 쓰지 않고 검증·임베딩 차원만 확인
-"""
+"""CSV 메타데이터의 오프라인 확인만 제공한다. 문서 벡터 저장소에는 적재하지 않는다."""
 
 import argparse
 import sys
-import time
 
-from BackEnd.core.db import connect
-from BackEnd.core.settings import get_settings
-from BackEnd.ingest.csv_loader import DEFAULT_CSV, chunk_text, load_csv
-from BackEnd.rag.ollama import OllamaClient
-from BackEnd.rag.repository import PgServiceRepository
-
-BATCH_SIZE = 32
+from BackEnd.ingest.csv_loader import DEFAULT_CSV, CsvFormatError, load_csv
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="복지서비스 CSV를 벡터 DB에 적재합니다.")
+    parser = argparse.ArgumentParser(description="CSV 확인 전용입니다. 새 DB는 검토한 문서 작업으로 색인합니다.")
     parser.add_argument("--csv", default=str(DEFAULT_CSV))
+    parser.add_argument("--encoding", default="cp949")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--prune", action="store_true")
+    parser.add_argument("--allow-shared-write", action="store_true")
+    parser.add_argument("--check-embeddings", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=32)
     args = parser.parse_args(argv)
-
-    settings = get_settings()
-    records = load_csv(args.csv)
-    chunks = [chunk_text(r) for r in records]
-    print(f"CSV 검증 완료: {len(records)}건")
-
-    ollama = OllamaClient(settings.ollama_base_url, settings.ollama_embed, settings.ollama_llm, settings.ollama_timeout)
-    started = time.monotonic()
-    embeddings: list[list[float]] = []
-    for start in range(0, len(chunks), BATCH_SIZE):
-        embeddings += ollama.embed(chunks[start:start + BATCH_SIZE])
-        print(f"임베딩 {len(embeddings)}/{len(chunks)}", flush=True)
-    dims = {len(e) for e in embeddings}
-    if dims != {settings.embed_dim}:
-        print(f"임베딩 차원 불일치: {dims} (기대값 {settings.embed_dim})", file=sys.stderr)
+    if not args.dry_run or args.prune or args.allow_shared_write or args.check_embeddings:
+        print("CSV DB 적재·prune·overview 임베딩은 지원하지 않습니다. --dry-run으로 메타데이터만 확인하고 "
+              "문서는 관리자 문서 API에서 분석·검토·색인하세요.", file=sys.stderr)
         return 1
-    print(f"임베딩 완료: {time.monotonic() - started:.1f}초, 차원 {settings.embed_dim}")
-
-    if args.dry_run:
-        print("dry-run: DB에 쓰지 않았습니다.")
-        return 0
-
-    repo = PgServiceRepository(lambda: connect(settings))
-    repo.init_schema()
-    result = repo.replace_all(records, chunks, embeddings, settings.ollama_embed)
-    print(f"DB 반영 완료: 갱신 {result['upserted']}건, 삭제 {result['removed']}건, 현재 {result['total']}건")
+    try:
+        records = load_csv(args.csv, encoding=args.encoding)
+    except (CsvFormatError, OSError, UnicodeError) as exc:
+        print(f"CSV 확인 실패: {exc}", file=sys.stderr)
+        return 1
+    print(f"CSV 메타데이터 {len(records)}건. DB·모델 호출과 적재는 하지 않았습니다.")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

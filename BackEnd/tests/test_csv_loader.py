@@ -33,3 +33,20 @@ def test_missing_column_raises(tmp_path: Path):
     bad.write_text("서비스아이디,서비스명\nWLF1,테스트\n", encoding="cp949")
     with pytest.raises(CsvFormatError):
         load_csv(bad)
+
+
+def test_header_only_file_is_rejected(tmp_path):
+    from BackEnd.ingest.csv_loader import COLUMNS
+
+    path = tmp_path / "empty.csv"
+    path.write_text(",".join(COLUMNS) + "\n", encoding="cp949")
+    with pytest.raises(CsvFormatError, match="데이터가 없는"):
+        load_csv(path)
+
+
+def test_whitespace_around_headers_does_not_hide_values(tmp_path):
+    path = tmp_path / "spaced.csv"
+    original = DEFAULT_CSV.read_text(encoding="cp949").splitlines()
+    original[0] = ",".join(" " + name + " " for name in original[0].split(","))
+    path.write_text("\n".join(original), encoding="cp949")
+    assert len(load_csv(path)) == 367

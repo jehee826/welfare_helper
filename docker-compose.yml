@@ -60,6 +60,7 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile.ollama
     container_name: welfare-ollama
+    runtime: ${OLLAMA_RUNTIME:-runc}
     ports:
       - "127.0.0.1:11434:11434"
     volumes:

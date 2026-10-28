@@ -1,25 +1,43 @@
 #!/bin/sh
-set -e
+set -eu
 
-# 1. 백그라운드로 ollama 서버 실행
+ready_file=/tmp/ollama-models-ready
+rm -f "$ready_file"
 ollama serve &
-PID=$!
+server_pid=$!
+cleanup() {
+  rm -f "$ready_file"
+  kill "$server_pid" 2>/dev/null || true
+  wait "$server_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 143' TERM INT
 
-# 2. 서버가 완전히 뜰 때까지 대기
 echo "Waiting for Ollama server..."
+remaining=60
 until ollama list >/dev/null 2>&1; do
+  if ! kill -0 "$server_pid" 2>/dev/null || [ "$remaining" -le 0 ]; then
+    echo "Ollama server startup failed" >&2
+    exit 1
+  fi
+  remaining=$((remaining - 1))
   sleep 1
 done
 
-# 3. 환경변수(OLLAMA_PULL_MODELS)에 있는 모델들을 체크해서 없으면 다운로드
+: "${OLLAMA_PULL_MODELS:?Configure OLLAMA_PULL_MODELS}"
 for model in $OLLAMA_PULL_MODELS; do
-  if ollama list | awk '{print $1}' | grep -Fxq "$model"; then
+  # :latest 별칭도 같은 설치 모델로 확인해 불필요한 pull을 막는다.
+  if ollama show "$model" >/dev/null 2>&1; then
     echo "Model already exists: $model"
   else
     echo "Downloading model: $model"
     ollama pull "$model"
+    ollama show "$model" >/dev/null
   fi
 done
 
-# 4. 서버 프로세스 유지
-wait $PID
+touch "$ready_file"
+wait "$server_pid"
+# 서버가 예상치 않게 정상 코드로 종료돼도 서비스 중단으로 기록한다.
+echo "Ollama server stopped unexpectedly" >&2
+exit 1

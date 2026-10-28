@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     db_password: SecretStr | None = None
 
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_llm: str = "gemma3:4b"
+    ollama_llm: str = "qwen2.5:1.5b-instruct"
     ollama_embed: str = "bge-m3"
     ollama_timeout: float = Field(default=120.0, gt=0)
     embed_dim: int = Field(default=1024, ge=1024, le=1024)
@@ -64,6 +64,19 @@ class Settings(BaseSettings):
     documents_lease_seconds: int = Field(default=90, ge=60, le=300)
     docling_cache_dir: str = "/app/.docling_cache"
     docling_ocr: bool = False
+
+    cors_allowed_origins: list[str] = Field(default_factory=lambda: [
+        "https://welfare-helper-iota.vercel.app",
+        "http://localhost:5173", "http://127.0.0.1:5173",
+    ])
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_origins(cls, values: list[str]) -> list[str]:
+        allowed = {"https://welfare-helper-iota.vercel.app", "http://localhost:5173", "http://127.0.0.1:5173"}
+        if any(value not in allowed for value in values):
+            raise ValueError("CORS는 공식 프런트와 지정된 로컬 개발 Origin만 허용합니다.")
+        return list(dict.fromkeys(values))
 
 
 @lru_cache

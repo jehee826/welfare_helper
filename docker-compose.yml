@@ -12,27 +12,32 @@ services:
       INGEST_ON_STARTUP: "false"
       DATABASE_URL: ${DATABASE_URL:-}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
-      DOCUMENTS_ENABLED: "true"
-      DOCUMENTS_LOCAL_MODE: "true"
+      DOCUMENTS_ENABLED: ${DOCUMENTS_ENABLED:-true}
+      DOCUMENTS_LOCAL_MODE: ${DOCUMENTS_LOCAL_MODE:-false}
       DB_USER: ${DB_USER:-}
       DB_PASSWORD: ${DB_PASSWORD:-}
       DB_NAME: ${DB_NAME:-}
       DB_HOST: postgres
       DB_PORT: 5432
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_LLM: ${OLLAMA_LLM:-gemma3:4b}
+      OLLAMA_LLM: ${OLLAMA_LLM:-qwen2.5:1.5b-instruct}
       OLLAMA_EMBED: ${OLLAMA_EMBED:-bge-m3}
       RERANK_CACHE_DIR: /app/.reranker_cache
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${BACKEND_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ./BackEnd:/app/BackEnd
-      - ./docs:/app/docs:ro
       - ./.reranker_cache:/app/.reranker_cache
     depends_on:
       ollama:
         condition: service_healthy
-    restart: none
+    healthcheck:
+      test: ["CMD", "python", "-m", "BackEnd.readiness", "api"]
+      start_period: 30m
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    init: true
+    restart: unless-stopped
 
   ollama:
     build:
@@ -45,13 +50,13 @@ services:
       - ./ollama_data:/root/.ollama
     environment:
       OLLAMA_HOST: 0.0.0.0
-      OLLAMA_PULL_MODELS: "${OLLAMA_LLM:-gemma3:4b} ${OLLAMA_EMBED:-bge-m3}"
+      OLLAMA_PULL_MODELS: "${OLLAMA_LLM:-qwen2.5:1.5b-instruct} ${OLLAMA_EMBED:-bge-m3}"
       OLLAMA_MAX_LOADED_MODELS: "1"
       OLLAMA_NUM_PARALLEL: "1"
     healthcheck:
-      test: ['CMD-SHELL', 'for model in $$OLLAMA_PULL_MODELS; do ollama show "$$model" >/dev/null 2>&1 || exit 1; done']
-      start_period: 10m
-      interval: 5s
+      test: ['CMD-SHELL', 'test -f /tmp/ollama-models-ready && for model in $$OLLAMA_PULL_MODELS; do ollama show "$$model" >/dev/null 2>&1 || exit 1; done']
+      start_period: 60m
+      interval: 10s
       timeout: 5s
       retries: 3
     # GPU가 있는 하드웨어로 실행시 주석 해제
@@ -62,7 +67,7 @@ services:
     #         - driver: nvidia
     #           count: all
     #           capabilities: [gpu]
-    restart: none
+    restart: unless-stopped
 
   document-worker:
     build:
@@ -77,19 +82,27 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
       INGEST_ON_STARTUP: "false"
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_LLM: ${OLLAMA_LLM:-gemma3:4b}
+      OLLAMA_LLM: ${OLLAMA_LLM:-qwen2.5:1.5b-instruct}
       OLLAMA_EMBED: ${OLLAMA_EMBED:-bge-m3}
       RERANK_CACHE_DIR: /app/.reranker_cache
       DOCLING_CACHE_DIR: /app/.docling_cache
-      DOCUMENTS_ENABLED: "true"
-      DOCUMENTS_LOCAL_MODE: "true"
+      DOCUMENTS_ENABLED: ${DOCUMENTS_ENABLED:-true}
+      DOCUMENTS_LOCAL_MODE: ${DOCUMENTS_LOCAL_MODE:-false}
     cpus: ${DOCUMENT_WORKER_CPUS:-2}
     mem_limit: ${DOCUMENT_WORKER_MEMORY:-4g}
     volumes:
-      - ./BackEnd:/app/BackEnd
       - ./.reranker_cache:/app/.reranker_cache:ro
       - docling_models:/app/.docling_cache
     init: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "BackEnd.readiness", "worker"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     restart: unless-stopped
 
   postgres:

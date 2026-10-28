@@ -8,6 +8,7 @@ from typing import Literal
 import psycopg2
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from BackEnd.core.db import DatabaseNotConfigured, connect
@@ -21,6 +22,7 @@ from BackEnd.documents.auth import require_document_admin
 from BackEnd.documents.qa import answer_document
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.admin.programs import router as program_router
+from BackEnd.readiness import check_ready, ReadinessError
 
 logger = logging.getLogger("welfare_helper")
 
@@ -28,6 +30,9 @@ app = FastAPI(title="welfare_helper")
 app.add_middleware(DocumentBodyLimit)
 app.include_router(document_router)
 app.include_router(program_router)
+app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_origins,
+                   allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                   allow_headers=["Content-Type", "Authorization"])
 
 
 class ProfileIn(BaseModel):
@@ -122,6 +127,14 @@ def runtime_settings():
     }
 
 
+@app.get("/health/ready")
+def readiness():
+    try:
+        return check_ready()
+    except ReadinessError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
+
+
 @app.get("/health/reranker")
 def reranker_health():
     settings = get_settings()
@@ -148,12 +161,18 @@ def database_health():
 @app.post("/api/v1/chat")
 def chat(request: ChatRequest, http_request: Request, service: ChatService = Depends(get_chat_service)):
     settings = get_settings()
-    if settings.documents_local_mode:
+    if settings.documents_enabled and settings.documents_local_mode:
         # 기존 로컬 접근 검사를 통과한 요청만 등록된 검증용 문서까지 조회한다.
-        require_document_admin(http_request, credentials=None)
-        repo = PgServiceRepository(lambda: connect(settings), settings.ollama_embed, settings.embed_dim,
-                                   documents_enabled=True, include_local_documents=True)
-        service = build_chat_service(repo, settings)
+        try:
+            require_document_admin(http_request, credentials=None)
+        except HTTPException as exc:
+            if exc.status_code != 403:
+                raise
+            # 외부 요청은 공개 자료만 조회한다. 관리자 API의 접근 검사는 완화하지 않는다.
+        else:
+            repo = PgServiceRepository(lambda: connect(settings), settings.ollama_embed, settings.embed_dim,
+                                       documents_enabled=True, include_local_documents=True)
+            service = build_chat_service(repo, settings)
     try:
         return answer_document(service.repo, service, request.query.strip())[0]
     except DocumentError as exc:

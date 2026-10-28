@@ -17,6 +17,7 @@ from BackEnd.documents.analysis import analyze_file
 from BackEnd.documents.contracts import DocumentError, PARSER_VERSION, automatic_source_fingerprint, stable_hash, validate_file
 from BackEnd.documents.indexing import document_children
 from BackEnd.documents.store import get_document_store
+from BackEnd.readiness import worker_heartbeat
 
 
 def failure_diagnostic(exc, job_id, temp_dir):
@@ -168,6 +169,7 @@ def supervise(job, store, settings):
         phase, phase_started, heartbeat = "starting", time.monotonic(), 0.0
         try:
             while child.poll() is None:
+                worker_heartbeat()
                 now = time.monotonic()
                 if now - heartbeat >= settings.documents_lease_seconds / 3:
                     if not store.heartbeat(job_id, token, settings.documents_lease_seconds):
@@ -233,7 +235,9 @@ def main():
     def shutdown(signum, frame):
         raise SystemExit(0)
     signal.signal(signal.SIGTERM, shutdown)
+    worker_heartbeat()
     while True:
+        worker_heartbeat()
         if settings.documents_enabled:
             try:
                 store = get_document_store()

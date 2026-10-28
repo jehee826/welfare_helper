@@ -19,7 +19,7 @@
 
 현재 Supabase + Docker 구성에서는 `DATABASE_URL`과 별도 `DATABASE_PASSWORD`를 유지합니다. `DATABASE_MODE=supabase`, `INGEST_ON_STARTUP=false`로 정리하며 CSV 자동 적재는 지원하지 않습니다. `OLLAMA_LLM=qwen2.5:1.5b-instruct`, `OLLAMA_EMBED=bge-m3`, `EMBED_DIM=1024`와 고정 리랭커 모델·리비전은 현재 문서 벡터와 맞춰 사용합니다. 느린 노트북을 위한 예시 대기 시간은 `OLLAMA_TIMEOUT=600`초입니다. 예시 변경만으로 실제 런타임 설정이 바뀌지는 않습니다.
 
-Compose는 DB 모드를 `supabase`, 시작 적재를 `false`, 문서 활성화·로컬 모드를 `true`로 고정합니다. `OLLAMA_BASE_URL`은 컨테이너 내부 `http://ollama:11434`, `RERANK_CACHE_DIR`은 `/app/.reranker_cache`, `DOCLING_CACHE_DIR`은 `/app/.docling_cache`로 덮어씁니다. 호스트용 주소·경로와 혼동하지 않습니다. 환경변수 변경 후에는 `docker compose up -d --build`로 컨테이너 설정을 재적용합니다. 코드만 바꿀 때의 restart와 구분합니다.
+Compose는 DB 모드를 `supabase`, 시작 적재를 `false`로 고정합니다. 문서는 `DOCUMENTS_ENABLED`(기본 true), 로컬 관리자 접수는 `DOCUMENTS_LOCAL_MODE`(기본 false)로 지정합니다. 노트북 검증은 로컬 모드를 true로, 공개 EC2는 false로 둡니다. `OLLAMA_BASE_URL`은 컨테이너 내부 `http://ollama:11434`, `RERANK_CACHE_DIR`은 `/app/.reranker_cache`, `DOCLING_CACHE_DIR`은 `/app/.docling_cache`로 덮어씁니다. 환경·코드 변경 후에는 `docker compose up -d --build`로 이미지를 빌드하고 컨테이너 설정을 재적용합니다. 코드 bind mount와 자동 reload는 사용하지 않습니다.
 
 `LOCAL_DB_*`는 백엔드가 읽지 않으므로 삭제 권장입니다. 별도 로컬 PostgreSQL 개발이 필요할 때만 실제 이름인 `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`을 사용합니다. 기본 Compose는 Supabase를 강제하므로 `--profile local`만으로 백엔드 DB가 전환되지는 않습니다. 복지로 API 키는 공식 상세 조회 유틸리티용이며 기존 PDF 채팅에는 필요하지 않습니다. `MIN_DENSE_SIM`, `MIN_RERANK_SCORE`는 기존 복지 상담·진단 경로용이고 현재 기본 PDF RAG의 점수 컷오프가 아닙니다.
 
@@ -80,7 +80,7 @@ docker compose up -d --build
 
 새 작업은 parse_config.processing_mode=automatic으로 구분한다. 분석 해시·출처 fingerprint·실제 처리 시각·모델/토크나이저 설정을 기록하며 reviewed_by/reviewed_at은 NULL이다. 사람 검토를 했다고 표시하지 않는다. 기존 수동 검토 게시본은 기존 출처 검증을 유지한다. 이전 awaiting_review·진행 작업은 몰래 자동 처리하지 않는다.
 
-Compose 로컬 모드는 루프백 포트·Host·접속자 검사와 교차 Origin·Forwarded 차단을 유지한다. 공개 모드는 사용자 JWT와 DB 관리자 허용 목록을 확인하며 빈 목록에 임의 계정을 추가하지 않는다. 서버 비밀키를 브라우저로 보내지 않는다.
+Compose 로컬 모드는 루프백 포트·Host·접속자 검사와 교차 Origin·Forwarded 차단을 유지한다. 공개 관리 API는 사용자 JWT와 DB 관리자 허용 목록을 확인하며 빈 목록에 임의 계정을 추가하지 않는다. 서버 비밀키를 브라우저로 보내지 않는다. 일반 채팅은 관리자 로그인과 별개로 공개 가능한 게시 원문만 검색한다. 로컬 모드에서도 로컬 접속 검사를 통과한 채팅만 검증용 문서를 추가하며, 외부 채팅은 공개 자료 검색으로 제한한다.
 
 ### 파일에서 답변까지
 
@@ -124,7 +124,7 @@ Compose 백엔드는 리랭커 의존성을 설치하고 같은 캐시 폴더를
 
 ### 로컬 제도·문서 관리
 
-기존 Compose 백엔드를 켠 상태에서 FrontEnd 폴더의 npm run dev로 프런트를 실행한다. http://127.0.0.1:5173/admin/documents 또는 상단 문서 관리로 들어간다. 제도 등록·관리(/admin/programs)에서 메타데이터를 등록한 뒤 목록을 갱신하고 원문을 올린다. 두 경로는 로컬 Vite 전용이며 목업 관리자 키가 필요 없다. 서버의 인증 경계는 그대로 적용한다.
+루트 환경파일에서 `DOCUMENTS_LOCAL_MODE=true`, `BACKEND_BIND_HOST=127.0.0.1`로 설정한 Compose 백엔드를 켜고 FrontEnd 폴더의 npm run dev로 프런트를 실행한다. http://127.0.0.1:5173/admin/documents 또는 상단 문서 관리로 들어간다. 제도 등록·관리(/admin/programs)에서 메타데이터를 등록한 뒤 목록을 갱신하고 원문을 올린다. 두 경로는 로컬 Vite 전용이며 목업 관리자 키가 필요 없다. 서버의 인증 경계는 그대로 적용한다.
 
 실제 담당 부서가 없으면 운영자가 확인한 기관·부서를 departments에 먼저 등록한다. 목업 기관을 실제 제도의 담당 기관으로 사용하지 않는다. 문서가 연결된 제도는 근거가 무효화되지 않도록 이름·외부 ID·test_only 변경과 삭제를 막는다.
 
@@ -185,3 +185,33 @@ pgvector 통합 테스트는 `RAG_TEST_DATABASE_URL`이 지정된 경우에만 �
 `VITE_API_BASE_URL` 없이 빌드된 운영 화면에서는 API 호출 전에 백엔드 미연결 안내를 표시합니다. SPA HTML을 API JSON으로 처리하거나 가짜 답변을 제공하지 않습니다. 외부 Docker 백엔드를 준비한 뒤 Vercel의 프런트 빌드 환경에 해당 HTTPS 기본 주소를 설정하고 다시 배포해야 합니다. 서버 DB 비밀번호·Supabase 서버 키·Ollama 설정은 프런트 프로젝트에 주입하지 않습니다.
 
 외부 백엔드의 공개 접근·인증·CORS 및 모델 실행 환경은 별도 연결 단계입니다. 현재 로컬 문서 접수 경계를 외부 연결용으로 해제하지 않습니다. API 주소 변수만으로 로컬 Docker에 접속할 수 있는 것은 아니며, 연결 전까지 운영 채팅은 백엔드 미연결 상태입니다. Vercel에서 Compose·Ollama·리랭커를 함께 실행하지 않으며 PC의 모델 캐시나 데이터 폴더를 배포 파일에 포함하지 않습니다.
+
+### EC2 백엔드의 최초 준비와 갱신
+
+EC2 Linux에는 Git, Docker Engine과 Compose v2 플러그인을 먼저 설치하고 Docker 데몬을 부팅 시 시작하도록 설정합니다. 예를 들어 systemd 환경에서 `sudo systemctl enable --now docker`를 사용하며 실행 계정의 Docker 접근 권한도 준비합니다. CPU 실행이 기본이며 GPU를 요구하지 않습니다. worker의 기본 메모리 상한은 4GB이고 Ollama·리랭커·운영체제 메모리는 별도이므로 모델·이미지·캐시를 위한 메모리와 디스크를 확보해야 합니다. 실제 EC2 사양의 처리 시간·메모리는 별도 확인 대상입니다.
+
+`test_only` 문서는 공개 검색에서 제외되므로 공개 가능한 게시 원문이 준비되어야 합니다. EC2의 코드·모델 기동 준비와 공개 RAG 자료 준비는 별개이며, 공개 원문이 없으면 공개 질의는 근거 없음으로 응답할 수 있습니다. 로컬 검증을 위해 기존 플래그를 바꾸지 않으며 공개 원문은 적법한 관리자 경로로 등록합니다.
+
+저장소를 받은 뒤 루트 `.env.example`을 참고해 EC2의 서버 환경파일을 한 번 준비합니다. 기존 `DATABASE_URL`·별도 `DATABASE_PASSWORD`와 동일한 `bge-m3` 1024차원·리랭커 리비전을 사용하고 `DOCUMENTS_ENABLED=true`, `DOCUMENTS_LOCAL_MODE=false`로 둡니다. 로컬 테스트용 문서의 `test_only` 값과 DB 스키마·권한은 변경하지 않습니다. `OLLAMA_LLM` 하나로 생성 모델과 Ollama 준비 목록을 함께 선택합니다. 공개 문서 관리자 API를 사용할 때는 서버의 Supabase 인증 설정과 기존 관리자 허용 목록이 필요하며 프런트 JWT 로그인 연동도 별도입니다. 데모 키를 서버 인증으로 사용하지 않습니다.
+
+최초 준비와 이후 코드 갱신은 저장소 루트에서 다음 명령을 사용합니다.
+
+```sh
+git pull --ff-only
+docker compose up -d --build
+docker compose ps
+```
+
+별도 프런트 컨테이너나 로컬 PostgreSQL은 시작하지 않습니다. 앱 코드는 이미지에 들어가며 갱신 시 rebuild로 적용됩니다. 기존 `ollama_data/`, `.reranker_cache/`, `postgres_data/`와 `docling_models` 볼륨을 보존합니다. 같은 데이터와 볼륨을 재사용하려면 저장소 경로와 Compose 프로젝트 이름을 유지합니다. 새 EC2에 노트북의 캐시가 없으면 처음 한 번 모델을 내려받으며 Docling 분석 모델은 첫 업로드 때 추가 준비될 수 있습니다. 빌드·다운로드 실패는 명령 종료 상태와 `docker compose logs backend ollama document-worker`에서 확인합니다. 데이터 초기화·`down -v`·재업로드·재임베딩은 시작 절차가 아닙니다.
+
+Ollama는 설정된 두 모델이 존재한 뒤 healthy가 되고 backend는 그 상태를 기다립니다. backend의 `/health/ready`는 읽기 전용 DB 연결·기존 문서 계약·모델 존재·리랭커 캐시를 확인하며 worker는 backend의 healthy 이후 시작합니다. worker health는 부모 프로세스의 주기적 heartbeat를 확인합니다. 이 검사는 추론·새 임베딩·쓰기 작업을 하지 않으며 PDF 처리 성공이나 답변 품질을 보증하지 않습니다. `/health`는 프로세스 생존만 의미합니다. Compose up의 종료만으로 전체 준비를 판단하지 말고 `docker compose ps`의 healthy와 `/health/ready`의 200 응답을 확인합니다. 초기 모델 준비에는 시간이 걸릴 수 있습니다.
+
+세 서비스는 `unless-stopped`로 Docker 재시작 후 복구됩니다. 수동으로 중지한 서비스는 자동으로 켜지지 않습니다. Docker 데몬 자체의 부팅 설정과 EC2 재부팅 복구는 실제 서버에서 확인해야 합니다. unhealthy 상태 자체가 컨테이너 재시작을 의미하지 않으므로 지속 실패 시 로그와 준비 응답을 확인합니다. [Docker 시작 순서](https://docs.docker.com/compose/how-tos/startup-order/)와 [재시작 정책](https://docs.docker.com/engine/containers/start-containers-automatically/)을 따릅니다.
+
+### EC2 HTTPS와 Vercel 연결
+
+기본 backend 공개 포트는 `BACKEND_BIND_HOST=127.0.0.1`, `BACKEND_PORT=8000`입니다. 같은 EC2의 HTTPS 역방향 프록시는 이 루프백으로 전달합니다. ALB가 직접 접근해야 한다면 bind 주소를 `0.0.0.0`으로 변경하고 EC2 보안 그룹의 8000 포트를 ALB 보안 그룹에만 허용합니다. Ollama 11434와 DB 5432를 인터넷에 공개하지 않습니다. CPU 추론은 수분 걸릴 수 있으므로 프록시·ALB의 응답 대기 시간을 모델 호출 대기 예산에 맞춰 준비합니다.
+
+실제 EC2 주소와 도메인·유효한 인증서를 준비해 HTTPS API 주소를 만든 뒤, Vercel의 `VITE_API_BASE_URL`에 `/api`를 제외한 해당 HTTPS 기본 주소를 넣고 Git 자동 빌드로 반영합니다. **운영 프런트에 localhost·127.0.0.1을 넣지 않습니다.** 이는 방문자 자신의 컴퓨터를 가리키며 HTTPS 프런트에서 HTTP API 호출도 차단될 수 있습니다. EC2 주소·인증서·프록시가 없는 상태에서 실제 공개 연결 성공을 주장하지 않습니다. 이후 프런트를 정적 산출물로 옮길 때도 빌드 시 같은 주소를 주입합니다.
+
+`CORS_ALLOWED_ORIGINS`는 JSON 배열이며 공식 `https://welfare-helper-iota.vercel.app`와 `http://localhost:5173`, `http://127.0.0.1:5173` 중 필요한 Origin만 허용합니다. 다른 주소·와일드카드는 설정 오류로 거부합니다. CORS는 브라우저 출처 제어이며 서버 인증을 대신하지 않습니다. 공개 채팅은 일반 공개 자료만 읽고 업로드·제도 관리의 JWT·관리자 검사는 유지합니다. Vercel의 데모 관리자 로그인만으로 EC2 관리자 API를 사용할 수는 없습니다.

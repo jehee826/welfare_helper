@@ -5,3 +5,16 @@
 .env.*
 postgres_data/
 ollama_data/
+**/node_modules/
+FrontEnd/dist/
+.agents/
+.codex/
+.claude/
+AGENTS.md
+CLAUDE.md
+작업인계.md
+docs/
+.pytest_cache/
+**/__pycache__/
+**/*.pyc
+BackEnd/db/migrations/0003_original_erd_tables.sql

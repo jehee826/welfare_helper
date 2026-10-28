@@ -1,4 +1,5 @@
 import { ApiError } from "./errors";
+import { apiBaseUrl, requireApiBaseUrl } from "./config";
 import { createMockApi } from "./mockApi";
 import type { AdminProgram, ChatAnswer, Department, ProgramInput, WelfareApi } from "./types";
 
@@ -77,10 +78,11 @@ async function failure(response: Response, fallbackMessage: string): Promise<Api
  * 채팅(ask)과 관리자 제도 관리는 백엔드 API를 호출하고, 아직 백엔드가 없는 이용 통계는 목업에 맡긴다.
  */
 export function createHttpApi(options: { baseUrl?: string; fallback?: WelfareApi } = {}): WelfareApi {
-  const baseUrl = options.baseUrl ?? "";
+  const baseUrl = (options.baseUrl ?? apiBaseUrl).replace(/\/+$/, "");
   const fallback = options.fallback ?? createMockApi();
 
   async function admin<T>(path: string, init: RequestInit = {}): Promise<T> {
+    requireApiBaseUrl(baseUrl);
     const response = await fetch(`${baseUrl}/api/v1/admin${path}`, {
       ...init,
       headers: init.body ? { "Content-Type": "application/json" } : undefined,
@@ -90,14 +92,16 @@ export function createHttpApi(options: { baseUrl?: string; fallback?: WelfareApi
   }
 
   return {
-    initialSuggestions: fallback.initialSuggestions,
+    initialSuggestions: () => [],
     getMonthlyStats: fallback.getMonthlyStats,
 
-    async ask(query, profile) {
+    async ask(query, _profile, signal) {
+      requireApiBaseUrl(baseUrl);
       const response = await fetch(`${baseUrl}/api/v1/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, profile }),
+        body: JSON.stringify({ query }),
+        signal,
       });
       if (!response.ok) {
         const error = await failure(response, "상담 응답을 받지 못했어요.");

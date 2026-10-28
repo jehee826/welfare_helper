@@ -56,7 +56,7 @@ describe("httpApi 채팅", () => {
     vi.unstubAllGlobals();
   });
 
-  it("질문과 조건을 /api/v1/chat에 보내고 응답을 그대로 돌려준다", async () => {
+  it("질문을 /api/v1/chat에 보내고 응답을 그대로 돌려준다", async () => {
     const answer = { kind: "fallback", text: "확인 필요", contacts: [{ label: "보건복지상담센터", phone: "129" }], suggestions: [] };
     const fetchMock = stubFetch(json(answer));
 
@@ -65,7 +65,7 @@ describe("httpApi 채팅", () => {
     expect(result).toEqual(answer);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/v1/chat");
-    expect(JSON.parse(init.body)).toEqual({ query: "연금", profile: null });
+    expect(JSON.parse(init.body)).toEqual({ query: "연금" });
   });
 
   it("서버 오류면 서버가 준 안내 문구로 예외를 던진다", async () => {

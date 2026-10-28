@@ -217,7 +217,7 @@ function DocumentWorkspace({ documentId, requestedJob, onReplace, onJobChange }:
       <button className="btn btn--soft" disabled={busy || !online || status.analysis.job_id !== job?.job_id} onClick={() => void perform("markdown")}>원문 불러오기</button><pre className="document-text">{markdown}</pre>
     </details>}
     <h2>게시 문서 검색·질의</h2>
-    {ready && <p><Link to={`/?document=${encodeURIComponent(documentId)}`}>이 문서로 대화하기</Link>에서 기존 채팅 화면으로 원문에 대해 질문할 수 있습니다. 아래에서도 같은 문서 안에서만 검색합니다.</p>}
+    {ready && <p><Link to="/">기본 채팅으로 이동</Link>해 등록된 원문에 대해 질문할 수 있습니다. 아래에서는 이 문서 안에서만 검색합니다.</p>}
     {!ready && <p>선택 작업의 게시 완료와 현재 게시본 일치가 확인되면 검색할 수 있습니다.</p>}
     <form className="document-form" onSubmit={e => { e.preventDefault(); const form = new FormData(e.currentTarget); void perform(form.get("operation") === "query" ? "query" : "search", String(form.get("query")).trim()); }}>
       <label className="field">질문<input name="query" maxLength={300} required disabled={!ready || busy} /></label>

@@ -19,6 +19,7 @@ const RELOAD_CODES = new Set(["program_changed", "program_not_found"]);
 
 function describeError(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === "backend_not_configured") return error.message;
     if (ERROR_MESSAGES[error.code]) return ERROR_MESSAGES[error.code];
     if (error.status === 401 || error.status === 403) return "관리자 인증이 필요해요. 다시 로그인해 주세요.";
   }

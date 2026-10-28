@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { App } from "../App";
-import { createMockApi } from "../api/mockApi";
 import type { DocumentStatus, Job } from "../api/documentApi";
 
 const id = "00000000-0000-0000-0000-000000000001";
@@ -58,7 +57,7 @@ it("검토 승인 없이 업로드하고 게시된 원문을 검색·질의한�
   fireEvent.click(screen.getByRole("button", { name: "실행" }));
   await screen.findByText("원문에서 확인할 수 없습니다.");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/index"))).toBe(false);
-  expect(screen.getByRole("link", { name: "이 문서로 대화하기" })).toHaveAttribute("href", `/?document=${id}`);
+  expect(screen.getByRole("link", { name: "기본 채팅으로 이동" })).toHaveAttribute("href", "/");
 });
 
 it("DB 자동 처리 설정이 없으면 새 업로드를 막고 적용 안내를 보여준다", async () => {
@@ -116,18 +115,15 @@ it("일시 조회 실패는 마지막 상태를 보존하고 재조회로 회복
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
-it("문서에서 이동한 일반 상담은 목업 설정과 무관하게 실제 API를 사용한다", async () => {
+it("기본 채팅은 목업 설정과 무관하게 실제 API를 사용한다", async () => {
   vi.stubEnv("VITE_USE_MOCK", "true");
-  const mock = createMockApi({ latencyMs: 0 }); const ask = vi.spyOn(mock, "ask");
   const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ kind: "fallback", text: "실제 상담 응답", contacts: [], suggestions: [] }) });
   vi.stubGlobal("fetch", fetch);
-  render(<MemoryRouter initialEntries={["/?source=documents"]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><App api={mock} /></MemoryRouter>);
-  fireEvent.click(screen.getByRole("button", { name: "나중에 입력할게요" }));
+  render(<MemoryRouter initialEntries={["/"]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><App /></MemoryRouter>);
   fireEvent.change(screen.getByLabelText("궁금한 내용"), { target: { value: "제도 지원 내용" } });
   fireEvent.click(screen.getByRole("button", { name: "질문 보내기" }));
   await within(screen.getByRole("log", { name: "상담 내용" })).findByText("실제 상담 응답");
   expect(fetch).toHaveBeenCalledWith("/api/v1/chat", expect.objectContaining({ method: "POST" }));
-  expect(ask).not.toHaveBeenCalled();
 });
 
 it("공개 모드에서는 문서 API를 호출하지 않는다", async () => {

@@ -1,8 +1,11 @@
 /// <reference types="vitest" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
+  // 실행 디렉터리와 무관하게 저장소 루트의 환경파일을 사용한다.
+  envDir: fileURLToPath(new URL("..", import.meta.url)),
   plugins: [react()],
   server: {
     host: "127.0.0.1",

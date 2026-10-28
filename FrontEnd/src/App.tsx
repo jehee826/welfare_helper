@@ -1,5 +1,4 @@
-import { Link, Route, Routes, useSearchParams } from "react-router-dom";
-import { api as defaultApi } from "./api";
+import { Link, Route, Routes } from "react-router-dom";
 import { createHttpApi } from "./api/httpApi";
 import { localDocumentAccess } from "./api/documentApi";
 import type { WelfareApi } from "./api/types";
@@ -21,13 +20,10 @@ function ProgramsPage() {
   </main></div>;
 }
 
-export function App({ api = defaultApi }: { api?: WelfareApi }) {
-  const [params] = useSearchParams();
-  const chatApi = params.get("source") === "documents" ? liveApi : api;
-  const documentId = params.has("document") ? params.get("document") ?? "" : undefined;
+export function App({ api = liveApi }: { api?: WelfareApi }) {
   return (
     <Routes>
-      <Route path="/" element={<UserPage key={documentId === undefined ? "welfare" : `document:${documentId}`} api={chatApi} documentId={documentId} />} />
+      <Route path="/" element={<UserPage api={api} />} />
       <Route path="/admin" element={<AdminPage api={api} />} />
       <Route path="/admin/documents" element={<DocumentsPage />} />
       <Route path="/admin/programs" element={<ProgramsPage />} />

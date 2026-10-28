@@ -31,12 +31,14 @@ def vector_literal(values: list[float]) -> str:
 
 class PgServiceRepository:
     def __init__(self, connect: Callable, embed_model: str = 'bge-m3', embed_dim: int = 1024,
-                 *, documents_enabled: bool = False, document_scope: str | None = None):
+                 *, documents_enabled: bool = False, document_scope: str | None = None,
+                 include_local_documents: bool = False):
         self._connect = connect
         self.embed_model = embed_model
         self.embed_dim = embed_dim
         self.documents_enabled = documents_enabled
         self.document_scope = document_scope
+        self.include_local_documents = include_local_documents
 
     @staticmethod
     def _unsupported_ingestion():
@@ -65,7 +67,7 @@ class PgServiceRepository:
             conn.set_session(isolation_level='REPEATABLE READ', readonly=True)
             with conn, conn.cursor() as cur:
                 condition = 'EXISTS(SELECT 1 FROM public.rag_documents d WHERE d.program_id=p.program_id AND d.document_id=%s)' \
-                    if self.document_scope else "NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'"
+                    if self.document_scope else 'TRUE' if self.include_local_documents else "NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'"
                 params = (self.document_scope,MAX_CATALOG_ROWS+1) if self.document_scope else (MAX_CATALOG_ROWS+1,)
                 cur.execute("SELECT coalesce(p.external_service_id,'PROGRAM_'||p.program_id::text),p.program_name,"
                             "coalesce(p.summary,''),d.ministry_name,d.department_name,coalesce(p.source_url,''),"
@@ -81,7 +83,8 @@ class PgServiceRepository:
                 # 문서 API 접수 여부와 검색 자료의 사용 여부는 별개다. 벡터 저장소는 항상 하나다.
                 from BackEnd.documents.retrieval import active_document_chunks
 
-                chunks, vectors, unavailable, identities = active_document_chunks(cur,self.embed_model,self.document_scope)
+                chunks, vectors, unavailable, identities = active_document_chunks(
+                    cur, self.embed_model, self.document_scope, include_local_documents=self.include_local_documents)
         versions={}
         for child in chunks:
             versions.setdefault(child.service_id,set()).add(child.version)

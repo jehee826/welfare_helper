@@ -6,7 +6,7 @@ from functools import lru_cache
 from typing import Literal
 
 import psycopg2
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -17,6 +17,9 @@ from BackEnd.rag.factory import build_chat_service
 from BackEnd.rag.repository import PgServiceRepository
 from BackEnd.rag.reranker import LocalReranker, RerankerError
 from BackEnd.documents.api import DocumentBodyLimit, router as document_router
+from BackEnd.documents.auth import require_document_admin
+from BackEnd.documents.qa import answer_document
+from BackEnd.documents.contracts import DocumentError
 from BackEnd.admin.programs import router as program_router
 
 logger = logging.getLogger("welfare_helper")
@@ -143,18 +146,23 @@ def database_health():
 
 
 @app.post("/api/v1/chat")
-def chat(request: ChatRequest, service: ChatService = Depends(get_chat_service)):
-    profile = request.profile.model_dump() if request.profile else None
+def chat(request: ChatRequest, http_request: Request, service: ChatService = Depends(get_chat_service)):
+    settings = get_settings()
+    if settings.documents_local_mode:
+        # 기존 로컬 접근 검사를 통과한 요청만 등록된 검증용 문서까지 조회한다.
+        require_document_admin(http_request, credentials=None)
+        repo = PgServiceRepository(lambda: connect(settings), settings.ollama_embed, settings.embed_dim,
+                                   documents_enabled=True, include_local_documents=True)
+        service = build_chat_service(repo, settings)
     try:
-        if request.history:
-            return service.answer(request.query.strip(), profile,
-                                  [message.model_dump() for message in request.history])
-        return service.answer(request.query.strip(), profile)
+        return answer_document(service.repo, service, request.query.strip())[0]
+    except DocumentError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
     except Exception as exc:
         logger.error("chat failed (%s)", type(exc).__name__)
         raise HTTPException(
             status_code=503,
-            detail="상담 데이터를 불러오지 못했어요. 잠시 후 다시 시도하거나 보건복지상담센터 129로 문의해 주세요.",
+            detail="문서 검색이나 모델 실행에 실패했습니다. 서버 상태를 확인해 주세요.",
         ) from None
 
 

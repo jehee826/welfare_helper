@@ -110,8 +110,9 @@ def validate_document_vectors(doc, job, rows):
     return chunks, vectors
 
 
-def active_document_chunks(cur, model, scope=None):
-    condition = 'd.document_id=%s' if scope else "NOT d.test_only AND NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'"
+def active_document_chunks(cur, model, scope=None, *, include_local_documents=False):
+    condition = ('d.document_id=%s' if scope else 'TRUE' if include_local_documents else
+                 "NOT d.test_only AND NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'")
     params = (scope,) if scope else ()
     with cur.connection.cursor(cursor_factory=RealDictCursor) as rows_cur:
         rows_cur.execute("SELECT d.document_id,d.document_name,d.source_url,d.source_organization,d.source_updated_at,d.basis_year,d.test_only,"

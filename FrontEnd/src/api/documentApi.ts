@@ -1,4 +1,7 @@
-export const documentApiRoot = "/api/v1/admin/documents";
+import { apiBaseUrl, requireApiBaseUrl } from "./config";
+import { ApiError } from "./errors";
+
+export const documentApiRoot = `${apiBaseUrl}/api/v1/admin/documents`;
 export interface Program { service_id: string; program_name: string; test_only: boolean }
 export interface Block { id: string; text: string; markdown_text?: string; pages: number[]; table?: unknown; char_start?: number; char_end?: number }
 export interface Analysis {
@@ -44,6 +47,7 @@ export class DocumentApiError extends Error {
 }
 
 export async function documentRequest<T>(path: string, signal: AbortSignal, options: RequestInit = {}): Promise<T> {
+  requireApiBaseUrl();
   const response = await fetch(documentApiRoot + path, { ...options, signal });
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as { detail?: unknown };
@@ -59,5 +63,6 @@ export function jsonPost(body: unknown): RequestInit {
 }
 
 export function documentError(error: unknown) {
+  if (error instanceof ApiError && error.code === "backend_not_configured") return error.message;
   return error instanceof DocumentApiError ? `${error.message} (${error.code})` : "서버에 연결하지 못했습니다. 백엔드와 Vite 프록시를 확인한 뒤 다시 시도하세요.";
 }

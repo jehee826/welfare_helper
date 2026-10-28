@@ -81,7 +81,7 @@ export interface ProgramPage {
 }
 
 export interface WelfareApi {
-  ask(query: string, profile: UserProfile | null): Promise<ChatAnswer>;
+  ask(query: string, profile: UserProfile | null, signal?: AbortSignal): Promise<ChatAnswer>;
   initialSuggestions(profile: UserProfile | null): string[];
   listPrograms(query?: string): Promise<ProgramPage>;
   listDepartments(): Promise<Department[]>;

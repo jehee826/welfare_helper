@@ -1,4 +1,4 @@
-"""선택한 문서의 검색 원문을 모델에 전달하는 기본 RAG 질의 경로."""
+"""게시된 문서의 검색 원문을 모델에 전달하는 기본 RAG 질의 경로."""
 
 import math
 import time
@@ -8,20 +8,18 @@ from BackEnd.rag.search import BM25Index, reciprocal_ranks
 
 
 def answer_document(repo, service, query: str):
-    if not repo.document_scope:
-        raise ValueError("문서 범위가 필요합니다.")
     started = time.monotonic()
     trace = {"mode": "document_rag", "scope_document_id": repo.document_scope,
              "retrieval": [], "rerank": [], "timings_ms": {}}
     snapshot = repo.snapshot()
-    if any(chunk.document_id != str(repo.document_scope) for chunk in snapshot.chunks):
+    if repo.document_scope and any(chunk.document_id != str(repo.document_scope) for chunk in snapshot.chunks):
         raise DocumentError("document_scope_mismatch")
     trace["snapshot"] = snapshot.stamp
     trace["versions"] = sorted({chunk.version for chunk in snapshot.chunks})
     if not snapshot.chunks:
         trace["reason"] = "no_document_evidence"
         trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-        return {"kind": "fallback", "text": "선택한 문서에서 검색할 원문을 찾지 못했습니다.",
+        return {"kind": "fallback", "text": "등록된 문서에서 검색할 원문을 찾지 못했습니다.",
                 "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": []}, trace
 
     retrieval_started = time.monotonic()
@@ -49,7 +47,7 @@ def answer_document(repo, service, query: str):
     if not candidates:
         trace["reason"] = "no_document_evidence"
         trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-        return {"kind": "fallback", "text": "선택한 문서에서 질문에 사용할 원문을 찾지 못했습니다.",
+        return {"kind": "fallback", "text": "등록된 문서에서 질문에 사용할 원문을 찾지 못했습니다.",
                 "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": []}, trace
 
     rerank_started = time.monotonic()

@@ -7,13 +7,25 @@
 | `FrontEnd/` | React + Vite 웹 (이용자 `/`, 관리자 `/admin`) |
 | `BackEnd/` | FastAPI. `POST /api/v1/chat`, `/health`, `/health/db` |
 | `BackEnd/ingest/` | CSV 메타데이터 확인 전용, 문서 등록은 `BackEnd/documents/` |
-| `vercel.json` | 프론트·백엔드를 한 Vercel 프로젝트로 배포 (`/api/*`, `/health*` → 백엔드) |
+| `FrontEnd/vercel.json` | Vercel 프런트 전용 빌드와 SPA 경로 재작성 |
 
 ## 준비
 1. Docker 실행에서는 아래 단일 Compose 명령이 Ollama 모델과 리랭커 캐시를 준비합니다. 호스트에서 직접 실행할 때만 사용할 Ollama 모델을 별도로 준비합니다.
-2. `.env.example`을 참고해 `DATABASE_URL`, `OLLAMA_BASE_URL` 등 실제 값을 런타임에 주입합니다. 접속 문자열·키를 저장소에 넣지 않습니다.
+2. 저장소 루트의 `.env.example`을 참고해 환경을 준비합니다. 사용자가 관리하는 루트 `.env`를 Compose와 Vite가 사용하며 접속 문자열·키는 저장소에 넣지 않습니다. `FrontEnd/.env`는 사용하지 않습니다.
 3. 호스트에서 직접 실행할 때 파이썬 의존성: `pip install -r requirements.txt pytest`. Docker 실행은 이미지 빌드에서 설치합니다.
 4. 프론트 의존성: `cd FrontEnd && npm install`
+
+### 환경변수 적용 기준
+
+현재 Supabase + Docker 구성에서는 `DATABASE_URL`과 별도 `DATABASE_PASSWORD`를 유지합니다. `DATABASE_MODE=supabase`, `INGEST_ON_STARTUP=false`로 정리하며 CSV 자동 적재는 지원하지 않습니다. `OLLAMA_LLM=qwen2.5:1.5b-instruct`, `OLLAMA_EMBED=bge-m3`, `EMBED_DIM=1024`와 고정 리랭커 모델·리비전은 현재 문서 벡터와 맞춰 사용합니다. 느린 노트북을 위한 예시 대기 시간은 `OLLAMA_TIMEOUT=600`초입니다. 예시 변경만으로 실제 런타임 설정이 바뀌지는 않습니다.
+
+Compose는 DB 모드를 `supabase`, 시작 적재를 `false`, 문서 활성화·로컬 모드를 `true`로 고정합니다. `OLLAMA_BASE_URL`은 컨테이너 내부 `http://ollama:11434`, `RERANK_CACHE_DIR`은 `/app/.reranker_cache`, `DOCLING_CACHE_DIR`은 `/app/.docling_cache`로 덮어씁니다. 호스트용 주소·경로와 혼동하지 않습니다. 환경변수 변경 후에는 `docker compose up -d --build`로 컨테이너 설정을 재적용합니다. 코드만 바꿀 때의 restart와 구분합니다.
+
+`LOCAL_DB_*`는 백엔드가 읽지 않으므로 삭제 권장입니다. 별도 로컬 PostgreSQL 개발이 필요할 때만 실제 이름인 `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`을 사용합니다. 기본 Compose는 Supabase를 강제하므로 `--profile local`만으로 백엔드 DB가 전환되지는 않습니다. 복지로 API 키는 공식 상세 조회 유틸리티용이며 기존 PDF 채팅에는 필요하지 않습니다. `MIN_DENSE_SIM`, `MIN_RERANK_SCORE`는 기존 복지 상담·진단 경로용이고 현재 기본 PDF RAG의 점수 컷오프가 아닙니다.
+
+Vite의 `envDir`은 설정 파일 기준 절대 경로로 저장소 루트를 가리킵니다. 기본 `VITE_` 노출 접두사를 유지하며 DB·Supabase 서버 키를 프런트에 전달하지 않습니다. `VITE_API_BASE_URL`은 채팅·제도 관리·문서 API 모두에 적용하며 로컬은 빈 값으로 두어 Vite의 `/api` 프록시를 사용합니다. 외부 서버 연결 시 `/api`를 제외한 HTTPS 기본 주소를 지정합니다. 프런트 환경변수는 빌드 시 반영되고 변경 후 Vite 재시작 또는 배포 재빌드가 필요합니다. [Vite 환경파일·노출 접두사 안내](https://vite.dev/config/shared-options#envdir)를 따릅니다.
+
+`/admin`의 `VITE_ADMIN_DEMO_KEY`는 브라우저에서 비교하는 데모 UI 잠금입니다. 번들에 포함되므로 실제 관리자 비밀번호나 서버 인증으로 사용할 수 없습니다. 루트 환경파일에 사용자가 데모 값만 설정한 뒤 Vite를 다시 시작합니다. 실제 문서·제도 관리 API의 서버 인증과 로컬 접속 검사는 그대로 적용되며, 공개 관리자 JWT 연동은 별도 작업입니다. `VITE_USE_MOCK`은 현재 기본 화면에서 사용하지 않으므로 제거할 수 있습니다.
 
 ## CSV와 검색 근거
 
@@ -105,14 +117,10 @@ python -m BackEnd.rag.reranker
 
 리랭커 외에도 bge-m3 임베딩과 Ollama LLM의 메모리가 필요합니다. 여유 메모리가 적거나 모델을 매번 다시 읽는 환경에서는 첫 응답이 오래 걸리거나 모델 호출이 시간 초과로 보류될 수 있습니다. 후보 수·스레드 수를 늘리면 자원 사용도 증가하므로 실제 실행 환경에 맞게 설정합니다.
 
-Compose 백엔드는 리랭커 의존성을 설치하고 같은 캐시 폴더를 마운트합니다. 모델 캐시·데이터·환경 비밀값은 Git·Docker 빌드 컨텍스트·Vercel 업로드에서 제외합니다. Vercel의 기본 의존성에는 로컬 ONNX 런타임을 포함하지 않으므로, 별도의 리랭커 실행 환경을 연결하기 전에는 일반 상담이 보류될 수 있습니다. 서버리스에 모델을 올리거나 외부 리랭킹 서비스를 연결하는 구성은 이 로컬 실행 설정에 포함하지 않습니다.
+Compose 백엔드는 리랭커 의존성을 설치하고 같은 캐시 폴더를 마운트합니다. 모델 캐시·데이터·환경 비밀값은 Git·Docker 빌드 컨텍스트·Vercel 업로드에서 제외합니다. 현재 Vercel 배포 대상은 프런트뿐이며 ONNX 리랭커·Ollama·문서 검색 API는 별도 Docker 백엔드에서 실행합니다. 외부 백엔드의 접근·인증·CORS를 준비하고 프런트의 API 주소를 연결하기 전까지 운영 채팅은 백엔드 미연결 상태입니다.
 
 ## 로컬 실행
-```
-npx vercel dev -L        # 프론트+백엔드를 http://localhost:3000 하나로 실행
-```
-또는 `uvicorn BackEnd.main:app --port 8000`과 `cd FrontEnd && npm run dev`를 따로 실행합니다 (Vite가 `/api`를 8000으로 넘김).
-백엔드 없이 화면만 보려면 `FrontEnd/.env`에 `VITE_USE_MOCK=true`.
+저장소 루트에서 `docker compose up -d --build`로 백엔드를 켜고, 별도 터미널에서 `cd FrontEnd && npm run dev`로 프런트를 실행합니다. http://localhost:5173/ 에서 기본 채팅을 사용하며 Vite가 `/api`를 8000으로 넘깁니다. Docker 없이 직접 실행할 때는 호스트 환경을 준비한 뒤 `uvicorn BackEnd.main:app --port 8000`을 사용합니다.
 
 ### 로컬 제도·문서 관리
 
@@ -122,11 +130,11 @@ npx vercel dev -L        # 프론트+백엔드를 http://localhost:3000 하나�
 
 처리 상태를 화면 상단에서 확인한다. 모델 준비/분석/청크 생성의 세부 진행률이나 ETA는 만들지 않는다. 저장 청크 수·접수 후 경과·마지막 조회 시각은 실제 응답을 표시한다. 정상 상태는 5초마다 조회하고, 일시 실패하면 마지막 정보를 보존해 5·10·20초 간격으로 최대 3회 다시 확인한다. 게시 전이나 조회 지연 중에는 검색을 막는다.
 
-문서·작업 ID를 URL에 유지해 새로고침 후에도 이어서 확인한다. 같은 문서에 원문 다시 올리기는 교체 ID를 채워 준다. 게시 후 **이 문서로 대화하기**를 누르면 기존 채팅 화면의 `/?document=<문서 UUID>`로 이동한다. 문서명을 표시하고 선택 문서의 `/api/v1/admin/documents/{id}/query`를 사용하므로 `test_only` 자료도 그 문서 안에서 질문할 수 있다. 일반 복지 상담의 자료 격리와 서버 접근 권한은 그대로 유지한다. 문서 질문은 로컬 Vite에서 제공하며 목업 설정과 무관하게 실제 문서 API를 사용한다.
+문서 관리의 ID는 처리 상태를 이어 확인하는 용도다. 기본 채팅은 http://localhost:5173/ 에서 바로 질문하며 POST /api/v1/chat을 사용한다. 문서 선택이나 별도 URL 인자가 필요 없다. 서버의 기존 로컬 접속 검사를 통과한 요청은 일반 상담 미노출로 등록한 문서도 포함해 현재 게시된 벡터를 읽는다. 공개 환경의 자료 격리·관리자 인증은 유지하며 DB 플래그를 바꾸지 않는다.
 
-문서 대화에는 복지 조건·일반 상담 추천·상담원 연결을 사용하지 않는다. 기록은 현재 화면의 메모리에만 두며 문서 변경·새로고침·일반 복지 상담으로 복귀 시 초기화한다. 일반 상담 기록은 변경하지 않는다. 원문 미리보기는 선택 사항이며 사람이 읽거나 승인해야 임베딩되는 절차는 없다.
+기본 채팅은 저장 벡터와 BM25 검색·리랭킹 결과를 모델에 전달해 일반 텍스트로 답한다. 복지 의도·지급 주기·enum 선택·추가 내용 후검증은 이 경로에 적용하지 않는다. 검색 원문과 페이지를 답변 아래에서 확인할 수 있다. 원문 미리보기는 선택 사항이며 업로드 전후에 사람이 임베딩을 승인하는 절차는 없다.
 
-현재 선택 문서의 `/query`는 검색 청크를 모델에 전달하고 일반 텍스트 답변을 받는 기본 RAG 경로다. 이 문서 질의 경로에서는 추가 내용 필터와 정확 인용·조건·예외 등의 답변 후검증을 잠시 적용하지 않는다. 화면의 **검색 원문**은 모델에 전달한 자료이며 모델이 정확히 인용한 근거라는 뜻이 아니다. 사용자가 모델 답변과 원문을 대조한다. 문서 접근 권한과 선택 문서 범위, 일반 `/api/v1/chat` 복지 상담의 기존 보호는 유지한다.
+기본 `/api/v1/chat`과 선택 문서의 `/query`는 모두 검색 원문을 모델에 전달하고 일반 텍스트 답변을 받는 문서 RAG 경로다. 추가 내용 필터와 정확 인용·조건·예외 등의 답변 후검증은 적용하지 않는다. 화면의 **검색 원문**은 모델 입력 자료이며 정확 인용 검증 결과가 아니므로 사용자가 답변과 원문을 대조한다. 자료 접근 권한·공개 환경의 격리와 선택 문서 질의의 문서 범위 검사는 유지한다.
 
 PDF 표 분석에는 opencv-python-headless가 필요하다. 누락 의존성은 document_dependency_missing으로 표시하고, 워커 로그에는 정제한 모듈명·단계·작업 ID만 남긴다. 설정은 .env.example을 참고하며 실제 .env를 코드나 로그에 노출하지 않는다. 공개 관리자 로그인 연동과 공개 배포 준비는 별도 범위다.
 
@@ -170,5 +178,10 @@ cd FrontEnd && npm test     # 프론트엔드
 
 pgvector 통합 테스트는 `RAG_TEST_DATABASE_URL`이 지정된 경우에만 실행합니다. 대상은 일회용 로컬 `rag_test` 데이터베이스여야 하며, 새 스키마를 미리 준비한 일회용 DB를 읽기 전용으로 확인합니다. 스키마 생성·테이블 초기화·prune을 하지 않습니다. 운영 DB나 보존할 로컬 데이터를 지정하지 않습니다. 모델 없이 실행하는 테스트와 별개로, 실제 모델의 검색 품질과 응답 시간은 로컬 Ollama를 켠 뒤 확인해야 합니다.
 
-## 배포 환경의 모델 연결
-Vercel에서는 Ollama나 Compose 전체를 실행할 수 없습니다. 배포에는 별도로 운영하는 Ollama·리랭커 실행 환경과 인증·접속 설정이 필요합니다. 로컬 리랭커만 설정한 상태에서는 일반 상담을 보류하며, 서비스명을 지정한 문의처·상세 조건 확인 안내는 DB 자료로 처리합니다. PC의 모델 캐시나 데이터 폴더를 배포 파일로 업로드하지 않습니다.
+## Vercel 프런트 전용 배포
+
+공식 프런트 주소는 https://welfare-helper-iota.vercel.app 이며, Vercel 프로젝트는 Root Directory `FrontEnd`, Framework `Vite`, 빌드 `npm run build`, 출력 `dist`로 설정합니다. `FrontEnd/vercel.json`의 SPA 재작성으로 `/admin` 등 직접 접속도 `index.html`을 받습니다. [Vercel Vite SPA 안내](https://vercel.com/docs/frameworks/frontend/vite#using-vite-to-make-spas)를 따릅니다. 기존 루트의 FastAPI + Vite multi-service 설정은 제거했으며 이 배포는 백엔드 API를 제공하지 않습니다. 원격 프로젝트 설정 변경과 실제 배포는 별도로 수행해야 합니다.
+
+`VITE_API_BASE_URL` 없이 빌드된 운영 화면에서는 API 호출 전에 백엔드 미연결 안내를 표시합니다. SPA HTML을 API JSON으로 처리하거나 가짜 답변을 제공하지 않습니다. 외부 Docker 백엔드를 준비한 뒤 Vercel의 프런트 빌드 환경에 해당 HTTPS 기본 주소를 설정하고 다시 배포해야 합니다. 서버 DB 비밀번호·Supabase 서버 키·Ollama 설정은 프런트 프로젝트에 주입하지 않습니다.
+
+외부 백엔드의 공개 접근·인증·CORS 및 모델 실행 환경은 별도 연결 단계입니다. 현재 로컬 문서 접수 경계를 외부 연결용으로 해제하지 않습니다. API 주소 변수만으로 로컬 Docker에 접속할 수 있는 것은 아니며, 연결 전까지 운영 채팅은 백엔드 미연결 상태입니다. Vercel에서 Compose·Ollama·리랭커를 함께 실행하지 않으며 PC의 모델 캐시나 데이터 폴더를 배포 파일에 포함하지 않습니다.

@@ -7,17 +7,11 @@ import { ProgramManager } from "../components/admin/ProgramManager";
 import { renderApp } from "../test/renderApp";
 
 const auth = vi.hoisted(() => ({ check: vi.fn(), signIn: vi.fn() }));
-vi.mock("../api/auth", async original => ({ ...await original<typeof import("../api/auth")>(), checkAdminAccess: auth.check }));
-vi.mock("../auth/supabase", () => ({ getSupabase: () => ({ auth: {
-  getSession: async () => ({ data: { session: null }, error: null }),
-  onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => undefined } } }),
-  signInWithPassword: auth.signIn,
-} }) }));
+vi.mock("../api/auth", async original => ({ ...await original<typeof import("../api/auth")>(), checkAdminAccess: auth.check, loginAdmin: auth.signIn }));
 
 async function login() {
   const ctx = renderApp("/admin");
-  await ctx.user.type(await screen.findByLabelText("이메일"), "admin@example.invalid");
-  await ctx.user.type(screen.getByLabelText("비밀번호"), "dummy-password");
+  await ctx.user.type(await screen.findByLabelText("비밀번호"), "dummy-password");
   await ctx.user.click(screen.getByRole("button", { name: "들어가기" }));
   await screen.findByRole("tab", { name: "복지제도 관리" });
   return ctx;
@@ -54,8 +48,7 @@ describe("관리자 화면", () => {
   beforeEach(() => {
     auth.check.mockRejectedValue(new ApiError("로그인이 필요합니다.", 401));
     auth.signIn.mockImplementation(async () => {
-      auth.check.mockResolvedValue({ is_admin: true, access_mode: "authenticated" });
-      return { error: null };
+      auth.check.mockResolvedValue({ is_admin: true, access_mode: "shared_password" });
     });
   });
 
@@ -64,13 +57,12 @@ describe("관리자 화면", () => {
     vi.restoreAllMocks();
   });
 
-  it("Supabase 로그인이 실패하면 들어갈 수 없다", async () => {
+  it("서버가 비밀번호를 거부하면 들어갈 수 없다", async () => {
     const { user } = renderApp("/admin");
-    auth.signIn.mockResolvedValue({ error: new Error("invalid credentials") });
-    await user.type(await screen.findByLabelText("이메일"), "admin@example.invalid");
-    await user.type(screen.getByLabelText("비밀번호"), "wrong");
+    auth.signIn.mockRejectedValue(new ApiError("관리자 비밀번호가 일치하지 않습니다.", 401));
+    await user.type(await screen.findByLabelText("비밀번호"), "wrong");
     await user.click(screen.getByRole("button", { name: "들어가기" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("로그인하지 못했습니다");
+    expect(await screen.findByRole("alert")).toHaveTextContent("비밀번호가 일치하지 않습니다");
   });
 
   it("새 제도를 추가하면 목록과 이용자 검색에 반영된다 (FR-6)", async () => {

@@ -1,83 +1,111 @@
-"""공개 관리자 인증과 일반/관리자 채팅 격리를 외부 호출 없이 확인한다."""
-
+"""공통 비밀번호·세션 폐기·익명 격리와 nullable 접수 계약을 외부 쓰기 없이 확인한다."""
+from contextlib import contextmanager
 from types import SimpleNamespace
-from uuid import uuid4
-
-import httpx
 import pytest
 from fastapi.testclient import TestClient
-
+from BackEnd.core.settings import Settings
+from BackEnd.documents.contracts import DocumentError, stable_hash
+from BackEnd.documents.store import DocumentStore
 import BackEnd.main as api
+import BackEnd.admin.session as sessions
 import BackEnd.documents.auth as auth
 import BackEnd.documents.api as documents
-from BackEnd.core.settings import Settings
-
 
 @pytest.fixture
-def setup_auth(monkeypatch):
-    settings = Settings(_env_file=None, documents_enabled=True, documents_local_mode=False,
-                        supabase_url="https://project.example.invalid", supabase_publishable_key="sb_publishable_dummy")
-    actor = str(uuid4())
-    monkeypatch.setattr(auth, "get_settings", lambda: settings)
-    monkeypatch.setattr(api, "get_settings", lambda: settings)
-    monkeypatch.setattr(documents, "get_settings", lambda: settings)
+def client(monkeypatch):
+    settings = Settings(_env_file=None, documents_enabled=True, admin_password="configured-test-password")
+    for module in (api, auth, documents, sessions):
+        monkeypatch.setattr(module, "get_settings", lambda: settings)
+    sessions._sessions.clear(); sessions._failures.clear()
     api.app.dependency_overrides[api.get_chat_service] = lambda: SimpleNamespace(repo=SimpleNamespace(include_local_documents=False))
     monkeypatch.setattr(api, "PgServiceRepository", lambda *a, **kw: SimpleNamespace(**kw))
     monkeypatch.setattr(api, "build_chat_service", lambda repo, settings: SimpleNamespace(repo=repo))
-    monkeypatch.setattr(api, "answer_document", lambda repo, service, query: (
-        {"kind": "answer", "text": "관리자 원문" if repo.include_local_documents else "공개 원문", "services": [], "suggestions": []}, {}))
+    monkeypatch.setattr(api, "answer_document", lambda repo, service, query: ({"kind":"answer", "text":"관리자 원문" if repo.include_local_documents else "공개 원문", "services":[], "suggestions":[]}, {}))
+    yield TestClient(api.app, base_url="https://api.example.invalid")
+    api.app.dependency_overrides.clear(); sessions._sessions.clear(); sessions._failures.clear()
 
-    def configure(active=True, expired=False, anonymous=False):
-        def verify_user(url, **kwargs):
-            assert url.endswith("/auth/v1/user")
-            assert kwargs["headers"] == {"apikey": "sb_publishable_dummy", "Authorization": "Bearer user-jwt"}
-            return httpx.Response(401 if expired else 200, request=httpx.Request("GET", url),
-                                  json={"id": actor, "is_anonymous": anonymous})
-        monkeypatch.setattr(auth.httpx, "get", verify_user)
-        monkeypatch.setattr("BackEnd.documents.store.get_document_store", lambda: SimpleNamespace(is_admin=lambda user: active and user == actor))
-        return TestClient(api.app, base_url="https://api.example.invalid"), actor
-    yield configure
-    api.app.dependency_overrides.clear()
+def login(client):
+    response = client.post("/api/v1/admin/login", json={"password":"configured-test-password"})
+    assert response.status_code == 200
+    return response.json(), {"Authorization":"Bearer " + response.json()["access_token"]}
 
+def test_login_session_chat_and_server_logout(client):
+    body, headers = login(client)
+    assert body["expires_at"] - int(sessions.time.time()) in {28799, 28800}
+    assert client.get("/api/v1/admin/session", headers=headers).json()["access_mode"] == "shared_password"
+    assert client.post("/api/v1/chat", headers=headers, json={"query":"원문 질문"}).json()["text"] == "관리자 원문"
+    assert client.post("/api/v1/chat", json={"query":"원문 질문"}).json()["text"] == "공개 원문"
+    assert client.post("/api/v1/admin/logout", headers=headers).status_code == 204
+    assert client.get("/api/v1/admin/session", headers=headers).status_code == 401
+    assert client.post("/api/v1/chat", headers=headers, json={"query":"원문 질문"}).status_code == 401
 
-@pytest.mark.parametrize("active,expired,anonymous,status", [(True, False, False, 200),
-    (False, False, False, 403), (True, True, False, 401), (True, False, True, 403)])
-def test_public_admin_session_and_chat_require_current_permission(setup_auth, active, expired, anonymous, status):
-    client, _ = setup_auth(active, expired, anonymous)
-    headers = {"Authorization": "Bearer user-jwt"}
-    assert client.get("/api/v1/admin/session", headers=headers).status_code == status
-    response = client.post("/api/v1/chat", json={"query": "문서 질문"}, headers=headers)
-    assert response.status_code == status
+def test_wrong_password_and_failure_limit(client, monkeypatch):
+    for _ in range(5):
+        assert client.post("/api/v1/admin/login", json={"password":"wrong"}).status_code == 401
+    response = client.post("/api/v1/admin/login", json={"password":"configured-test-password"})
+    assert response.status_code == 429 and 1 <= int(response.headers["retry-after"]) <= 60
+    future = sessions.time.time() + 61
+    monkeypatch.setattr(sessions.time, "time", lambda: future)
+    login(client)
+
+def test_expired_session_and_process_restart(client, monkeypatch):
+    body, headers = login(client)
+    future = body["expires_at"] + 1
+    monkeypatch.setattr(sessions.time, "time", lambda: future)
+    assert client.get("/api/v1/admin/session", headers=headers).status_code == 401
+    _, fresh = login(client)
+    sessions._sessions.clear()
+    assert client.get("/api/v1/admin/session", headers=fresh).status_code == 401
+
+def test_missing_password_never_allows_loopback_bypass(client, monkeypatch):
+    settings = Settings(_env_file=None, documents_enabled=True, admin_password=None)
+    monkeypatch.setattr(sessions, "get_settings", lambda: settings)
+    assert client.post("/api/v1/admin/login", json={"password":"anything"}).status_code == 503
+    assert client.get("/api/v1/admin/session").status_code == 503
+
+def test_invalid_token_and_invalid_login_body_do_not_leak_secrets(client):
+    assert client.get("/api/v1/admin/session", headers={"Authorization":"Bearer invalid"}).status_code == 401
+    response = client.post("/api/v1/admin/login", json={"password":"private-password" * 30})
+    assert response.status_code == 400 and "private-password" not in response.text
     assert response.headers["cache-control"] == "no-store"
-    if status == 200:
-        assert response.json()["text"] == "관리자 원문"
-    assert client.post("/api/v1/chat", json={"query": "문서 질문"}).json()["text"] == "공개 원문"
 
+def test_session_count_is_bounded(client, monkeypatch):
+    monkeypatch.setattr(sessions, "MAX_SESSIONS", 1)
+    login(client)
+    assert client.post("/api/v1/admin/login", json={"password":"configured-test-password"}).status_code == 503
 
-def test_public_upload_preserves_actor_and_postgres_artifact_contract(setup_auth):
-    client, actor = setup_auth()
-    document_id, job_id = str(uuid4()), str(uuid4())
-    calls = []
-
+def test_shared_upload_passes_no_fake_actor_and_records_auth_mode(client):
+    _, headers = login(client)
     class Store:
-        def register(self, metadata, digest, size, suffix, received_actor, config, content, **kwargs):
-            assert received_actor == actor and metadata["test_only"] is False
-            assert config["artifact_store"] == "postgres-current-v2"
-            calls.append("queued")
-            return {"document_id": document_id, "program_id": 1, "active_job_id": None}, {"job_id": job_id, "state": "queued"}
-
+        def register(self, metadata, digest, size, suffix, actor, config, content, **kwargs):
+            assert actor is None and kwargs["shared_password"] is True
+            assert config["auth_mode"] == "shared_password" and config["artifact_store"] == "postgres-current-v2"
+            assert metadata["test_only"] is False
+            return {"document_id":"d", "program_id":1, "active_job_id":None}, {"job_id":"j", "state":"queued"}
     api.app.dependency_overrides[documents.get_document_store] = lambda: Store()
-    response = client.post("/api/v1/admin/documents", headers={"Authorization": "Bearer user-jwt"},
-        data={"metadata": '{"service_id":"WLF_PUBLIC","name":"공개 원문","source_url":"https://example.invalid/source","source_organization":"기관","test_only":false}'},
-        files={"file": ("source.md", "# 공개 원문\n확인한 내용입니다.".encode(), "text/markdown")})
-    assert response.status_code == 202 and calls == ["queued"]
-    assert response.json()["processing_mode"] == "automatic"
-    assert response.json()["embedding_started"] is False
+    response = client.post("/api/v1/admin/documents", headers=headers,
+        data={"metadata":'{"service_id":"WLF_PUBLIC","name":"공개 원문","source_url":"https://example.invalid/source","source_organization":"기관","test_only":false}'},
+        files={"file":("source.md", "# 공개 원문\n내용입니다.".encode(), "text/markdown")})
+    assert response.status_code == 202 and response.json()["processing_mode"] == "automatic"
 
-
-def test_auth_does_not_accept_storage_secret_key(monkeypatch):
-    settings = Settings(_env_file=None, documents_enabled=True, supabase_url="https://project.example.invalid",
-                        supabase_publishable_key="sb_secret_not-for-auth")
-    monkeypatch.setattr(auth, "get_settings", lambda: settings)
-    response = TestClient(api.app).get("/api/v1/admin/session", headers={"Authorization": "Bearer user-jwt"})
-    assert response.status_code == 503 and "sb_secret" not in response.text
+@pytest.mark.parametrize("operation", ["cancel", "retry", "replace"])
+def test_shared_session_can_manage_legacy_nonlocal_document_without_admin_lookup(monkeypatch, operation):
+    class Cursor:
+        def execute(self, *a): pass
+        def fetchall(self): return [{"program_id":1, "test_only":False}]
+    class Store(DocumentStore):
+        @contextmanager
+        def cursor(self): yield Cursor()
+    store = Store(None)
+    monkeypatch.setattr(store, "automatic_ready", lambda: True)
+    monkeypatch.setattr(store, "_document", lambda *a, **kw: {"program_id":1, "local_ingestion":False, "original_bytes":b"source", "source_url":"https://example.invalid", "source_organization":"기관", "source_updated_at":None,"basis_year":None,"valid_from":None,"valid_until":None,"region_scope":None,"test_only":False,"file_sha256":"hash","file_format":"md","document_name":"원문","service_id":"WLF_PUBLIC"})
+    monkeypatch.setattr(store, "_pending", lambda *a: {"job_id":"j", "local_ingestion":False} if operation == "cancel" else None)
+    monkeypatch.setattr(store, "_discard", lambda *a: None)
+    monkeypatch.setattr(store, "_new_job", lambda *a: {"job_id":"j"})
+    if operation == "cancel":
+        assert store.cancel("d", None, shared_password=True) == "j"
+    elif operation == "retry":
+        assert store.retry("d", None, {"auth_mode":"shared_password"}, shared_password=True) == "j"
+    else:
+        store.register({"service_id":"WLF_PUBLIC","name":"원문","test_only":False}, stable_hash(b"source"), 6, "md", None,
+                       {"auth_mode":"shared_password"}, b"source", document_id="d", shared_password=True)

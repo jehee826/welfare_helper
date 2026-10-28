@@ -171,53 +171,33 @@ def test_public_keys_cannot_replace_the_server_key(key):
         supabase_headers(Settings(_env_file=None, supabase_url="https://example.invalid", supabase_service_key=key))
 
 
-def test_local_gate_needs_no_cloud_key_but_blocks_other_hosts_origins_and_deployments(monkeypatch):
+def test_admin_gate_requires_server_session_on_every_host(monkeypatch):
     from fastapi import Depends, FastAPI
-
-    settings = Settings(_env_file=None, documents_enabled=True, documents_local_mode=True)
+    import BackEnd.admin.session as sessions
+    settings = Settings(_env_file=None, documents_enabled=True, admin_password="configured-test-password")
     monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: settings)
-    monkeypatch.delenv("VERCEL", raising=False)
+    monkeypatch.setattr(sessions, "get_settings", lambda: settings)
     gate = FastAPI()
-
     @gate.get("/gate")
     def check(actor=Depends(require_document_admin)):
-        return {"local": actor is None}
-
-    client = TestClient(gate, base_url="http://127.0.0.1:8000", client=("127.0.0.1", 50000))
-    assert client.get("/gate").json() == {"local": True}
-    assert client.get("/gate", headers={"Origin": "https://example.invalid"}).status_code == 403
-    assert client.get("/gate", headers={"Host": "example.invalid"}).status_code == 403
-    assert client.get("/gate", headers={"X-Forwarded-For": "127.0.0.1"}).status_code == 403
-    remote = TestClient(gate, base_url="http://127.0.0.1:8000", client=("198.51.100.7", 50000))
-    assert remote.get("/gate").status_code == 403
-    monkeypatch.setenv("VERCEL", "1")
-    assert client.get("/gate").status_code == 403
-    monkeypatch.delenv("VERCEL")
-    settings.documents_local_mode = False
+        return {"mode":actor.auth_mode}
+    client = TestClient(gate, base_url="http://127.0.0.1:8000", client=("127.0.0.1",50000))
     assert client.get("/gate").status_code == 401
+    token = sessions.create_session("configured-test-password", "test-peer")["access_token"]
+    assert client.get("/gate", headers={"Authorization":"Bearer " + token}).json() == {"mode":"shared_password"}
+    sessions._sessions.clear()
 
 
-@pytest.mark.parametrize("key", ["sb_publishable_test-only"])
-def test_public_mode_sends_user_jwt_as_bearer_without_replacing_it_with_server_key(monkeypatch, key):
-    import httpx
+def test_shared_session_needs_no_supabase_auth_account(monkeypatch):
+    import BackEnd.admin.session as sessions
     from fastapi.security import HTTPAuthorizationCredentials
-
-    actor = str(uuid4())
-    settings = Settings(_env_file=None, documents_enabled=True, supabase_url="https://example.invalid", supabase_publishable_key=key)
+    settings = Settings(_env_file=None, documents_enabled=True, admin_password="configured-test-password")
     monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: settings)
-
-    def user_request(url, **kwargs):
-        assert kwargs["headers"] == {"apikey": key, "Authorization": "Bearer test-user-session"}
-        return httpx.Response(200, request=httpx.Request("GET", url), json={"id": actor, "is_anonymous": False})
-
-    class Store:
-        def is_admin(self, user):
-            return user == actor
-
-    monkeypatch.setattr(httpx, "get", user_request)
-    monkeypatch.setattr("BackEnd.documents.store.get_document_store", lambda: Store())
-    assert require_document_admin(None, HTTPAuthorizationCredentials(scheme="Bearer", credentials="test-user-session")) == actor
-
+    monkeypatch.setattr(sessions, "get_settings", lambda: settings)
+    token = sessions.create_session("configured-test-password", "test-peer")["access_token"]
+    access = require_document_admin(None, HTTPAuthorizationCredentials(scheme="Bearer", credentials=token))
+    assert access.auth_mode == "shared_password"
+    sessions._sessions.clear()
 
 def test_program_lookup_is_available_before_document_id_routes(monkeypatch):
     settings = Settings(_env_file=None, documents_enabled=True)

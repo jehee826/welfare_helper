@@ -13,7 +13,6 @@ services:
       DATABASE_URL: ${DATABASE_URL:-}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-}
       DOCUMENTS_ENABLED: ${DOCUMENTS_ENABLED:-true}
-      DOCUMENTS_LOCAL_MODE: ${DOCUMENTS_LOCAL_MODE:-false}
       DB_USER: ${DB_USER:-}
       DB_PASSWORD: ${DB_PASSWORD:-}
       DB_NAME: ${DB_NAME:-}
@@ -87,7 +86,6 @@ services:
       RERANK_CACHE_DIR: /app/.reranker_cache
       DOCLING_CACHE_DIR: /app/.docling_cache
       DOCUMENTS_ENABLED: ${DOCUMENTS_ENABLED:-true}
-      DOCUMENTS_LOCAL_MODE: ${DOCUMENTS_LOCAL_MODE:-false}
     cpus: ${DOCUMENT_WORKER_CPUS:-2}
     mem_limit: ${DOCUMENT_WORKER_MEMORY:-4g}
     volumes:

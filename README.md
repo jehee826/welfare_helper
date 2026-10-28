@@ -13,23 +13,23 @@
 1. Docker 실행에서는 아래 단일 Compose 명령이 Ollama 모델과 리랭커 캐시를 준비합니다. 호스트에서 직접 실행할 때만 사용할 Ollama 모델을 별도로 준비합니다.
 2. 저장소 루트의 `.env.example`을 참고해 환경을 준비합니다. 사용자가 관리하는 루트 `.env`를 Compose와 Vite가 사용하며 접속 문자열·키는 저장소에 넣지 않습니다. `FrontEnd/.env`는 사용하지 않습니다.
 3. 호스트에서 직접 실행할 때 파이썬 의존성: `pip install -r requirements.txt pytest`. Docker 실행은 이미지 빌드에서 설치합니다.
-4. 프론트는 Node.js 22 이상에서 `cd FrontEnd && npm ci`로 의존성을 설치합니다. Supabase SDK 버전과 lockfile을 고정합니다.
+4. 프론트 의존성: `cd FrontEnd && npm ci`. 현재 Vercel 프런트 빌드와 정적 산출물 빌드를 유지합니다.
 
 ### 환경변수 적용 기준
 
 현재 Supabase + Docker 구성에서는 `DATABASE_URL`과 별도 `DATABASE_PASSWORD`를 유지합니다. `DATABASE_MODE=supabase`, `INGEST_ON_STARTUP=false`로 정리하며 CSV 자동 적재는 지원하지 않습니다. `OLLAMA_LLM=qwen2.5:1.5b-instruct`, `OLLAMA_EMBED=bge-m3`, `EMBED_DIM=1024`와 고정 리랭커 모델·리비전은 현재 문서 벡터와 맞춰 사용합니다. 느린 노트북을 위한 예시 대기 시간은 `OLLAMA_TIMEOUT=600`초입니다. 예시 변경만으로 실제 런타임 설정이 바뀌지는 않습니다.
 
-Compose는 DB 모드를 `supabase`, 시작 적재를 `false`로 고정합니다. 문서는 `DOCUMENTS_ENABLED`(기본 true), 로컬 관리자 접수는 `DOCUMENTS_LOCAL_MODE`(기본 false)로 지정합니다. 노트북 검증은 로컬 모드를 true로, 공개 EC2는 false로 둡니다. `OLLAMA_BASE_URL`은 컨테이너 내부 `http://ollama:11434`, `RERANK_CACHE_DIR`은 `/app/.reranker_cache`, `DOCLING_CACHE_DIR`은 `/app/.docling_cache`로 덮어씁니다. 환경·코드 변경 후에는 `docker compose up -d --build`로 이미지를 빌드하고 컨테이너 설정을 재적용합니다. 코드 bind mount와 자동 reload는 사용하지 않습니다.
+Compose는 DB 모드를 `supabase`, 시작 적재를 `false`로 고정합니다. 문서는 `DOCUMENTS_ENABLED`(기본 true)로 활성화하고 모든 환경의 관리 기능은 서버 `ADMIN_PASSWORD`로 로그인합니다. `DOCUMENTS_LOCAL_MODE`는 인증 우회에 사용하지 않습니다. `OLLAMA_BASE_URL`은 `http://ollama:11434`, `RERANK_CACHE_DIR`은 `/app/.reranker_cache`, `DOCLING_CACHE_DIR`은 `/app/.docling_cache`로 적용합니다. 코드·환경 변경 후 `docker compose up -d --build`로 반영하며 코드 bind mount·자동 reload는 사용하지 않습니다.
 
 `LOCAL_DB_*`는 백엔드가 읽지 않으므로 삭제 권장입니다. 별도 로컬 PostgreSQL 개발이 필요할 때만 실제 이름인 `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`을 사용합니다. 기본 Compose는 Supabase를 강제하므로 `--profile local`만으로 백엔드 DB가 전환되지는 않습니다. 복지로 API 키는 공식 상세 조회 유틸리티용이며 기존 PDF 채팅에는 필요하지 않습니다. `MIN_DENSE_SIM`, `MIN_RERANK_SCORE`는 기존 복지 상담·진단 경로용이고 현재 기본 PDF RAG의 점수 컷오프가 아닙니다.
 
 Vite의 `envDir`은 설정 파일 기준 절대 경로로 저장소 루트를 가리킵니다. 기본 `VITE_` 노출 접두사를 유지하며 DB·Supabase 서버 키를 프런트에 전달하지 않습니다. `VITE_API_BASE_URL`은 채팅·제도 관리·문서 API 모두에 적용하며 로컬은 빈 값으로 두어 Vite의 `/api` 프록시를 사용합니다. 외부 서버 연결 시 `/api`를 제외한 HTTPS 기본 주소를 지정합니다. 프런트 환경변수는 빌드 시 반영되고 변경 후 Vite 재시작 또는 배포 재빌드가 필요합니다. [Vite 환경파일·노출 접두사 안내](https://vite.dev/config/shared-options#envdir)를 따릅니다.
 
-`/admin`, `/admin/documents`, `/admin/programs`는 같은 Supabase 이메일·비밀번호 로그인과 서버 관리자 확인을 사용합니다. 프런트에는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, 서버에는 같은 프로젝트의 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`를 설정합니다. publishable 키는 브라우저용 공개 키이며 사용자 JWT와 서버의 active 관리자 목록이 실제 권한을 결정합니다. 기존 `VITE_ADMIN_DEMO_KEY`·`VITE_USE_MOCK`은 사용하지 않으므로 제거할 수 있습니다. 비밀번호는 로그인 요청에만 사용하며 코드·로그·상담 이력에 저장하지 않습니다.
+`/admin`, `/admin/documents`, `/admin/programs`는 공통 관리자 비밀번호로 로그인합니다. 실제 비밀번호는 EC2 백엔드의 `ADMIN_PASSWORD` 환경변수에만 설정합니다. Vercel은 프런트 전용이므로 `VITE_` 변수나 브라우저 번들에 비밀번호를 넣지 않습니다. Supabase는 DB로 계속 사용하지만 관리자 이메일·사용자 계정·관리자 허용 목록 등록은 필요하지 않습니다. 기존 `VITE_ADMIN_DEMO_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_PUBLISHABLE_KEY`는 로그인 경로에서 사용하지 않습니다.
 
-SDK가 세션 갱신을 처리하고 모든 문서·제도 API와 로그인 상태의 기본 채팅에 Bearer 토큰을 전달합니다. API의 401은 세션 갱신 후 한 번만 재요청하며 403·처리 실패를 익명 호출로 우회하지 않습니다. `/api/v1/admin/session`에서 서버가 JWT·활성 관리자 권한 또는 엄격한 로컬 접수를 확인한 뒤 화면을 엽니다. localhost Vite가 EC2 API를 가리키는 경우에도 서버 확인을 통과해야 하므로 로컬 화면이라는 이유만으로 우회하지 않습니다. [Supabase 비밀번호 로그인](https://supabase.com/docs/reference/javascript/auth-signinwithpassword)과 [세션 변경 안내](https://supabase.com/docs/reference/javascript/auth-onauthstatechange)를 따릅니다.
+서버는 constant-time 비교로 비밀번호를 확인하고 32바이트 난수의 불투명 Bearer 세션을 발급합니다. 수명은 8시간, 서버 메모리에 최대 256개이며 로그아웃 시 서버에서도 폐기합니다. 단일 백엔드 프로세스의 재시작·재배포 후에는 다시 로그인해야 합니다. 로그인 실패는 서버가 보는 접속자별 60초 안에 5회까지이며 이후 429와 Retry-After를 반환합니다. 프록시 뒤에서는 같은 접속자로 묶일 수 있습니다. `ADMIN_PASSWORD`가 없으면 로그인·관리 API는 503으로 닫히며 localhost도 우회하지 않습니다.
 
-Supabase에 로그인 계정이 있어도 `public.rag_document_admins`의 해당 `user_id`가 `active=true`여야 관리자 기능을 사용할 수 있습니다. 운영자가 Supabase SQL Editor에서 본인의 `auth.users.id`를 확인하고 해당 UUID로 관리자 행을 등록하거나 활성화합니다. 앱이 계정을 임의로 등록하거나 관리자 권한을 부여하지 않습니다. 서버의 `/auth/v1/user` 검증에는 publishable 키를 사용하며 service_role 키나 Storage 설정을 로그인 필수값으로 요구하지 않습니다. 현재 원본·분석 결과의 보존 경로는 기존 PostgreSQL입니다.
+브라우저는 비밀번호를 로그인 요청에만 사용하고 세션 토큰은 해당 탭의 sessionStorage에 보관합니다. 모든 문서·제도 API와 관리자 상담에 같은 Bearer를 전달하고 서버 `/api/v1/admin/session` 확인 후 화면을 엽니다. 401이면 해당 요청의 세션만 정리하고 공개 요청으로 재시도하지 않습니다. localhost Vite가 EC2 API를 가리켜도 동일한 서버 확인을 거칩니다. 별도 계정 생성·관리자 SQL·DDL은 수행하지 않습니다.
 
 ## CSV와 검색 근거
 
@@ -84,7 +84,9 @@ docker compose up -d --build
 
 새 작업은 parse_config.processing_mode=automatic으로 구분한다. 분석 해시·출처 fingerprint·실제 처리 시각·모델/토크나이저 설정을 기록하며 reviewed_by/reviewed_at은 NULL이다. 사람 검토를 했다고 표시하지 않는다. 기존 수동 검토 게시본은 기존 출처 검증을 유지한다. 이전 awaiting_review·진행 작업은 몰래 자동 처리하지 않는다.
 
-Compose 로컬 모드는 루프백 포트·Host·접속자 검사와 교차 Origin·Forwarded 차단을 유지한다. 공개 관리 API는 사용자 JWT와 DB 관리자 허용 목록을 확인하며 빈 목록에 임의 계정을 추가하지 않는다. 서버 비밀키를 브라우저로 보내지 않는다. 일반 채팅은 관리자 로그인과 별개로 공개 가능한 게시 원문만 검색한다. 로컬 모드에서도 로컬 접속 검사를 통과한 채팅만 검증용 문서를 추가하며, 외부 채팅은 공개 자료 검색으로 제한한다.
+모든 관리자 API는 서버 공통 비밀번호 세션을 요구합니다. 제도·문서 원문은 기존 DB에 보존하고 인증 실패를 공개 검색으로 우회하지 않습니다. 일반 익명 채팅은 공개 가능한 게시 원문만 검색하고 로그인한 관리자는 같은 기본 채팅에서 test_only 문서도 확인할 수 있습니다. 서버 비밀번호·토큰을 프런트 소스나 로그에 기록하지 않습니다.
+
+현재 DB의 nullable actor 계약을 재사용합니다. 공통 비밀번호 접수는 uploaded_by·created_by에 가짜 UUID를 넣지 않고 NULL을 사용하며, 레거시 FK 호환 필드인 local_ingestion=true와 parse_config.auth_mode=shared_password를 함께 기록합니다. 이 필드는 루프백이나 테스트 전용이라는 뜻으로 사용하지 않으며 공개 범위 test_only와 별개입니다. 서버가 확인한 공통 관리자 세션은 기존 개별 계정 문서의 교체·재시도·취소·삭제에도 명시적인 권한 맥락으로 적용됩니다. 기존 auth.users FK·과거 기록은 보존하고 새 관리자 계정·허용 목록·스키마는 만들지 않습니다.
 
 ### 파일에서 답변까지
 
@@ -128,21 +130,21 @@ Compose 백엔드는 리랭커 의존성을 설치하고 같은 캐시 폴더를
 
 ### 로컬 제도·문서 관리
 
-문서 관리 버튼은 모든 환경에서 표시합니다. 공개 환경은 로그인 후 서버 권한 확인을 거쳐 제도 등록·관리 → 원문 업로드 → 자동 분석·청크·임베딩·게시 → 기본 채팅으로 이어집니다. 기존 진행 상태·검색 원문·쪽 표시를 같은 화면에서 사용합니다. 루트 환경파일에서 `DOCUMENTS_LOCAL_MODE=true`, `BACKEND_BIND_HOST=127.0.0.1`로 설정한 노트북은 로컬 Vite 프록시와 서버의 루프백·동일 출처·Forwarded 차단 검사를 통과한 경우에만 로그인 없이 기존 접수를 사용할 수 있습니다. 공개 환경은 이 로컬 모드를 끕니다.
+문서 관리 버튼은 모든 환경에서 표시합니다. 공통 비밀번호 로그인 → 제도 등록·관리 → 원문 업로드 → 자동 분석·청크·임베딩·게시 → 기본 채팅으로 이어집니다. 기존 진행 상태·검색 원문·쪽 표시를 같은 화면에서 사용합니다. 노트북도 Vite 프록시를 통해 동일한 서버 비밀번호 세션을 사용합니다.
 
 실제 담당 부서가 없으면 운영자가 확인한 기관·부서를 departments에 먼저 등록한다. 목업 기관을 실제 제도의 담당 기관으로 사용하지 않는다. 문서가 연결된 제도는 근거가 무효화되지 않도록 이름·외부 ID·test_only 변경과 삭제를 막는다.
 
 처리 상태를 화면 상단에서 확인한다. 모델 준비/분석/청크 생성의 세부 진행률이나 ETA는 만들지 않는다. 저장 청크 수·접수 후 경과·마지막 조회 시각은 실제 응답을 표시한다. 정상 상태는 5초마다 조회하고, 일시 실패하면 마지막 정보를 보존해 5·10·20초 간격으로 최대 3회 다시 확인한다. 게시 전이나 조회 지연 중에는 검색을 막는다.
 
-문서 관리의 ID는 처리 상태를 이어 확인하는 용도다. 기본 채팅은 `/`에서 바로 질문하며 POST /api/v1/chat을 사용한다. 문서 선택이나 별도 URL 인자가 필요 없다. 서버가 검증한 로그인 관리자는 같은 채팅에서 `test_only` 문서까지 확인할 수 있다. 익명 공개 요청은 공개 가능한 원문만 검색하고, 노트북의 엄격한 로컬 접속 검사를 통과한 경우에만 기존 로컬 자료를 추가한다. 유효하지 않거나 비관리자 토큰을 공개 검색으로 숨기지 않고 거부하며 DB 플래그는 바꾸지 않는다.
+문서 관리의 ID는 처리 상태를 이어 확인하는 용도입니다. 기본 채팅은 `/`의 POST `/api/v1/chat`을 사용하며 문서 선택·특수 URL이 필요 없습니다. 서버가 검증한 관리자 세션은 test_only 원문도 확인할 수 있지만 익명 요청은 공개 원문만 검색합니다. 잘못되거나 만료된 토큰은 거부하고 공개 검색으로 숨기지 않으며 기존 DB 공개 플래그를 바꾸지 않습니다.
 
-관리자 상담은 세션 메모리만 사용하며 공유 localStorage 이력에 저장하지 않습니다. 로그아웃·계정 변경 시 관리자 응답·진행 중 요청을 초기화하고 기존 익명 상담 이력은 보존합니다. 단순 토큰 갱신은 입력 중인 관리 화면을 초기화하지 않습니다. 로그아웃은 현재 Supabase 세션만 종료합니다. 관리자·채팅 API 응답은 `Cache-Control: no-store`를 적용합니다.
+관리자 상담 내용은 메모리에만 보관하고 공용 localStorage 이력에 저장하지 않습니다. 로그아웃·세션 교체·만료 시 관리자 응답과 진행 중 요청을 초기화하며 기존 익명 이력은 보존합니다. 뒤늦은 이전 요청의 401이 새 로그인 세션을 지우지 않도록 구분합니다. 관리자·채팅 API 응답에는 `Cache-Control: no-store`를 적용합니다.
 
 기본 채팅은 저장 벡터와 BM25 검색·리랭킹 결과를 모델에 전달해 일반 텍스트로 답한다. 복지 의도·지급 주기·enum 선택·추가 내용 후검증은 이 경로에 적용하지 않는다. 검색 원문과 페이지를 답변 아래에서 확인할 수 있다. 원문 미리보기는 선택 사항이며 업로드 전후에 사람이 임베딩을 승인하는 절차는 없다.
 
 기본 `/api/v1/chat`과 선택 문서의 `/query`는 모두 검색 원문을 모델에 전달하고 일반 텍스트 답변을 받는 문서 RAG 경로다. 추가 내용 필터와 정확 인용·조건·예외 등의 답변 후검증은 적용하지 않는다. 화면의 **검색 원문**은 모델 입력 자료이며 정확 인용 검증 결과가 아니므로 사용자가 답변과 원문을 대조한다. 자료 접근 권한·공개 환경의 격리와 선택 문서 질의의 문서 범위 검사는 유지한다.
 
-PDF 표 분석에는 opencv-python-headless가 필요하다. 누락 의존성은 document_dependency_missing으로 표시하고, 워커 로그에는 정제한 모듈명·단계·작업 ID만 남긴다. 설정은 .env.example을 참고하며 실제 .env를 코드나 로그에 노출하지 않는다. 실제 배포 사용에는 활성 관리자 등록과 EC2 HTTPS 연결이 준비되어야 한다.
+PDF 표 분석에는 opencv-python-headless가 필요합니다. 누락 의존성은 document_dependency_missing으로 표시하며 워커 로그에는 정제한 모듈명·단계·작업 ID만 남깁니다. 실제 배포 사용에는 서버 ADMIN_PASSWORD와 EC2 HTTPS 연결이 필요합니다. 실제 환경파일·비밀번호·토큰은 응답이나 로그에 노출하지 않습니다.
 
 호스트에서 로컬 DB를 별도 검증할 때는 `DATABASE_MODE=local`로 지정하고 `DATABASE_URL`을 비운 뒤 로컬 `DB_*` 값을 사용합니다. `DATABASE_URL`이 설정되어 있으면 Supabase 등 해당 DB가 우선됩니다. 보존된 PostgreSQL 서비스 정의는 기존 16 버전 데이터 경로와 `pgvector/pgvector:pg16` 이미지를 유지합니다. 기존 데이터 폴더나 볼륨을 초기화하지 않습니다.
 
@@ -198,7 +200,7 @@ EC2 Linux에는 Git, Docker Engine과 Compose v2 플러그인을 먼저 설치�
 
 `test_only` 문서는 공개 검색에서 제외되므로 공개 가능한 게시 원문이 준비되어야 합니다. EC2의 코드·모델 기동 준비와 공개 RAG 자료 준비는 별개이며, 공개 원문이 없으면 공개 질의는 근거 없음으로 응답할 수 있습니다. 로컬 검증을 위해 기존 플래그를 바꾸지 않으며 공개 원문은 적법한 관리자 경로로 등록합니다.
 
-저장소를 받은 뒤 루트 `.env.example`을 참고해 EC2의 서버 환경파일을 한 번 준비합니다. 기존 `DATABASE_URL`·별도 `DATABASE_PASSWORD`와 동일한 `bge-m3` 1024차원·리랭커 리비전을 사용하고 `DOCUMENTS_ENABLED=true`, `DOCUMENTS_LOCAL_MODE=false`로 둡니다. 로컬 문서의 `test_only` 값과 DB 스키마·권한은 변경하지 않습니다. `OLLAMA_LLM` 하나로 생성 모델과 Ollama 준비 목록을 함께 선택합니다. 공개 관리자 기능은 서버의 `SUPABASE_URL`·`SUPABASE_PUBLISHABLE_KEY`, 프런트의 `VITE_SUPABASE_URL`·`VITE_SUPABASE_PUBLISHABLE_KEY`와 기존 활성 관리자 허용 목록을 사용합니다.
+저장소를 받은 뒤 `.env.example`을 참고해 EC2 서버 환경을 한 번 준비합니다. 기존 DATABASE_URL·별도 DATABASE_PASSWORD, bge-m3 1024차원과 리랭커 리비전을 유지하고 `DOCUMENTS_ENABLED=true`, `ADMIN_PASSWORD`를 설정합니다. OLLAMA_LLM 하나로 생성 모델과 준비 목록을 선택합니다. 공통 관리자 로그인에 Supabase Auth 키·사용자·관리자 행은 필요하지 않으며 기존 데이터와 test_only 플래그를 바꾸지 않습니다.
 
 최초 준비와 이후 코드 갱신은 저장소 루트에서 다음 명령을 사용합니다.
 
@@ -220,4 +222,4 @@ Ollama는 설정된 두 모델이 존재한 뒤 healthy가 되고 backend는 그
 
 실제 EC2 주소와 도메인·유효한 인증서를 준비해 HTTPS API 주소를 만든 뒤, Vercel의 `VITE_API_BASE_URL`에 `/api`를 제외한 해당 HTTPS 기본 주소를 넣고 Git 자동 빌드로 반영합니다. **운영 프런트에 localhost·127.0.0.1을 넣지 않습니다.** 이는 방문자 자신의 컴퓨터를 가리키며 HTTPS 프런트에서 HTTP API 호출도 차단될 수 있습니다. EC2 주소·인증서·프록시가 없는 상태에서 실제 공개 연결 성공을 주장하지 않습니다. 이후 프런트를 정적 산출물로 옮길 때도 빌드 시 같은 주소를 주입합니다.
 
-`CORS_ALLOWED_ORIGINS`는 JSON 배열이며 공식 `https://welfare-helper-iota.vercel.app`와 `http://localhost:5173`, `http://127.0.0.1:5173` 중 필요한 Origin만 허용합니다. 다른 주소·와일드카드는 설정 오류로 거부합니다. CORS는 브라우저 출처 제어이며 서버 인증을 대신하지 않습니다. 익명 공개 채팅은 공개 원문만 읽고 로그인 관리자의 문서 확인과 업로드·제도 관리는 JWT·활성 관리자 검사를 거칩니다.
+`CORS_ALLOWED_ORIGINS`는 공식 https://welfare-helper-iota.vercel.app 및 http://localhost:5173, http://127.0.0.1:5173 중 필요한 Origin만 JSON 배열로 허용합니다. CORS는 서버 인증을 대신하지 않습니다. 공개 채팅은 공개 원문만 읽고 관리자 기능은 공통 비밀번호로 발급한 유효 세션을 요구합니다. 비밀번호·토큰 전송은 실제 공개 환경에서 반드시 HTTPS를 사용합니다.

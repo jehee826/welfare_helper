@@ -88,7 +88,7 @@ class DocumentStore:
             cur.execute('SELECT public.welfare_document_processing_contract() AS version')
             return cur.fetchone()['version'] == 'automatic-v1'
 
-    def register(self, metadata, file_hash, size, suffix, actor, config, original, *, document_id=None):
+    def register(self, metadata, file_hash, size, suffix, actor, config, original, *, document_id=None, shared_password=False):
         if not self.automatic_ready():
             raise DocumentError('automatic_processing_schema_required')
         replacing = document_id is not None
@@ -120,7 +120,7 @@ class DocumentStore:
             doc = self._document(cur, document_id, lock=True)
             if doc['program_id'] != program['program_id']:
                 raise DocumentError('document_program_immutable')
-            self._admin(cur, actor, local=doc['local_ingestion'])
+            self._admin(cur, actor, local=shared_password or doc['local_ingestion'])
             pending = self._pending(cur, document_id)
             if pending:
                 if (replacing and pending['state'] == 'awaiting_review'
@@ -185,12 +185,12 @@ class DocumentStore:
         # 과거 호출자는 자동 승인으로 바꾸지 않고 재업로드를 안내한다.
         raise DocumentError('manual_index_disabled_upload_again')
 
-    def retry(self, document_id, actor, config):
+    def retry(self, document_id, actor, config, *, shared_password=False):
         if not self.automatic_ready():
             raise DocumentError('automatic_processing_schema_required')
         with self.cursor() as cur:
             doc = self._document(cur, document_id, lock=True)
-            self._admin(cur, actor, local=doc['local_ingestion'])
+            self._admin(cur, actor, local=shared_password or doc['local_ingestion'])
             if self._pending(cur, document_id):
                 raise DocumentError('document_job_already_pending')
             if not doc['original_bytes']:
@@ -210,20 +210,20 @@ class DocumentStore:
                     (state, code[:100], job_id))
         cur.execute('DELETE FROM public.welfare_document_vectors WHERE job_id=%s', (job_id,))
 
-    def cancel(self, document_id, actor):
+    def cancel(self, document_id, actor, *, shared_password=False):
         with self.cursor() as cur:
             self._document(cur, document_id, lock=True)
             job = self._pending(cur, document_id)
             if not job:
                 raise DocumentError('pending_job_not_found')
-            self._admin(cur, actor, local=job['local_ingestion'])
+            self._admin(cur, actor, local=shared_password or job['local_ingestion'])
             self._discard(cur, job['job_id'], 'cancelled', 'cancelled_by_user')
             return str(job['job_id'])
 
-    def delete(self, document_id, actor):
+    def delete(self, document_id, actor, *, shared_password=False):
         with self.cursor() as cur:
             doc = self._document(cur, document_id, lock=True)
-            self._admin(cur, actor, local=doc['local_ingestion'])
+            self._admin(cur, actor, local=shared_password or doc['local_ingestion'])
             cur.execute('DELETE FROM public.rag_documents WHERE document_id=%s', (document_id,))
 
     def claim(self, seconds, service_id=None):

@@ -5,9 +5,8 @@ import type { DocumentStatus, Job } from "../api/documentApi";
 import { ApiError } from "../api/errors";
 
 const { checkAdminAccess } = vi.hoisted(() => ({ checkAdminAccess: vi.fn() }));
-vi.mock("../auth/supabase", () => ({ getSupabase: () => null }));
 vi.mock("../api/auth", async original => ({ ...await original<typeof import("../api/auth")>(), checkAdminAccess }));
-beforeEach(() => checkAdminAccess.mockResolvedValue({ is_admin: true, access_mode: "authenticated" }));
+beforeEach(() => checkAdminAccess.mockResolvedValue({ is_admin: true, access_mode: "shared_password" }));
 
 const id = "00000000-0000-0000-0000-000000000001";
 const jobId = "00000000-0000-0000-0000-000000000002";
@@ -134,8 +133,8 @@ it("기본 채팅은 목업 설정과 무관하게 실제 API를 사용한다", 
 
 it("공개 모드에서 서버가 관리자 권한을 거부하면 문서 API를 호출하지 않는다", async () => {
   vi.stubEnv("DEV", false); const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
-  checkAdminAccess.mockRejectedValue(new ApiError("활성 관리자 권한이 없습니다.", 403));
+  checkAdminAccess.mockRejectedValue(new ApiError("관리자 로그인이 필요합니다.", 401));
   await act(async () => { mount(); });
-  expect(screen.getByRole("alert")).toHaveTextContent("활성 관리자 권한");
+  expect(screen.getByRole("heading", { name: "관리자 로그인" })).toBeInTheDocument();
   expect(fetch).not.toHaveBeenCalled();
 });

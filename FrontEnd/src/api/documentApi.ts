@@ -38,7 +38,7 @@ export class DocumentApiError extends Error {
       : status === 503
       ? "문서 서버 또는 DB 연결을 확인하세요. 비밀번호를 변경했다면 컨테이너 restart만으로 환경변수가 갱신되지 않습니다. 환경 반영 후 다시 시도하세요."
       : status === 401 || status === 403
-        ? "로그인 세션과 활성 관리자 권한을 확인해 주세요."
+        ? "관리자 로그인 세션을 확인해 주세요."
         : "요청을 완료하지 못했습니다. 상태를 새로 확인한 뒤 다시 시도하세요.");
   }
 }
@@ -61,6 +61,6 @@ export function jsonPost(body: unknown): RequestInit {
 
 export function documentError(error: unknown) {
   if (error instanceof ApiError && ["backend_not_configured", "session_expired"].includes(error.code)) return error.message;
-  if (error instanceof ApiError && [401, 403].includes(error.status)) return "로그인 세션과 활성 관리자 권한을 확인해 주세요.";
+  if (error instanceof ApiError && [401, 403].includes(error.status)) return "관리자 로그인 세션을 확인해 주세요.";
   return error instanceof DocumentApiError ? `${error.message} (${error.code})` : "서버에 연결하지 못했습니다. 백엔드와 Vite 프록시를 확인한 뒤 다시 시도하세요.";
 }

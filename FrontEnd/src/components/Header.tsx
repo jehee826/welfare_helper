@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { STORAGE_KEYS, readJson, writeJson } from "../lib/storage";
 import { useAuth } from "../auth/AuthProvider";
-import { getSupabase } from "../auth/supabase";
+import { logoutAdmin } from "../api/auth";
 
 export function Header({ children }: { children?: ReactNode }) {
   const { session } = useAuth();
@@ -10,9 +10,8 @@ export function Header({ children }: { children?: ReactNode }) {
   async function logout() {
     setLogoutError("");
     try {
-      const result = await getSupabase()?.auth.signOut({ scope: "local" });
-      if (result?.error) setLogoutError("로그아웃하지 못했습니다. 다시 시도해 주세요.");
-    } catch { setLogoutError("로그아웃 서버에 연결하지 못했습니다."); }
+      await logoutAdmin();
+    } catch { setLogoutError("이 기기에서 로그아웃했지만 서버 세션 종료는 확인하지 못했습니다."); }
   }
   const [large, setLarge] = useState(() => readJson<boolean>(STORAGE_KEYS.largeText, false));
 

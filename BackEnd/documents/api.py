@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from BackEnd.core.settings import get_settings
 from BackEnd.documents.auth import require_document_admin
+from BackEnd.admin.session import AdminSession
 from BackEnd.documents.analysis import read_analysis
 from BackEnd.documents.contracts import DocumentError, DocumentMetadata, stable_hash, validate_file
 from BackEnd.documents.store import get_document_store
@@ -129,10 +130,14 @@ async def upload_document(file: UploadFile = File(...), metadata: str = Form(...
         raise HTTPException(415, str(exc)) from None
 
     def persist():
+        shared = isinstance(actor, AdminSession)
         config = {"ocr": settings.docling_ocr, "max_pages": settings.documents_max_pages,
                   "max_characters": settings.documents_max_characters, "artifact_store": "postgres-current-v2"}
+        if shared:
+            config["auth_mode"] = actor.auth_mode
         doc, job = store.register(parsed.model_dump(mode="json"), stable_hash(content), len(content), suffix,
-                                  actor, config, content, document_id=document_id)
+                                  None if shared else actor, config, content, document_id=document_id,
+                                  **({"shared_password": True} if shared else {}))
         return {"id":str(doc["document_id"]), "document_id":str(doc["document_id"]),
                 "program_id":doc["program_id"], "job_id":str(job["job_id"]), "state":job["state"],
                 "test_only":parsed.test_only, "embedding_started":False,
@@ -210,7 +215,10 @@ def document_job(document_id: UUID, job_id: UUID, actor=Depends(require_document
 @router.post("/{document_id}/cancel")
 def cancel_document_job(document_id: UUID,actor=Depends(require_document_admin),store=Depends(get_document_store)):
     try:
-        return {"job_id":store.cancel(str(document_id),actor),"state":"cancelled","candidate_discarded":True}
+        shared = isinstance(actor, AdminSession)
+        return {"job_id":store.cancel(str(document_id), None if shared else actor,
+                                     **({"shared_password": True} if shared else {})),
+                "state":"cancelled","candidate_discarded":True}
     except Exception as exc:
         document_failure(exc)
 
@@ -218,7 +226,8 @@ def cancel_document_job(document_id: UUID,actor=Depends(require_document_admin),
 @router.delete("/{document_id}",status_code=204)
 def delete_document(document_id: UUID,actor=Depends(require_document_admin),store=Depends(get_document_store)):
     try:
-        store.delete(str(document_id),actor)
+        shared = isinstance(actor, AdminSession)
+        store.delete(str(document_id), None if shared else actor, **({"shared_password": True} if shared else {}))
     except Exception as exc:
         document_failure(exc)
 
@@ -234,7 +243,11 @@ def retry_document(document_id: UUID, actor: str = Depends(require_document_admi
         settings = get_settings()
         config = {"ocr":settings.docling_ocr, "max_pages":settings.documents_max_pages,
                   "max_characters":settings.documents_max_characters, "artifact_store":"postgres-current-v2"}
-        return {"job_id":store.retry(str(document_id),actor,config), "state":"queued",
+        shared = isinstance(actor, AdminSession)
+        if shared:
+            config["auth_mode"] = actor.auth_mode
+        return {"job_id":store.retry(str(document_id), None if shared else actor, config,
+                                    **({"shared_password": True} if shared else {})), "state":"queued",
                 "processing_mode":"automatic", "human_review_required":False}
     except Exception as exc:
         document_failure(exc)

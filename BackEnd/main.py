@@ -19,7 +19,8 @@ from BackEnd.rag.factory import build_chat_service
 from BackEnd.rag.repository import PgServiceRepository
 from BackEnd.rag.reranker import LocalReranker, RerankerError
 from BackEnd.documents.api import DocumentBodyLimit, router as document_router
-from BackEnd.documents.auth import bearer, require_document_admin, require_local_document_admin
+from BackEnd.documents.auth import bearer, require_document_admin
+from BackEnd.admin.session import router as admin_session_router
 from BackEnd.documents.qa import answer_document
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.admin.programs import router as program_router
@@ -31,6 +32,7 @@ app = FastAPI(title="welfare_helper")
 app.add_middleware(DocumentBodyLimit)
 app.include_router(document_router)
 app.include_router(program_router)
+app.include_router(admin_session_router)
 app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_origins,
                    allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                    allow_headers=["Content-Type", "Authorization"])
@@ -165,21 +167,11 @@ def chat(request: ChatRequest, http_request: Request, service: ChatService = Dep
     settings = get_settings()
     include_private = False
     if "authorization" in http_request.headers and credentials is None:
-        raise HTTPException(401, "Supabase 사용자 access token을 확인해 주세요.")
+        raise HTTPException(401, "관리자 세션을 확인해 주세요.")
     if credentials is not None:
-        # 로그인 요청은 JWT·활성 관리자 권한을 먼저 확인한다. 실패를 익명 검색으로 우회하지 않는다.
+        # 서버 관리자 세션을 먼저 확인한다. 실패를 익명 검색으로 우회하지 않는다.
         require_document_admin(http_request, credentials)
         include_private = True
-    elif settings.documents_enabled and settings.documents_local_mode:
-        # 기존 로컬 접근 검사를 통과한 요청만 등록된 검증용 문서까지 조회한다.
-        try:
-            require_local_document_admin(http_request, settings)
-        except HTTPException as exc:
-            if exc.status_code != 403:
-                raise
-            # 외부 요청은 공개 자료만 조회한다. 관리자 API의 접근 검사는 완화하지 않는다.
-        else:
-            include_private = True
     if include_private:
         repo = PgServiceRepository(lambda: connect(settings), settings.ollama_embed, settings.embed_dim,
                                    documents_enabled=True, include_local_documents=True)
@@ -198,7 +190,8 @@ def chat(request: ChatRequest, http_request: Request, service: ChatService = Dep
 
 @app.get("/api/v1/admin/session")
 def admin_session(actor=Depends(require_document_admin)):
-    return {"is_admin": True, "access_mode": "local" if actor is None else "authenticated"}
+    return {"is_admin": True, "access_mode": actor.auth_mode,
+            "expires_at": actor.expires_at, "session_id": actor.session_id}
 
 
 @app.middleware("http")

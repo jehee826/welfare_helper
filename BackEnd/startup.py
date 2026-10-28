@@ -36,7 +36,7 @@ def main() -> int:
         )
         return 1
     sys.stdout.flush()
-    os.execvp("uvicorn", ["uvicorn", "BackEnd.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"])
+    os.execvp("uvicorn", ["uvicorn", "BackEnd.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-proxy-headers"])
     return 0
 
 

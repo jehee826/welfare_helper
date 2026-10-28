@@ -49,9 +49,8 @@ class Settings(BaseSettings):
     bokjiro_timeout: float = Field(default=15, gt=0, le=60)
 
     documents_enabled: bool = False
-    documents_local_mode: bool = False
+    admin_password: SecretStr | None = None
     supabase_url: str = ""
-    supabase_publishable_key: SecretStr | None = None
     supabase_service_key: SecretStr | None = None
     documents_bucket: str = "document-originals"
     documents_max_file_mb: int = Field(default=20, ge=1, le=50)

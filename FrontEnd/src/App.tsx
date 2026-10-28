@@ -27,7 +27,7 @@ export function App({ api = liveApi }: { api?: WelfareApi }) {
 
 function AppRoutes({ api }: { api: WelfareApi }) {
   const { session, ready } = useAuth();
-  const chat = ready ? <UserPage key={session?.user.id ?? "public"} api={api} privateSession={!!session} /> : <p role="status">세션 확인 중…</p>;
+  const chat = ready ? <UserPage key={session?.session_id ?? "public"} api={api} privateSession={!!session} /> : <p role="status">세션 확인 중…</p>;
   return (
     <Routes>
       <Route path="/" element={chat} />

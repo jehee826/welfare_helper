@@ -11,14 +11,13 @@ import BackEnd.main as api
 import BackEnd.readiness as checks
 
 
-@pytest.mark.parametrize("local_mode,host,peer,headers,include_local", [
-    (True, "localhost", "127.0.0.1", {}, True),
-    (True, "api.example.invalid", "198.51.100.8", {}, False),
-    (True, "localhost", "127.0.0.1", {"X-Forwarded-For": "127.0.0.1"}, False),
-    (False, "localhost", "127.0.0.1", {}, False),
+@pytest.mark.parametrize("host,peer,headers", [
+    ("localhost", "127.0.0.1", {}),
+    ("api.example.invalid", "198.51.100.8", {}),
+    ("localhost", "127.0.0.1", {"X-Forwarded-For": "127.0.0.1"}),
 ])
-def test_chat_separates_public_and_local_documents(monkeypatch, local_mode, host, peer, headers, include_local):
-    settings = Settings(_env_file=None, documents_enabled=True, documents_local_mode=local_mode)
+def test_anonymous_chat_only_reads_public_documents(monkeypatch, host, peer, headers):
+    settings = Settings(_env_file=None, documents_enabled=True)
     monkeypatch.delenv("VERCEL", raising=False)
     monkeypatch.setattr(api, "get_settings", lambda: settings)
     monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: settings)
@@ -28,7 +27,7 @@ def test_chat_separates_public_and_local_documents(monkeypatch, local_mode, host
     monkeypatch.setattr(api, "build_chat_service", lambda repo, settings: SimpleNamespace(repo=repo))
 
     def answer(repo, service, query):
-        assert repo.include_local_documents is include_local
+        assert repo.include_local_documents is False
         return {"kind": "answer", "text": "격리된 검색 결과", "services": [], "suggestions": []}, {}
 
     monkeypatch.setattr(api, "answer_document", answer)
@@ -39,9 +38,10 @@ def test_chat_separates_public_and_local_documents(monkeypatch, local_mode, host
         api.app.dependency_overrides.clear()
 
 
-def test_public_admin_still_requires_jwt(monkeypatch):
-    settings = Settings(_env_file=None, documents_enabled=True, documents_local_mode=False)
+def test_public_admin_still_requires_server_session(monkeypatch):
+    settings = Settings(_env_file=None, documents_enabled=True)
     monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: settings)
+    monkeypatch.setattr("BackEnd.admin.session.get_settings", lambda: Settings(_env_file=None, admin_password="configured-test-password"))
     assert TestClient(api.app).get("/api/v1/admin/documents/programs").status_code == 401
 
 

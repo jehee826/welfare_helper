@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     bokjiro_detail_url: str = "https://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfaredetailedV001"
     bokjiro_timeout: float = Field(default=15, gt=0, le=60)
 
+    desktop_guidance_enabled: bool = False
     documents_enabled: bool = False
     admin_password: SecretStr | None = None
     documents_max_file_mb: int = Field(default=20, ge=1, le=50)

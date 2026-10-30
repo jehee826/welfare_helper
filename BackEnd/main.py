@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
+from BackEnd.desktop_guidance import router as desktop_guidance_router
 from BackEnd.rag.chat import ChatService, RagExecutionError
 from BackEnd.rag.factory import build_chat_service
 from BackEnd.rag.repository import PgServiceRepository
@@ -29,6 +30,7 @@ from BackEnd.readiness import check_ready, ReadinessError
 logger = logging.getLogger("welfare_helper")
 
 app = FastAPI(title="welfare_helper")
+app.include_router(desktop_guidance_router)
 app.add_middleware(DocumentBodyLimit)
 app.include_router(document_router)
 app.include_router(program_router)

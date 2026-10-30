@@ -12,6 +12,7 @@ postgres_data/
 ollama_data/
 **/node_modules/
 FrontEnd/dist/
+Desktop/
 .agents/
 .codex/
 .claude/

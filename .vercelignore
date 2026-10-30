@@ -17,6 +17,7 @@ postgres_data/
 .venv/
 **/node_modules/
 FrontEnd/dist/
+Desktop/
 docs/
 data/
 .playwright-mcp/

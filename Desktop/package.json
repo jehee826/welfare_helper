@@ -1,0 +1,20 @@
+{
+  "name": "gyeote-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "곁에 Windows 플로팅 UI 로컬 시연",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "postinstall": "install-electron --no",
+    "build": "node scripts/build.mjs",
+    "test:tracking": "node --test electron/tracking.test.cjs",
+    "test:assistant": "node --test electron/assistant.test.cjs",
+    "test:geometry": "node --test shared/visibility.test.cjs",
+    "start": "npm run build && electron .",
+    "smoke": "npm run build && electron . --smoke-test",
+    "pack": "npm run build && node scripts/pack.cjs"
+  },
+  "dependencies": { "react": "18.3.1", "react-dom": "18.3.1" },
+  "devDependencies": { "electron": "45.1.0", "esbuild": "0.25.12" },
+  "engines": { "node": ">=22.12.0" }
+}

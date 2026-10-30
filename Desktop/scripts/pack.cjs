@@ -1,0 +1,14 @@
+const fs = require("node:fs");
+const path = require("node:path");
+if (process.platform !== "win32") throw new Error("Windows에서 실행하세요.");
+const root = path.resolve(__dirname, "..");
+const output = path.join(root, "release", "Gyeote-win32-" + process.arch);
+fs.mkdirSync(output, { recursive: true });
+fs.cpSync(path.join(path.dirname(require.resolve("electron/package.json")), "dist"), output, { recursive: true });
+fs.renameSync(path.join(output, "electron.exe"), path.join(output, "Gyeote.exe"));
+const app = path.join(output, "resources", "app");
+fs.mkdirSync(app, { recursive: true });
+for (const file of ["package.json", "dist", "electron", "shared", "native"]) fs.cpSync(path.join(root, file), path.join(app, file), { recursive: true });
+fs.mkdirSync(path.join(app, "licenses"), { recursive: true });
+for (const name of ["react", "react-dom"]) fs.copyFileSync(path.join(root, "node_modules", name, "LICENSE"), path.join(app, "licenses", name + ".txt"));
+console.log("포터블 앱: " + path.join(output, "Gyeote.exe"));

@@ -6,13 +6,14 @@ import os
 import hmac
 from pathlib import Path
 from threading import BoundedSemaphore
+from time import monotonic
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from BackEnd.core.settings import get_settings
-from BackEnd.rag.ollama import OllamaClient, VisionUnsupportedError, ContextBudgetError
+from BackEnd.rag.ollama import OllamaClient, VisionUnsupportedError, ContextBudgetError, GenerationTimeoutError, GenerationCancelledError
 from BackEnd.desktop_image import image_bytes
 
 router = APIRouter()
@@ -167,6 +168,7 @@ class DomGuideRequest(BaseModel):
     history: list[ScreenHistory] = Field(default_factory=list, max_length=4)
     modal_open: bool = False
     partial: bool = False
+    timeout_seconds: int | None = Field(default=None, ge=1, le=1800)
     image: str | None = Field(default=None, max_length=2 * 1024 * 1024, repr=False)
     _text = field_validator("question", "title")(dom_text)
     _image = field_validator("image")(GuideRequest.valid_image.__func__)
@@ -245,8 +247,11 @@ def generate_step(llm, request):
         re.sub(r"\s+", "", item.label) in re.sub(r"\s+", "", intent) for item in choices)
     if unresolved_reference:
         return GuideAnswer(kind="추가질문", answer="어떤 항목인지 화면에 적힌 이름을 알려주시겠어요?", targets=[])
+    # 명시적으로 표시를 원하지 않는 질문은 생성 문법에서도 대상 선택을 막는다.
+    explain_only = is_dom and bool(re.search(
+        r"(?:테두리|강조|표시)\s*없이|(?:표시|강조)(?:는)?\s*하지\s*(?:말|마)|설명\s*만\s*(?:해|부탁|듣|원|$)", intent))
     min_targets = 1
-    if is_dom and re.search(r"각각|비교|차이|둘|모두|여러", intent):
+    if is_dom and not explain_only and re.search(r"각각|비교|차이|둘|모두|여러", intent):
         compact = re.sub(r"\s+", "", intent).casefold()
         named = [item for item in choices if any(len(part)>=2 and part.casefold() in compact for part in item.label.split())]
         if 2 <= len({item.label for item in named}) <= 3:
@@ -285,8 +290,10 @@ def generate_step(llm, request):
             "정확한 JSON: kind(설명/안내/추가질문/보류),answer(짧은 설명),targets([{target_id:후보ID,meaning:짧은 의미}]). "
             "안내는 대상이 필요하며 추가질문/보류는 targets=[]다. 다른 텍스트를 출력하지 마라."
         )
+        if explain_only:
+            system += " 이번 질문은 표시 없이 설명만 원하므로 targets=[]로 답하라. 제목과 공개 문맥의 기능을 구체적으로 설명하라."
     # 과거 진행/완료 추정은 새 화면 질문의 근거로 전달하지 않는다.
-    payload = request.model_dump(exclude={"progress", "observation", "image"})
+    payload = request.model_dump(exclude={"progress", "observation", "image", "timeout_seconds"})
     # DOM 이름을 선택 키로 사용해 내부 순번을 화면 번호로 오인하는 응답을 피한다.
     selectors = {}
     for index, item in enumerate(choices, 1):
@@ -312,7 +319,7 @@ def generate_step(llm, request):
         target_schema["properties"]["target_id"] = {"enum":list(selectors)}
         schema.pop("$defs", None)
         schema["properties"]["targets"] = {"type":"array","maxItems":3,"items":target_schema}
-        schema = {"oneOf": ([{**schema,"properties":{**schema["properties"],"kind":{"enum":["설명","안내"]},"targets":{**schema["properties"]["targets"],"minItems":min_targets}}}] if selectors else []) + [
+        schema = {"oneOf": ([{**schema,"properties":{**schema["properties"],"kind":{"enum":["설명","안내"]},"targets":{**schema["properties"]["targets"],"minItems":min_targets}}}] if selectors and not explain_only else []) + [
             {**schema,"properties":{**schema["properties"],"kind":{"enum":(["설명"] if min_targets==1 else [])+["추가질문","보류"]},"targets":{"type":"array","maxItems":0,"items":target_schema}}}
         ]}
     options = {"images": [request.image]} if request.image is not None else {}
@@ -322,6 +329,8 @@ def generate_step(llm, request):
             result = {**result,"targets":[{**target,"target_id":selectors[target["target_id"]].id}
                       if isinstance(target,dict) and isinstance(target.get("target_id"),str) and target["target_id"] in selectors else target for target in result["targets"]]}
         answer = validate_answer(result, choices)
+        if explain_only and answer.targets:
+            raise ValueError("unexpected_target")
         if min_targets>1 and answer.kind in ("안내","설명") and len(answer.targets)<min_targets:
             raise ValueError("unexpected_target")
         return answer
@@ -355,17 +364,25 @@ def desktop_guide(request: GuideRequest | DomGuideRequest, transport: Request = 
     if not _gate.acquire(blocking=False):
         raise HTTPException(429, "화면 안내 요청이 처리 중입니다. 잠시 후 다시 확인하세요.")
     try:
+        # 시간 필드가 없는 이전 확장은 90초 계약을 유지한다.
+        budget = min(settings.desktop_timeout_seconds, request.timeout_seconds or 90) if isinstance(request, DomGuideRequest) else None
+        disconnected = transport.scope.get("state", {}).get("desktop_disconnected") if transport else None
         # RAG와 같은 서버 OLLAMA_LLM 및 같은 Ollama 인스턴스를 사용한다.
         llm = OllamaClient(settings.ollama_base_url, settings.ollama_embed, settings.ollama_llm,
             settings.ollama_timeout, {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
                                     "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
-            embed_dim=settings.embed_dim)
+            embed_dim=settings.embed_dim, **({"request_deadline": monotonic()+budget,
+                "request_cancelled": disconnected.is_set if disconnected else None} if budget else {}))
         result = generate_step(llm, request)
         if isinstance(request, DomGuideRequest):
             return {"reply":{**result.model_dump(),"snapshot_id":request.snapshot_id},"model":settings.ollama_llm}
         return {"step": result.model_dump(), "model": settings.ollama_llm}
     except VisionUnsupportedError:
         raise HTTPException(409, "desktop_image_model_unsupported") from None
+    except GenerationTimeoutError:
+        raise HTTPException(504, "desktop_request_timeout") from None
+    except GenerationCancelledError:
+        raise HTTPException(499, "desktop_request_cancelled") from None
     except ContextBudgetError:
         raise HTTPException(422, "desktop_context_budget_exceeded") from None
     except Exception as exc:

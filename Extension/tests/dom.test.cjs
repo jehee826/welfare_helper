@@ -100,7 +100,58 @@ test('캡처 전 입력란을 가리고 값은 읽지 않으며 불투명 콘텐
     let maskRoot;const attach=f.w.Element.prototype.attachShadow;
     f.w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-mask'))maskRoot=root;return root;};
     const plan=f.w.GyeoteCapture.plan();assert.equal(plan.masks.length,1);plan.mount();assert.equal(maskRoot.firstElementChild.style.background,'rgb(0, 0, 0)');plan.remove();assert.equal(f.w.document.querySelector('[data-gyeote-mask]'),null);
-    const frame=f.w.document.createElement('iframe');f.w.document.querySelector('main').append(frame);assert.throws(()=>f.w.GyeoteCapture.plan(),/capture_not_safe/);
+    const frame=f.w.document.createElement('iframe');f.w.document.querySelector('main').append(frame);const partial=f.w.GyeoteCapture.plan();assert.equal(partial.partial,true);assert.equal(partial.masks.length,2);assert.equal(partial.masks[1].x,32);assert.equal(partial.masks[1].width,156);
+  }finally{f.close();}
+});
+
+test('열린 선택 목록과 닫힌 Shadow는 거부하고 마스크 60개 상한을 지킨다',()=>{
+  const f=fixture('<main><div role="combobox" aria-expanded="true"></div></main>');
+  try{
+    assert.throws(()=>f.w.GyeoteCapture.plan(),/capture_expanded_combo/);
+    f.w.document.querySelector('main').innerHTML='<private-widget></private-widget>';assert.throws(()=>f.w.GyeoteCapture.plan(),/capture_closed_shadow/);
+    f.w.document.querySelector('main').innerHTML='<input>'.repeat(61);assert.throws(()=>f.w.GyeoteCapture.plan(),/capture_mask_limit/);
+  }finally{f.close();}
+});
+
+test('마스크 대상 이동·출현·제거는 캡처 정합성을 무효화한다',()=>{
+  for(const change of ['move','add','remove']){
+    const f=fixture('<main><input></main>');
+    try{
+      const input=f.w.document.querySelector('input');let left=40;
+      input.getBoundingClientRect=()=>({left,top:60,right:left+140,bottom:100,width:140,height:40});
+      const plan=f.w.GyeoteCapture.plan();assert.equal(plan.current(),true);
+      if(change==='move')left=41;
+      if(change==='add')f.w.document.querySelector('main').append(f.w.document.createElement('input'));
+      if(change==='remove')input.remove();
+      assert.equal(plan.current(),false);
+    }finally{f.close();}
+  }
+});
+
+test('캡처 중 마스크 이동 시 이미지 질문을 전송하지 않는다',async()=>{
+  const f=fixture('<main><button>공개 메뉴</button><input></main>');
+  try{
+    const {w}=f,button=w.document.querySelector('button'),input=w.document.querySelector('input');let left=40,ports=0;
+    input.getBoundingClientRect=()=>({left,top:60,right:left+140,bottom:100,width:140,height:40});w.document.elementFromPoint=()=>button;
+    const attach=w.Element.prototype.attachShadow;let panelRoot;
+    w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
+    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async data=>{if(data.type==='gyeote:capture'){left=60;return {ok:true,image:'iVBORw0KGgo='}}return {ok:true,imageEnabled:true,timeoutSeconds:90}},connect:()=>{ports++;throw Error('전송하면 안 됨')}}};
+    w.eval(fs.readFileSync(path.join(__dirname,'../content.js'),'utf8'));panelRoot.querySelector('.image-option').checked=true;
+    panelRoot.querySelector('input[type=text]').value='화면 알려줘';panelRoot.querySelector('form').dispatchEvent(new w.Event('submit',{cancelable:true}));
+    await new Promise(resolve=>w.setTimeout(resolve,80));assert.equal(ports,0);assert.match(panelRoot.querySelector('.status').textContent,/전송하지 않았습니다/);
+  }finally{f.close();}
+});
+
+test('불투명 영역을 가린 이미지 질문은 partial을 전달한다',async()=>{
+  const f=fixture('<main><button>공개 메뉴</button><iframe></iframe></main>');
+  try{
+    const {w}=f,button=w.document.querySelector('main button');w.document.elementFromPoint=()=>button;
+    const attach=w.Element.prototype.attachShadow;let panelRoot,packet;
+    w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
+    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async data=>data.type==='gyeote:capture'?{ok:true,image:'iVBORw0KGgo='}:{ok:true,imageEnabled:true,timeoutSeconds:90},connect:()=>({onMessage:{addListener(){}},onDisconnect:{addListener(){}},postMessage(data){packet=JSON.parse(JSON.stringify(data))},disconnect(){}})}};
+    w.eval(fs.readFileSync(path.join(__dirname,'../content.js'),'utf8'));
+    panelRoot.querySelector('.image-option').checked=true;panelRoot.querySelector('input[type=text]').value='화면 알려줘';panelRoot.querySelector('form').dispatchEvent(new w.Event('submit',{cancelable:true}));
+    await new Promise(resolve=>w.setTimeout(resolve,80));assert.equal(packet.payload.partial,true);assert.ok(packet.payload.image);
   }finally{f.close();}
 });
 
@@ -135,5 +186,20 @@ test('로컬 캡처 검사는 패널을 제외하고 스크롤이 바뀌면 서�
     w.eval(fs.readFileSync(path.join(__dirname,'../content.js'),'utf8'));
     [...panelRoot.querySelectorAll('button')].find(b=>b.textContent==='이미지 범위 검사 · 전송 없음').click();
     await new Promise(resolve=>w.setTimeout(resolve,80));assert.equal(calls,1);assert.match(panelRoot.querySelector('.status').textContent,/보류/);assert.equal(w.document.querySelector('[data-gyeote-mask]'),null);assert.equal(w.document.querySelector('[data-gyeote-host]').style.visibility,'');
+  }finally{f.close();}
+});
+
+test('캡처 실패의 신뢰할 수 없는 원문 오류를 개발 검사 UI에 노출하지 않는다',async()=>{
+  const f=fixture('<main><button>공개 메뉴</button></main>');
+  try{
+    const {w}=f,button=w.document.querySelector('main button');w.document.elementFromPoint=()=>button;
+    const attach=w.Element.prototype.attachShadow;let panelRoot;
+    w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
+    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async()=>({ok:false,error:'untrusted-secret-marker'})}};
+    w.eval(fs.readFileSync(path.join(__dirname,'../content.js'),'utf8'));
+    [...panelRoot.querySelectorAll('button')].find(b=>b.textContent==='이미지 범위 검사 · 전송 없음').click();
+    await new Promise(resolve=>w.setTimeout(resolve,80));
+    assert.doesNotMatch(panelRoot.querySelector('.status').textContent,/untrusted-secret-marker/);
+    assert.match(panelRoot.querySelector('.status').textContent,/보류/);
   }finally{f.close();}
 });

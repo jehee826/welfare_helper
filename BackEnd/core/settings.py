@@ -1,4 +1,5 @@
 from functools import lru_cache
+from math import ceil
 from pathlib import Path
 from typing import Literal
 
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_llm: str = "qwen2.5:1.5b-instruct"
     ollama_embed: str = "bge-m3"
-    ollama_timeout: float = Field(default=120.0, gt=0)
+    ollama_timeout: float = Field(default=120.0, gt=0, allow_inf_nan=False)
     embed_dim: int = Field(default=1024, ge=1024, le=1024)
     llm_num_ctx: int = Field(default=8192, ge=512)
     llm_temperature: float = Field(default=0.0, ge=0, le=2)
@@ -51,6 +52,7 @@ class Settings(BaseSettings):
     desktop_guidance_enabled: bool = False
     desktop_image_enabled: bool = False
     desktop_extension_token: SecretStr | None = None
+
     documents_enabled: bool = False
     admin_password: SecretStr | None = None
     documents_max_file_mb: int = Field(default=20, ge=1, le=50)
@@ -69,6 +71,10 @@ class Settings(BaseSettings):
         "https://welfare-helper-iota.vercel.app",
         "http://localhost:5173", "http://127.0.0.1:5173",
     ])
+
+    @property
+    def desktop_timeout_seconds(self) -> int:
+        return max(1, min(1800, ceil(self.ollama_timeout)))
 
     @field_validator("cors_allowed_origins")
     @classmethod

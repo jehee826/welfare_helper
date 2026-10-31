@@ -64,6 +64,7 @@
     if(!name&&!node.matches('input,textarea,select'))name=textOf(node,80);
     return name||safeText(node.getAttribute("title"),80);
   }
+  const meaningOf=node=>JSON.stringify([node.getAttribute('role'),node.getAttribute('type'),node.tagName==='A'?node.href:null]);
   function activeModal(){
     const modals=publicRoots().flatMap(root=>[...root.querySelectorAll('dialog[open],[aria-modal="true"]')]).filter(visible);
     return modals.at(-1)||null;
@@ -109,7 +110,8 @@
       return {node,label,role,context,score};
     }).filter(Boolean).sort((a,b)=>b.score-a.score);
     if(candidates.length>60)partial=true;
-    const refs=new Map(),elements=candidates.slice(0,60).map(({node,label,role,context})=>{const element_id=id();refs.set(element_id,node);return {id:element_id,label,role,context,enabled:true,visible:true,in_modal:!!modal};});
+    // 링크 목적지와 역할은 변경 감시에만 쓰고 서버 전송 자료에는 넣지 않는다.
+    const refs=new Map(),meanings=new Map(),elements=candidates.slice(0,60).map(({node,label,role,context})=>{const element_id=id();refs.set(element_id,node);meanings.set(element_id,meaningOf(node));return {id:element_id,label,role,context,enabled:true,visible:true,in_modal:!!modal};});
     const context=[],anchorNodes=[];
     for(const root of [scope,...roots.filter(r=>r instanceof ShadowRoot)]){
       for(const node of root.querySelectorAll('h1,h2,h3,p,label,legend,[role="heading"]')){
@@ -120,9 +122,13 @@
         anchorNodes.push({node,text});
       }
     }
-    const frameUnsupported=[...document.querySelectorAll('iframe,object,embed')].some(visible);
-    return {payload:{source:"dom",snapshot_id:id(),title:safeText(document.title,120),candidates:elements,screen_context:context,modal_open:!!modal,partial:partial||frameUnsupported},refs,url:location.href,scope,modal,anchorNodes,scrollX,scrollY,width:innerWidth,height:innerHeight};
+    const frameUnsupported=roots.some(root=>[...root.querySelectorAll('iframe,object,embed,canvas,video')].some(visible));
+    return {payload:{source:"dom",snapshot_id:id(),title:safeText(document.title,120),candidates:elements,screen_context:context,modal_open:!!modal,partial:partial||frameUnsupported},refs,meanings,url:location.href,scope,modal,anchorNodes,scrollX,scrollY,width:innerWidth,height:innerHeight};
   }
-  function current(snapshot){return !!snapshot&&snapshot.url===location.href&&snapshot.scope.isConnected&&snapshot.modal===activeModal()&&snapshot.anchorNodes.every(a=>a.node.isConnected&&textOf(a.node)===a.text)&&snapshot.payload.candidates.every(c=>{const node=snapshot.refs.get(c.id);return node?.isConnected&&!node.matches(':disabled,[aria-disabled="true"]')&&nameOf(node)===c.label;});}
-  globalThis.GyeoteDOM=Object.freeze({id,safeText,official,publicPage,visible,usable,collect,nameOf,textOf,activeModal,publicRoots,current,bodyTarget});
+  function currentCandidate(snapshot,candidate){
+    const node=snapshot.refs.get(candidate.id);
+    return !!node?.isConnected&&!node.matches(':disabled,[aria-disabled="true"]')&&nameOf(node)===candidate.label&&snapshot.meanings.get(candidate.id)===meaningOf(node);
+  }
+  function current(snapshot){return !!snapshot&&snapshot.url===location.href&&snapshot.scope.isConnected&&snapshot.modal===activeModal()&&snapshot.anchorNodes.every(a=>a.node.isConnected&&textOf(a.node)===a.text)&&snapshot.payload.candidates.every(c=>currentCandidate(snapshot,c));}
+  globalThis.GyeoteDOM=Object.freeze({id,safeText,official,publicPage,visible,usable,collect,nameOf,textOf,activeModal,publicRoots,current,currentCandidate,bodyTarget});
 })();

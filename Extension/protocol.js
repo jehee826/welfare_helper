@@ -2,9 +2,15 @@
   const id=value=>typeof value==='string'&&/^[A-F0-9]{20}$/.test(value);
   const text=(value,max)=>typeof value==='string'&&value.trim()&&value.length<=max&&!/\d{4,}|@|[<>\x00-\x08]|주민등록|인증번호|인증코드|비밀번호|password|\bOTP\b/i.test(value);
   const official=value=>{try{const u=new URL(value);return u.origin==='https://www.bokjiro.go.kr'&&!u.username&&!u.password;}catch{return false;}};
+  function timeoutSeconds(connection){
+    const value=connection?.timeoutSeconds===undefined?90:connection.timeoutSeconds;
+    if(!Number.isInteger(value)||value<1||value>1800)throw new Error('connection_required');
+    return value;
+  }
   function request(payload){
     if(!payload||payload.source!=='dom'||!id(payload.snapshot_id)||!text(payload.question,240)||!Array.isArray(payload.candidates)||payload.candidates.length>60||!Array.isArray(payload.screen_context)||payload.screen_context.length>8)throw new Error('invalid_request');
     const ids=new Set();
+    if(payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('invalid_request');
     let budget=0;
     for(const c of payload.candidates){if(!id(c.id)||ids.has(c.id)||!text(c.label,80)||c.context&&!text(c.context,100)||!['Button','Hyperlink','MenuItem','Input','ComboBox','CheckBox','RadioButton'].includes(c.role)||typeof c.enabled!=='boolean'||typeof c.visible!=='boolean')throw new Error('invalid_request');ids.add(c.id);budget+=c.label.length+(c.context?.length||0);}
     for(const item of payload.screen_context){if(!['heading','text','label','help'].includes(item.kind)||!text(item.text,160))throw new Error('invalid_request');budget+=item.text.length;}
@@ -22,6 +28,6 @@
     if([r.answer,...r.targets.map(t=>t.meaning)].some(v=>/파란|파랑|주황|보라|①|②|③|\d+\s*번|왼쪽|오른쪽|위쪽|아래쪽|좌표|javascript:|querySelector/i.test(v)))throw new Error('invalid_reply');
     return r;
   }
-  const api={id,text,official,request,reply};globalThis.GyeoteProtocol=Object.freeze(api);
+  const api={id,text,official,request,reply,timeoutSeconds};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

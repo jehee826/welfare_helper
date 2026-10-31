@@ -3,6 +3,7 @@
 .git/
 .env
 .env.*
+.local/
 welfare_helper__key.pem
 *.pem
 *.key

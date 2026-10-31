@@ -3,6 +3,8 @@ import base64
 import binascii
 import struct
 import zlib
+import asyncio
+from threading import Event
 
 
 class DesktopBodyLimit:
@@ -24,9 +26,27 @@ class DesktopBodyLimit:
             messages.append(message)
             if not message.get("more_body"):
                 break
+        disconnected = Event()
+        scope.setdefault("state", {})["desktop_disconnected"] = disconnected
+
+        async def watch_disconnect():
+            while True:
+                if (await receive())["type"] == "http.disconnect":
+                    disconnected.set()
+                    return
+
+        # 본문을 다 읽은 뒤 receive는 한 곳에서만 소비하고, 취소를 생성 스레드에 전달한다.
+        watcher = asyncio.create_task(watch_disconnect())
         async def replay():
-            return messages.pop(0) if messages else await receive()
-        return await self.app(scope, replay, send)
+            if messages:
+                return messages.pop(0)
+            await asyncio.shield(watcher)
+            return {"type": "http.disconnect"}
+        try:
+            return await self.app(scope, replay, send)
+        finally:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
 
 
 def image_bytes(encoded: str) -> bytes:

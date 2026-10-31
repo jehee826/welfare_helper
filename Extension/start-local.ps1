@@ -24,8 +24,11 @@ try{
  & docker compose up -d --no-build backend
  if($LASTEXITCODE -ne 0){throw '백엔드 실행에 실패했습니다. 연결 파일은 변경하지 않았습니다.'}
  $directory=Join-Path $root '.local';[void][IO.Directory]::CreateDirectory($directory)
- $connection=@{version=1;token=$token;imageEnabled=$false}|ConvertTo-Json -Compress
- [IO.File]::WriteAllText((Join-Path $directory 'extension-connection.json'),$connection,[Text.UTF8Encoding]::new($false))
+ & docker compose exec -T backend python -m BackEnd.desktop_connection /tmp/gyeote-extension-connection.json
+ if($LASTEXITCODE -ne 0){throw '실제 서버의 연결 설정을 내보내지 못했습니다.'}
+ & docker compose cp backend:/tmp/gyeote-extension-connection.json (Join-Path $directory 'extension-connection.json')
+ if($LASTEXITCODE -ne 0){throw '연결 파일을 로컬로 복사하지 못했습니다.'}
+ & docker compose exec -T backend python -c "from pathlib import Path; Path('/tmp/gyeote-extension-connection.json').unlink()"
  Write-Output '연결 파일 준비: .local\extension-connection.json. 서버 준비 응답 확인 후 확장 연결 설정에서 이 파일을 불러오세요.'
 }finally{
  foreach($name in $prior.Keys){[Environment]::SetEnvironmentVariable($name,$prior[$name],'Process')}

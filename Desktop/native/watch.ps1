@@ -1,4 +1,4 @@
-﻿param([int]$OwnerPid=0,[switch]$Once,[switch]$ValidateOnly,[switch]$Diagnose,[switch]$TestTracking)
+﻿param([int]$OwnerPid=0,[long]$PanelWindow=0,[long]$OverlayWindow=0,[switch]$Once,[switch]$ValidateOnly,[switch]$Diagnose,[switch]$TestTracking)
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 try {
@@ -21,6 +21,23 @@ public static class Reader {
  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc proc,IntPtr arg);
  delegate bool EnumProc(IntPtr h,IntPtr arg);
  [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+ [DllImport("user32.dll")] static extern IntPtr GetTopWindow(IntPtr parent);
+ [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window,uint command);
+ [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr window,int index);
+ [StructLayout(LayoutKind.Sequential)] struct Bounds {public int Left,Top,Right,Bottom;}
+ [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window,out Bounds bounds);
+ static bool OverlayOverChrome(IntPtr chrome,long overlay,double x,double y) {
+   if(overlay==0)return false;
+   int style=GetWindowLong(new IntPtr(overlay),-20);
+   if((style&0x20)==0 || (style&0x08000000)==0)return false;
+   var h=GetTopWindow(IntPtr.Zero);
+   for(int i=0;h!=IntPtr.Zero&&i<200;i++,h=GetWindow(h,2)) {
+     if(h.ToInt64()==overlay || !IsWindowVisible(h) || IsIconic(h))continue;
+     Bounds b;
+     if(GetWindowRect(h,out b)&&x>=b.Left&&x<b.Right&&y>=b.Top&&y<b.Bottom)return h==chrome;
+   }
+   return false;
+ }
  static IntPtr tracked=IntPtr.Zero;
  static string salt=Guid.NewGuid().ToString();
  static string Hash(string raw) {using(var sha=SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(salt+raw))).Replace("-","").Substring(0,20);}
@@ -37,13 +54,13 @@ public static class Reader {
    reader.IsBackground=true;reader.Start();
  }
  public static bool TakeDiscover(){return Interlocked.Exchange(ref requested,0)==1;}
- public static void StartFocusWatch(int owner) {
+ public static void StartFocusWatch(int owner,long panelWindow) {
    var thread=new Thread(delegate(){
      IntPtr previous=GetForegroundWindow();
      while(true) {
        Thread.Sleep(100);var current=GetForegroundWindow();if(current==previous)continue;previous=current;
        uint pid;GetWindowThreadProcessId(current,out pid);
-       string kind=owner!=0&&(int)pid==owner?"panel":Chrome(current)?"chrome":"other";
+       string kind=owner!=0&&(int)pid==owner&&current.ToInt64()==panelWindow?"panel":Chrome(current)?"chrome":"other";
        Console.WriteLine("{\"event\":\"foreground\",\"focus\":\""+kind+"\",\"window\":\""+current.ToInt64()+"\"}");
      }
    });thread.IsBackground=true;thread.Start();
@@ -139,10 +156,10 @@ public static class Reader {
    }
    return new {chromeWindowCount=results.Count,windows=results};
  }
- public static object Read(int owner,string[] publicLabels,bool discover) {
+ public static object Read(int owner,long panelWindow,long overlayWindow,string[] publicLabels,bool discover) {
    if(SetThreadDpiAwarenessContext(new IntPtr(-4))==IntPtr.Zero)return new {available=false,reason="dpi_unverified"};
    var foreground=GetForegroundWindow();uint pid;GetWindowThreadProcessId(foreground,out pid);
-   bool panel=owner!=0&&(int)pid==owner;
+   bool panel=owner!=0&&(int)pid==owner&&foreground.ToInt64()==panelWindow;
    IntPtr candidate=IntPtr.Zero;Nav nav=null;
    string route=Route(Chrome(foreground),panel,discover,Chrome(tracked));
    if(route=="foreground") {candidate=foreground;nav=Inspect(candidate);}
@@ -166,30 +183,75 @@ public static class Reader {
    if(nav.document==null)return new {available=false,verified=true,active=active,window=candidate.ToInt64().ToString(),tab=nav.tab,reason="no_accessibility_document"};
    var root=nav.root;var document=nav.document;
    var allowed=new HashSet<string>(publicLabels);
-   var items=new List<object>();var pending=new Queue<AutomationElement>();pending.Enqueue(document);
+   var pageLabels=new HashSet<string>();var context=new List<object>();var masks=new List<object>();bool captureSafe=true;double? scrollPercent=null;object scrolling;bool formOpen=false;
+   var modalRoots=new List<AutomationElement>();
+   if(document.TryGetCurrentPattern(ScrollPattern.Pattern,out scrolling)) {
+     var state=((ScrollPattern)scrolling).Current;
+     if(state.VerticallyScrollable && state.VerticalScrollPercent>=0 && state.VerticalScrollPercent<=100)scrollPercent=state.VerticalScrollPercent;
+   }
+   // 모달 안에 입력 항목이 있는지만 확인하고 이름·값·선택 내용은 읽지 않는다.
+   var dialogs=document.FindAll(TreeScope.Descendants,new AndCondition(
+     new PropertyCondition(AutomationElement.IsWindowPatternAvailableProperty,true),new PropertyCondition(AutomationElement.IsOffscreenProperty,false)));
+   for(int i=0;i<dialogs.Count && i<4;i++) {
+     object windowPattern;
+     if(dialogs[i].TryGetCurrentPattern(WindowPattern.Pattern,out windowPattern) && ((WindowPattern)windowPattern).Current.IsModal) {
+       modalRoots.Add(dialogs[i]);
+       var input=dialogs[i].FindFirst(TreeScope.Descendants,new AndCondition(
+         new OrCondition(new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.Edit),new PropertyCondition(AutomationElement.ControlTypeProperty,ControlType.ComboBox)),
+         new PropertyCondition(AutomationElement.IsPasswordProperty,false),new PropertyCondition(AutomationElement.IsOffscreenProperty,false),new PropertyCondition(AutomationElement.IsEnabledProperty,true)));
+       if(input!=null)formOpen=true;
+     }
+   }
+   bool scopedToModal=modalRoots.Count==1;
+   var items=new List<object>();var pending=new Queue<AutomationElement>();pending.Enqueue(scopedToModal?modalRoots[0]:document);
    var timer=Stopwatch.StartNew();int count=0;
    var walker=TreeWalker.ControlViewWalker;
    while(pending.Count>0 && items.Count<60 && count++<2500 && timer.ElapsedMilliseconds<900) {
      var element=pending.Dequeue();
      try {
        var c=element.Current;
+       if(!c.IsOffscreen && (c.IsPassword||c.ControlType==ControlType.Edit||c.ControlType==ControlType.ComboBox||c.ControlType==ControlType.CheckBox||c.ControlType==ControlType.RadioButton||c.ControlType==ControlType.Slider||c.ControlType==ControlType.Spinner||c.ControlType==ControlType.List||c.ControlType==ControlType.DataGrid)) {
+         var inputRect=c.BoundingRectangle;
+         if(inputRect.IsEmpty || inputRect.Width<=0 || inputRect.Height<=0 || masks.Count>=40)captureSafe=false;
+         else masks.Add(Box(inputRect));
+       }
        bool actionable=c.ControlType==ControlType.Button || c.ControlType==ControlType.Hyperlink || c.ControlType==ControlType.MenuItem;
        if(actionable && !c.IsPassword) {
          string name=(c.Name??"").Trim();
          if(allowed.Contains(name)) {
            var r=c.BoundingRectangle;bool hit=false;
-           if(!r.IsEmpty && r.Width>0 && r.Height>0 && !c.IsOffscreen && active) {
-             hit=true;
-             foreach(var point in new double[][] {new double[]{.1,.1},new double[]{.9,.1},new double[]{.5,.5},new double[]{.1,.9},new double[]{.9,.9}}) {
-               var at=AutomationElement.FromPoint(new System.Windows.Point(r.X+r.Width*point[0],r.Y+r.Height*point[1]));
-               bool same=at.Current.ProcessId==owner;
-               for(int ancestor=0;!same && at!=null && ancestor<6;ancestor++,at=TreeWalker.ControlViewWalker.GetParent(at)) same=Automation.Compare(element,at);
-               if(!same) {hit=false;break;}
+           if(!r.IsEmpty && r.Width>0 && r.Height>0 && !c.IsOffscreen && (active||panel)) {
+             // 링크 외곽의 패딩은 다른 그룹으로 노출될 수 있어 실제 선택할 중앙을 검증한다.
+             var at=AutomationElement.FromPoint(new System.Windows.Point(r.X+r.Width*.5,r.Y+r.Height*.5));
+             bool ownOverlay=false;
+             for(int ancestor=0;!hit && at!=null && ancestor<6;ancestor++,at=TreeWalker.ControlViewWalker.GetParent(at)) {
+               hit=Automation.Compare(element,at);
+               if(at.Current.ProcessId==owner && at.Current.NativeWindowHandle==overlayWindow)ownOverlay=true;
              }
+             if(!hit&&ownOverlay)hit=OverlayOverChrome(candidate,overlayWindow,r.X+r.Width*.5,r.Y+r.Height*.5);
            }
-           if(!r.IsEmpty && !Double.IsInfinity(r.X) && !Double.IsInfinity(r.Y))
-             items.Add(new {id=Key(element),name=name,role=c.ControlType.ProgrammaticName.Replace("ControlType.",""),rect=Box(r),offscreen=c.IsOffscreen,enabled=c.IsEnabled,hit=hit});
+           if(!r.IsEmpty && !Double.IsInfinity(r.X) && !Double.IsInfinity(r.Y)) {
+             var id=Key(element);
+             items.Add(new {id=id,name=name,role=c.ControlType.ProgrammaticName.Replace("ControlType.",""),rect=Box(r),offscreen=c.IsOffscreen,enabled=c.IsEnabled,hit=hit,in_modal=scopedToModal});
+           }
          }
+       }
+       // 메뉴 안의 텍스트와 구분해 허용된 본문 라벨만 전달한다. 입력값은 읽지 않는다.
+       if(c.ControlType==ControlType.Text && !c.IsPassword && !c.IsOffscreen && pageLabels.Count<8) {
+         var name=(c.Name??"").Trim();
+         if(allowed.Contains(name)) {
+           bool inControl=false;var parent=walker.GetParent(element);
+           for(int depth=0;parent!=null && depth<4;depth++,parent=walker.GetParent(parent)) {
+             var type=parent.Current.ControlType;
+             if(type==ControlType.Button || type==ControlType.Hyperlink || type==ControlType.MenuItem){inControl=true;break;}
+           }
+           if(!inControl){pageLabels.Add(name);if(context.Count<12)context.Add(new {kind="text",text=name});}
+         }
+       }
+       // 입력값·선택값·임의 도움말은 읽지 않고 검토된 라벨만 포함한다.
+       if(!c.IsPassword && !c.IsOffscreen && context.Count<12 && (c.ControlType==ControlType.Edit || c.ControlType==ControlType.ComboBox)) {
+         var name=(c.Name??"").Trim();
+         if(allowed.Contains(name))context.Add(new {kind="label",text=name});
        }
        var child=walker.GetFirstChild(element);while(child!=null) {pending.Enqueue(child);child=walker.GetNextSibling(child);if(pending.Count>3000)break;}
      }catch(ElementNotAvailableException){}
@@ -197,7 +259,10 @@ public static class Reader {
 
    var after=Inspect(candidate);
    if(!after.verified || after.raw!=nav.raw || after.tab!=nav.tab || GetForegroundWindow()!=foreground)return new {available=false,reason="target_changed_during_read"};
-   return new {available=true,verified=true,active=active,window=candidate.ToInt64().ToString(),tab=nav.tab,navigation=Hash(nav.raw),document=Key(document),viewport=Box(document.Current.BoundingRectangle),elements=items,partial=pending.Count>0};
+   // 첫 비교는 로그인 정보가 없는 공식 공개 홈으로 한정한다. 임의 경로로 넓히지 않는다.
+   var uri=new Uri(nav.raw);bool publicHome=uri.AbsolutePath=="/ssis-tbu/index.do" && uri.Query=="" && uri.Fragment=="";
+   if(document.FindFirst(TreeScope.Descendants,new AndCondition(new PropertyCondition(AutomationElement.NameProperty,"로그아웃"),new PropertyCondition(AutomationElement.IsOffscreenProperty,false)))!=null)captureSafe=false;
+   return new {available=true,verified=true,active=active,panel_focused=panel,window=candidate.ToInt64().ToString(),tab=nav.tab,navigation=Hash(nav.raw),document=Key(document),viewport=Box(document.Current.BoundingRectangle),window_rect=Box(root.Current.BoundingRectangle),capture_eligible=publicHome&&captureSafe&&pending.Count==0&&!scopedToModal,mask_rects=masks,elements=items,screen_context=context,page_labels=pageLabels,scroll_percent=scrollPercent,form_open=formOpen,modal_open=modalRoots.Count>0,partial=pending.Count>0};
  }
 }
 '@
@@ -206,11 +271,11 @@ public static class Reader {
  if($TestTracking){[Reader]::CheckTracking();'UIA_TRACKING_POLICY_PASS'|Write-Output;return}
  if($Diagnose){[Reader]::Diagnose() | ConvertTo-Json -Compress -Depth 5 | Write-Output;return}
  $labels=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../shared/public-labels.json') -Encoding UTF8 -Raw | ConvertFrom-Json
- if(-not $Once){[Reader]::StartInput();[Reader]::StartFocusWatch($OwnerPid)}
+ if(-not $Once){[Reader]::StartInput();[Reader]::StartFocusWatch($OwnerPid,$PanelWindow)}
  $discover=$true
  do {
    if([Reader]::TakeDiscover()){$discover=$true}
-   try {$json=[Reader]::Read($OwnerPid,[string[]]$labels,$discover)|ConvertTo-Json -Compress -Depth 6;[Console]::WriteLine($json)}
+   try {$json=[Reader]::Read($OwnerPid,$PanelWindow,$OverlayWindow,[string[]]$labels,$discover)|ConvertTo-Json -Compress -Depth 6;[Console]::WriteLine($json)}
    catch {$type=$_.Exception.GetBaseException().GetType().Name;$json=@{available=$false;reason='uia_read_failed';errorType=$type}|ConvertTo-Json -Compress;[Console]::WriteLine($json)}
    $discover=$false
    if(-not $Once){Start-Sleep -Milliseconds 400}

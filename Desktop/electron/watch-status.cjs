@@ -28,7 +28,7 @@ function verifiedPresence(raw){
 }
 function focusUpdate(event,cached,previous,now=Date.now()) {
   const fresh=cached && now-cached.at<3500;
-  if(event.focus==="panel" && previous==="chrome" && fresh)return {snapshot:{...cached.snapshot,active:false},reason:""};
+  if(event.focus==="panel" && previous==="chrome" && fresh)return {snapshot:{...cached.snapshot,active:false,panelFocused:false},reason:""};
   if(event.focus==="chrome" && previous==="panel" && fresh && cached.snapshot.context.split(":")[0]===event.window)return {keep:true};
   return {snapshot:null,reason:event.focus==="other"?"other_app":"target_rechecking"};
 }

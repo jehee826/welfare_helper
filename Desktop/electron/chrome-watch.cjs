@@ -2,10 +2,10 @@ const {spawn}=require("node:child_process");
 const path=require("node:path");
 const {verifiedPresence,focusUpdate}=require("./watch-status.cjs");
 const {sanitizeSnapshot}=require("./assistant-policy.cjs");
-function watchChrome(onSnapshot) {
+function watchChrome(onSnapshot,panelWindow="0",overlayWindow="0") {
   if(process.platform!=="win32"){onSnapshot(null,"windows_required");return ()=>{};}
   const shell=path.join(process.env.SystemRoot||"C:\\Windows","System32/WindowsPowerShell/v1.0/powershell.exe");
-  const child=spawn(shell,["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",path.join(__dirname,"../native/watch.ps1"),"-OwnerPid",String(process.pid)],{windowsHide:true,stdio:["pipe","pipe","ignore"]});
+  const child=spawn(shell,["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",path.join(__dirname,"../native/watch.ps1"),"-OwnerPid",String(process.pid),"-PanelWindow",panelWindow,"-OverlayWindow",overlayWindow],{windowsHide:true,stdio:["pipe","pipe","ignore"]});
   let stopped=false,buffer="",last=Date.now(),terminal=false,cached=null,cachedPresence=null,previousFocus="";
   child.stdin.on("error",()=>{});
   child.stdout.setEncoding("utf8");
@@ -40,6 +40,7 @@ function watchChrome(onSnapshot) {
   child.on("exit",()=>{clearInterval(watchdog);if(!stopped&&!terminal)onSnapshot(null,"accessibility_stopped");});
   const stop=()=>{stopped=true;clearInterval(watchdog);child.kill();};
   stop.discover=()=>{if(!stopped&&!child.killed&&child.exitCode===null)child.stdin.write("discover\n");};
+  stop.refresh=()=>stop.discover();
   return stop;
 }
 module.exports={watchChrome};

@@ -8,6 +8,9 @@ from typing import Literal
 import psycopg2
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from BackEnd.desktop_image import DesktopBodyLimit
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -31,6 +34,7 @@ logger = logging.getLogger("welfare_helper")
 
 app = FastAPI(title="welfare_helper")
 app.include_router(desktop_guidance_router)
+app.add_middleware(DesktopBodyLimit)
 app.add_middleware(DocumentBodyLimit)
 app.include_router(document_router)
 app.include_router(program_router)
@@ -38,6 +42,13 @@ app.include_router(admin_session_router)
 app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_origins,
                    allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                    allow_headers=["Content-Type", "Authorization"])
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path == "/api/v1/desktop/guide":
+        return JSONResponse(status_code=422, content={"detail": "invalid_desktop_request"})
+    return await request_validation_exception_handler(request, exc)
 
 
 class ProfileIn(BaseModel):
@@ -199,7 +210,7 @@ def admin_session(actor=Depends(require_document_admin)):
 @app.middleware("http")
 async def private_responses(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/api/v1/admin") or request.url.path == "/api/v1/chat":
+    if request.url.path.startswith(("/api/v1/admin", "/api/v1/desktop")) or request.url.path == "/api/v1/chat":
         response.headers["Cache-Control"] = "no-store"
     return response
 

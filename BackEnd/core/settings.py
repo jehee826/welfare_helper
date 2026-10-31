@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     bokjiro_timeout: float = Field(default=15, gt=0, le=60)
 
     desktop_guidance_enabled: bool = False
+    desktop_image_enabled: bool = False
+    desktop_extension_token: SecretStr | None = None
     documents_enabled: bool = False
     admin_password: SecretStr | None = None
     documents_max_file_mb: int = Field(default=20, ge=1, le=50)

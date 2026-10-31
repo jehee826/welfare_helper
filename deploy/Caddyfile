@@ -23,6 +23,10 @@ https://{$PUBLIC_API_HOST} {
 		max_size 52MiB
 	}
 
+	# Desktop 화면 상담은 SSH 로컬 포워딩 전용이며 공개 프록시로 전달하지 않는다.
+	@desktop path /api/v1/desktop /api/v1/desktop/*
+	respond @desktop 404
+
 	reverse_proxy backend:8000 {
 		transport http {
 			dial_timeout 10s

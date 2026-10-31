@@ -2,10 +2,11 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, session } 
 const path = require("node:path");
 const { guidance, validRect } = require("../shared/visibility.cjs");
 const { pathToFileURL } = require("node:url");
+const {overlayLayout,OverlayPresenter}=require("./overlay-layout.cjs");
 const root = path.resolve(__dirname, "..");
 let panel, stage, overlay, tray, target, quitting = false, generation = 0;
 let state = { status: "idle", collapsed: false, text: "시연을 골라 플로팅 창의 동작을 확인하세요." };
-let blockedRequests = 0, layoutVersion = 0, connection;
+let blockedRequests = 0, layoutVersion = 0, connection, overlayPresenter;
 const delay = Math.min(3000, Math.max(300, Number(process.env.DESKTOP_DEMO_DELAY_MS) || 1000));
 const indexUrl = pathToFileURL(path.join(root, "dist/index.html")).href;
 app.commandLine.appendSwitch("disable-background-networking");
@@ -27,7 +28,7 @@ function publish(update = {}) {
   if (panel && !panel.isDestroyed()) panel.webContents.send("panel:state", state);
   return state;
 }
-function clearHighlight() { generation++; overlay?.hide(); }
+function clearHighlight() { generation++; if(overlayPresenter)overlayPresenter.hide();else overlay?.hide(); }
 function hidePanel() {
   connection?.hidden();
   clearHighlight();
@@ -59,19 +60,20 @@ function collapse() {
 function updateHighlight() {
   if (!overlay) return;
   if (connection && connection.mode !== "demo") return connection.renderHighlight();
-  if (quitting || !stage || stage.isDestroyed() || state.status !== "guide" || state.collapsed || !panel.isVisible()) return overlay.hide();
+  if (quitting || !stage || stage.isDestroyed() || state.status !== "guide" || state.collapsed || !panel.isVisible()) return overlayPresenter.hide();
   const result = guidance({target,content:stage.getContentBounds(),zoom:stage.webContents.getZoomFactor(),
     displays:screen.getAllDisplays().map(display => display.workArea),
     panelBounds:panel.isVisible()?panel.getBounds():null,
     active:stage.isVisible() && !stage.isMinimized() && stage.isFocused()});
   if (state.text !== result.text || state.visibility !== result.kind) publish({text:result.text,visibility:result.kind});
-  if (result.kind !== "visible") return overlay.hide();
+  if (result.kind !== "visible") return overlayPresenter.hide();
   const rect = result.rect;
-  overlay.setBounds({x:Math.round(rect.x-8),y:Math.round(rect.y-28),width:Math.ceil(rect.width+16),height:Math.ceil(rect.height+36)});
-  if (!overlay.isVisible()) overlay.showInactive();
+  const area=screen.getDisplayMatching(rect).workArea;
+  const layout=overlayLayout(rect,area,panel.getBounds(),"연습 버튼",stage.getContentBounds(),true);
+  if(layout)overlayPresenter.present(layout,()=>{});else overlayPresenter.hide();
 }
 function requestMeasurement() {
-  target = null; layoutVersion++; overlay.hide();
+  target = null; layoutVersion++; overlayPresenter.hide();
   if (stage && !stage.isDestroyed()) stage.webContents.send("stage:measure",layoutVersion);
   updateHighlight();
 }
@@ -95,7 +97,7 @@ async function openStage() {
   stage.showInactive();
 }
 function checkFocus() {
-  overlay.hide();
+  overlayPresenter.hide();
   updateHighlight();
   setTimeout(() => { if (!quitting) updateHighlight(); },80);
 }
@@ -158,8 +160,12 @@ else {
     panel.on("resize",updateHighlight);
     overlay = new BrowserWindow({ show: false, transparent: true, frame: false, focusable: false,
       skipTaskbar: true, alwaysOnTop: true, resizable: false, hasShadow: false,
-      webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
+      webPreferences: { preload:path.join(__dirname,"overlay-preload.cjs"), backgroundThrottling:false, nodeIntegration: false, contextIsolation: true, sandbox: true } });
     protect(overlay);
+    overlayPresenter=new OverlayPresenter(overlay);
+    ipcMain.on("overlay:ready",(event,version)=>{
+      if(event.sender===overlay.webContents&&event.senderFrame===overlay.webContents.mainFrame&&event.senderFrame.url===pathToFileURL(path.join(root,"dist/overlay.html")).href)overlayPresenter.acknowledge(version);
+    });
     overlay.setIgnoreMouseEvents(true);
     overlay.setAlwaysOnTop(true, "screen-saver");
     ipcMain.handle("panel:command", async (event, action, payload) => {
@@ -210,7 +216,11 @@ else {
     await overlay.loadFile(path.join(root, "dist/overlay.html"));
     await panel.loadFile(path.join(root, "dist/index.html"));
     if (!process.argv.includes("--smoke-test")) {
-      connection = require("./assistant.cjs").assistant({panel,overlay,publish,clearDemo:clearHighlight,ownFocused:()=>panel.isFocused()||!!stage?.isFocused(),autoOpen:!process.argv.includes("--background-test")});
+      const handle=panel.getNativeWindowHandle();
+      const panelWindow=(handle.length>=8?handle.readBigUInt64LE():BigInt(handle.readUInt32LE())).toString();
+      const overlayHandle=overlay.getNativeWindowHandle();
+      const overlayWindow=(overlayHandle.length>=8?overlayHandle.readBigUInt64LE():BigInt(overlayHandle.readUInt32LE())).toString();
+      connection = require("./assistant.cjs").assistant({panel,overlay,overlayPresenter,panelWindow,overlayWindow,publish,clearDemo:clearHighlight,ownFocused:()=>panel.isFocused(),autoOpen:!process.argv.includes("--background-test")});
       publish(connection.state());
     } else showPanel();
     if (process.argv.includes("--smoke-test")) {

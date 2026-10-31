@@ -38,3 +38,4 @@ postgres_data/
 
 # ec2 키페어 제외
 welfare_helper__key.pem
+/.local/extension-connection.json

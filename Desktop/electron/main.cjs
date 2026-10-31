@@ -48,9 +48,12 @@ function collapse() {
     clearHighlight();
     if (state.status === "waiting") publish({ status: "idle", text: "시연을 중지했습니다. 다시 선택해 주세요." });
   }
-  const area = screen.getDisplayMatching(panel.getBounds()).workArea;
-  panel.setSize(Math.min(380, area.width), state.collapsed ? 76 : Math.min(560, area.height));
-  clampPanel();
+  const bounds = panel.getBounds(), area = screen.getDisplayMatching(bounds).workArea;
+  const width = Math.min(380, area.width), height = state.collapsed ? 76 : Math.min(560, area.height);
+  panel.setResizable(true);
+  panel.setBounds({x: Math.max(area.x, Math.min(bounds.x, area.x + area.width - width)),
+    y: Math.max(area.y, Math.min(bounds.y, area.y + area.height - height)), width, height});
+  panel.setResizable(false);
   return state;
 }
 function updateHighlight() {
@@ -171,7 +174,10 @@ else {
       else if (action === "reset" || action === "error") {
         clearHighlight(); publish({ status: action === "error" ? "error" : "idle",
           text: action === "error" ? "로컬 오류 시연입니다. 화면을 판단할 수 없을 때 안내를 멈추고 다시 확인합니다." : "초기화했습니다. 다시 시연을 선택하세요." });
-      } else if (action === "state") publish();
+      } else if (action === "state") {
+        publish();
+        if (process.argv.includes("--background-test")) return {...state, _testWindow: {bounds: panel.getBounds(), visible: panel.isVisible()}};
+      }
       else throw new Error("알 수 없는 동작입니다.");
       return state;
     });
@@ -204,7 +210,7 @@ else {
     await overlay.loadFile(path.join(root, "dist/overlay.html"));
     await panel.loadFile(path.join(root, "dist/index.html"));
     if (!process.argv.includes("--smoke-test")) {
-      connection = require("./assistant.cjs").assistant({panel,overlay,publish,clearDemo:clearHighlight,ownFocused:()=>panel.isFocused()||!!stage?.isFocused()});
+      connection = require("./assistant.cjs").assistant({panel,overlay,publish,clearDemo:clearHighlight,ownFocused:()=>panel.isFocused()||!!stage?.isFocused(),autoOpen:!process.argv.includes("--background-test")});
       publish(connection.state());
     } else showPanel();
     if (process.argv.includes("--smoke-test")) {

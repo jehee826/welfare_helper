@@ -4,15 +4,26 @@ function configuration() {
 }
 async function jsonRequest(url,body,signal) {
   const response=await fetch(url,{method:body?"POST":"GET",headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined,signal,redirect:"error"});
-  if(!response.ok) throw new Error("local_service_error");
+  if(!response.ok) {await response.body?.cancel();throw new Error(response.status===429?"local_service_busy":"local_service_error");}
   const reader=response.body.getReader(); const chunks=[];let size=0;
   try { while(true) {const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024)throw new Error("response_limit");chunks.push(Buffer.from(value));} }
   finally {await reader.cancel().catch(()=>{});}
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
-async function guideStep(goal,snapshot,progress,signal) {
-  const candidates=snapshot.elements.map(({id,name,role,enabled,offscreen})=>({id,label:name,role,enabled,visible:!offscreen}));
-  const result=await jsonRequest(configuration().rag+"/api/v1/desktop/guide",{goal,candidates,progress:progress.slice(-2)},signal);
+async function guideStep(goal,snapshot,progress,signal,clarifications=[]) {
+  const candidates=snapshot.elements.filter(e=>e.enabled&&!e.offscreen).map(({id,name,role,enabled,offscreen})=>({id,label:name,role,enabled,visible:!offscreen}));
+  let result;
+  for(let attempt=0;attempt<25;attempt++) {
+    try {result=await jsonRequest(configuration().rag+"/api/v1/desktop/guide",{goal,candidates,progress:progress.slice(-2),clarifications:clarifications.slice(-3)},signal);break;}
+    catch(error) {
+      if(error.message!=="local_service_busy" || attempt===24)throw error;
+      await new Promise((resolve,reject)=>{
+        const timer=setTimeout(()=>{signal.removeEventListener("abort",abort);resolve();},3000);
+        const abort=()=>{clearTimeout(timer);reject(new Error("aborted"));};
+        if(signal.aborted)abort();else signal.addEventListener("abort",abort,{once:true});
+      });
+    }
+  }
   return {...parseStep(JSON.stringify(result.step),snapshot.elements),model:result.model};
 }
 

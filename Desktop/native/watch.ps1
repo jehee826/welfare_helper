@@ -57,11 +57,19 @@ public static class Reader {
    if(Route(true,false,false,false)!="foreground" || Route(false,false,false,true)!="inactive"
       || Route(false,true,false,true)!="retained" || Route(false,true,true,false)!="discover"
       || Route(false,true,false,false)!="unselected")throw new Exception("tracking_regression");
+   const string url="https://www.bokjiro.go.kr/ssis-tbu/index.do";
+   foreach(var display in new[]{url,"www.bokjiro.go.kr/ssis-tbu/index.do","bokjiro.go.kr/ssis-tbu/index.do"})
+     if(VerifiedAddress(display,url)!=url)throw new Exception("official_document_url_rejected");
+   foreach(var display in new[]{"http://www.bokjiro.go.kr/ssis-tbu/index.do","www.bokjiro.go.kr.evil.test/ssis-tbu/index.do","bokjiro.go.kr/other"})
+     if(VerifiedAddress(display,url)!=null)throw new Exception("unmatched_address_accepted");
+   if(VerifiedAddress("www.bokjiro.go.kr/ssis-tbu/index.do",null)!=null
+      || VerifiedAddress(url,"https://example.com/")!=null)throw new Exception("unverified_document_accepted");
  }
  class Nav {
    public AutomationElement root,document;
    public string raw,tab="",reason="addressbar_missing";
    public bool verified=false,omittedScheme=false;
+   public bool documentUrlUsed=false;
    public int nodes,edits,documents,selected;
  }
  class Node {
@@ -70,6 +78,13 @@ public static class Reader {
  }
  static bool Official(string raw) {
    Uri u;return Uri.TryCreate(raw,UriKind.Absolute,out u)&&u.Scheme=="https"&&u.Host=="www.bokjiro.go.kr"&&u.IsDefaultPort&&u.UserInfo=="";
+ }
+ static string VerifiedAddress(string address,string documentUrl) {
+   if(Official(address))return string.IsNullOrEmpty(documentUrl)||address==documentUrl?address:null;
+   if(string.IsNullOrEmpty(address)||address.Contains("://")||!Official(documentUrl))return null;
+   // scheme은 추측하지 않고 같은 탭의 문서 URL로 확인한다.
+   string display=documentUrl.Substring("https://".Length);
+   return address==display||(display.StartsWith("www.")&&address==display.Substring(4))?documentUrl:null;
  }
  static Nav Inspect(IntPtr handle) {
    var nav=new Nav(); nav.root=AutomationElement.FromHandle(handle);
@@ -99,8 +114,13 @@ public static class Reader {
      }catch(ElementNotAvailableException){}
    }
    if(nav.raw!=null) {
-     nav.verified=Official(nav.raw);
-     nav.omittedScheme=!nav.raw.Contains("://") && (nav.raw.StartsWith("www.bokjiro.go.kr/")||nav.raw=="www.bokjiro.go.kr");
+     string documentUrl=null;object value;
+     if(nav.document!=null && nav.document.TryGetCurrentPattern(ValuePattern.Pattern,out value))documentUrl=((ValuePattern)value).Current.Value;
+     string verified=VerifiedAddress(nav.raw,documentUrl);
+     nav.documentUrlUsed=verified!=null&&!Official(nav.raw);
+     nav.omittedScheme=!nav.raw.Contains("://") && (nav.raw.StartsWith("www.bokjiro.go.kr/")||nav.raw=="www.bokjiro.go.kr"||nav.raw.StartsWith("bokjiro.go.kr/")||nav.raw=="bokjiro.go.kr");
+     nav.verified=verified!=null;
+     if(nav.verified)nav.raw=verified;
      nav.reason=nav.verified?"verified":nav.omittedScheme?"url_scheme_missing":"url_not_target";
    }
    if(nav.verified && nav.selected!=1) {nav.reason="selected_tab_unverified";nav.verified=false;}
@@ -114,7 +134,7 @@ public static class Reader {
    var results=new List<object>();
    foreach(var handle in Windows()) {
      var time=Stopwatch.StartNew();
-     try {var n=Inspect(handle);results.Add(new {reason=n.reason,verified=n.verified,schemeOmitted=n.omittedScheme,browserEditCount=n.edits,documentCount=n.documents,selectedTabCount=n.selected,navigationNodes=n.nodes,elapsedMs=time.ElapsedMilliseconds});}
+     try {var n=Inspect(handle);results.Add(new {reason=n.reason,verified=n.verified,schemeOmitted=n.omittedScheme,documentUrlUsed=n.documentUrlUsed,browserEditCount=n.edits,documentCount=n.documents,selectedTabCount=n.selected,navigationNodes=n.nodes,elapsedMs=time.ElapsedMilliseconds});}
      catch(Exception e){results.Add(new {reason="uia_read_failed",errorType=e.GetType().Name,elapsedMs=time.ElapsedMilliseconds});}
    }
    return new {chromeWindowCount=results.Count,windows=results};

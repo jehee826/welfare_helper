@@ -24,7 +24,7 @@ function sanitizeSnapshot(raw) {
 function parseStep(text,elements) {
   const step=JSON.parse(text);
   if(!step || Object.keys(step).sort().join(",")!=="action,expect_label,instruction,target_id" || !["안내","추가질문","대기","보류"].includes(step.action) || typeof step.instruction!=="string" || !step.instruction.trim() || step.instruction.length>180 || /\d{4,}|@/.test(step.instruction) || !(step.expect_label===null||labels.has(step.expect_label))) throw new Error("invalid_step");
-  if(step.action==="안내") { if(!elements.some(e=>e.id===step.target_id && e.enabled)) throw new Error("unknown_target"); }
+  if(step.action==="안내") { if(!elements.some(e=>e.id===step.target_id && e.enabled && !e.offscreen)) throw new Error("unknown_target"); }
   else if(step.target_id!==null) throw new Error("unexpected_target");
   return step;
 }

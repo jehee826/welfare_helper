@@ -1,5 +1,7 @@
 # 곁에 Desktop · Windows 로컬 연결
 
+> 이전 Electron 구현 참고 문서입니다. 현재 시연은 [Chrome 확장](../Extension/README.md)을 사용하며 이 앱을 실행할 필요가 없습니다. 개인 인계문서는 로컬 `docs/log/handoff.md`로 통합했습니다. 아래는 기존 Desktop 구현을 별도로 확인할 때의 절차입니다.
+
 트레이 대기 → Chrome의 **정확한 HTTPS 복지로 호스트** 확인 → 패널을 포커스 탈취 없이 표시합니다.
 공식 진입 주소: https://www.bokjiro.go.kr/ssis-tbu/index.do . 같은 호스트의 후속 경로도 대상입니다.
 

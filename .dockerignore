@@ -19,7 +19,6 @@ Desktop/
 .claude/
 AGENTS.md
 CLAUDE.md
-작업인계.md
 docs/
 .pytest_cache/
 **/__pycache__/

@@ -13,7 +13,6 @@ postgres_data/
 **/*.pyc
 *.erd
 .reranker_cache/
-작업인계.md
 .venv/
 **/node_modules/
 FrontEnd/dist/

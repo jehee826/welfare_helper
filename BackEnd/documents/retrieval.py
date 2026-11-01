@@ -131,7 +131,7 @@ def active_document_chunks(cur, model, scope=None, *, include_local_documents=Fa
         if len(documents) > 50000:
             raise DocumentError('document_catalog_size_limit')
         if not documents:
-            return [], {}, {}, []
+            return [], {}, {}, [], {}
         rows_cur.execute('SELECT v.*,v.embedding::text AS vector_text FROM public.welfare_document_vectors v '
                          'JOIN public.rag_documents d ON d.document_id=v.document_id AND d.active_job_id=v.job_id '
                          'JOIN public.rag_document_jobs j ON j.job_id=v.job_id AND j.document_id=v.document_id '
@@ -159,5 +159,8 @@ def active_document_chunks(cur, model, scope=None, *, include_local_documents=Fa
     # 한 제도의 현재 문서 중 손상된 근거가 있으면 나머지만으로 완전한 조건이라고 답하지 않는다.
     rejected={c.chunk_id for c in chunks if c.service_id in unavailable}
     identities = [(str(d['document_id']),str(d['job_id']),str(d['updated_at'])) for d in documents]
+    metadata = {str(doc['document_id']): {key: str(doc.get(key) or '') for key in
+                ('source_organization', 'region_scope', 'basis_year', 'source_updated_at', 'valid_from', 'valid_until')}
+                for doc in documents if doc['service_id'] not in unavailable}
     return ([c for c in chunks if c.chunk_id not in rejected],
-            {k:v for k,v in vectors.items() if k not in rejected}, unavailable, identities)
+            {k:v for k,v in vectors.items() if k not in rejected}, unavailable, identities, metadata)

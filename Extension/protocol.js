@@ -37,7 +37,7 @@
   const personalMobile=/(?:개인|신청자|수급자|본인|내)(?:의)?[ \t]*(?:휴대(?:전화|폰)(?:번호)?|연락처|전화(?:번호)?)(?:는|은)?[ \t]*[:：=]?[ \t]*01[016789][ \t-]*[0-9]{3,4}[ \t-]*[0-9]{4}(?![0-9])/g;
   const maskText=(value,userHistory=false)=>[resident,account,userHistory?mobile:personalMobile].reduce((v,pattern)=>v.replace(pattern,'[개인정보 가림]'),value);
   const sensitiveInput=value=>maskText(value,true)!==value;
-  const displayFields=new Set(['text','quote','context','heading_context','source_url','sourceUrl','url','name','title','summary','label','phone','suggestions','ministry','department','category','keywords','eligibility','benefit','howToApply']);
+  const displayFields=new Set(['text','quote','context','heading_context','source_url','sourceUrl','url','name','title','summary','label','phone','suggestions','ministry','department','category','keywords','eligibility','benefit','howToApply','region_scope','source_organization']);
   function redactDocument(value,displayText=true){
     if(typeof value==='string')return displayText?maskText(value):value;
     if(Array.isArray(value))return value.map(item=>redactDocument(item,displayText));

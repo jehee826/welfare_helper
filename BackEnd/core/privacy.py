@@ -19,6 +19,7 @@ DISPLAY_FIELDS = {
     "text", "quote", "context", "heading_context", "source_url", "sourceUrl", "url",
     "name", "title", "summary", "label", "phone", "suggestions", "ministry", "department",
     "category", "keywords", "eligibility", "benefit", "howToApply",
+    "region_scope", "source_organization",
 }
 
 

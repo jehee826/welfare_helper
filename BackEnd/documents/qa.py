@@ -2,11 +2,13 @@
 
 import math
 import time
+from pydantic import ValidationError
 
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import prepare_context, fit_answer, ANSWER_SYSTEM
+from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
 
 
 def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None):
@@ -106,8 +108,15 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     trace["rerank"] = [{"chunk_id": c.chunk_id, "score": score, "selected": i < service.core_k}
                        for i, (c, score) in enumerate(ordered)]
     trace["timings_ms"]["rerank"] = round((time.monotonic() - rerank_started) * 1000, 2)
+    selected = complete_sources(snapshot, selected, query+' '+conversation['search_intent'])
+    trace['evidence_policy'] = 'related_parents_and_conditions_within_document_version'
     documents = [{"id": c.chunk_id, "name": c.document_name, "pages": list(c.page_refs),
-                  "heading": c.heading_context, "text": c.text} for c in selected]
+                  "heading": c.heading_context, "text": c.text, 'document_id':c.document_id,
+                  'version':c.version, 'service_id':c.service_id, 'source_url':c.source_url,
+                  'source_updated_at':c.source_updated_at, 'basis_year':c.basis_year,
+                  **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
+    for index, document in enumerate(documents,1):
+        document['reference_id'] = f'C{index}'
     prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output)
     trace["context"]["context_omitted"] |= omitted
     trace["budget"] = {"context_limit": capacity, "reserved_output": output,
@@ -121,6 +130,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                 "context_usage": {"omitted": context_trace["context_omitted"]},
                 **({"context_update": context_update} if context_update is not None else {})}, trace
     included_ids = {document["id"] for document in included}
+    references = {document['reference_id']:document['id'] for document in included}
+    trace['source_references'] = references
     selected = [chunk for chunk in selected if chunk.chunk_id in included_ids]
     trace["context"]["generation_history_messages"] = len(fitted["history"])
     trace["context"]["generation_summary_used"] = bool(fitted["summary"])
@@ -132,13 +143,17 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     trace["context"]["summary_used"] = context_trace["preparation_summary_used"] or bool(fitted["summary"])
     evidence = [{"chunk_id": c.chunk_id, "document_id": c.document_id, "role": "retrieved", "quote": "",
                  "text": c.text, "context": c.text, "pages": list(c.page_refs), "source_blocks": list(c.source_blocks),
-                 "heading_context": c.heading_context, "source_url": c.source_url} for c in selected]
+                 "heading_context": c.heading_context, "source_url": c.source_url,
+                 'source_updated_at':c.source_updated_at, 'basis_year':c.basis_year,
+                 **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
     generation_started = time.monotonic()
     try:
         checkpoint()
-        text = llm.chat_text(ANSWER_SYSTEM, prompt)
+        schema = WelfareAnswer.model_json_schema()
+        schema['$defs']['Citation']['properties']['id']['enum'] = list(references)
+        raw_answer = llm.chat(ANSWER_SYSTEM, prompt, schema=schema)
         checkpoint()
-        if not isinstance(text, str) or not text.strip():
+        if not isinstance(raw_answer, dict) or not raw_answer:
             raise ValueError("빈 모델 응답입니다.")
     except (ExecutionTimeoutError, ExecutionCancelledError):
         raise
@@ -158,8 +173,34 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         raise DocumentError("document_embedding_failed") from None
     if current_digest != digest:
         raise DocumentError("embedding_digest_changed")
-    trace["reason"] = "answer"
+    try:
+        answer = validate_answer(raw_answer, included)
+        trace['answer_validation'] = 'accepted'
+    except ValidationError:
+        answer = None
+        trace['answer_validation'] = 'invalid_schema'
+    except (ValueError, TypeError) as exc:
+        answer = None
+        code = str(exc)
+        trace['answer_validation'] = code if code in {
+            'empty_answer','unsupported_citations','unsupported_clarification_quantity',
+            'missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_contact','invalid_source_references'
+        } else 'invalid_answer'
+    trace['citation_validation'] = 'exact_source_span_and_literal_values_only'
+    status = answer.status if answer else 'invalid_evidence_answer'
+    trace["reason"] = status
     trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-    return {"kind": "answer", "text": text.strip(), "services": [], "suggestions": [], "evidence": evidence,
+    if status != 'answer':
+        messages = {'out_of_scope':'복지서비스의 대상·지원 내용·신청 방법을 안내하고 있습니다. 복지 관련 질문을 알려주세요.',
+                    'no_evidence':'복지서비스의 대상·지원 내용·신청 방법을 안내하고 있습니다. 이번 자료에서 관련 근거를 확인하지 못했습니다. 복지서비스명이나 확인할 조건을 알려주세요.',
+                    'invalid_evidence_answer':'답변과 원문 근거의 대응을 확인하지 못해 답변을 보류했습니다. 담당 기관의 공식 안내를 확인해 주세요.'}
+        return {'kind':'fallback', 'reason':status, 'text':messages.get(status, answer.text if answer else messages['invalid_evidence_answer']),
+                'services':[], 'contacts':[], 'suggestions':[], 'evidence':[],
+                'context_usage':{'omitted':context_trace['context_omitted']},
+                **({'context_update':context_update} if context_update is not None else {})}, trace
+    quotes = {references[citation.id]:citation.quote for citation in answer.citations}
+    for item in evidence:
+        item['quote'] = quotes.get(item['chunk_id'], '')
+    return {"kind": "answer", "text": answer.text.strip(), "services": [], "suggestions": [], "evidence": evidence,
             "context_usage": {"omitted": context_trace["context_omitted"]},
             **({"context_update": context_update} if context_update is not None else {})}, trace

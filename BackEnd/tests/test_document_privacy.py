@@ -17,6 +17,14 @@ DOC = "00000000-0000-0000-0000-000000000001"
 PATHS = ["/api/v1/chat", f"/api/v1/admin/documents/{DOC}/query", f"/api/v1/admin/documents/{DOC}/search"]
 
 
+def test_source_metadata_is_display_text_and_original_is_preserved():
+    original = {'region_scope':'서울특별시 991399-1234567', 'source_organization':'기관 개인 연락처: 010-1234-5678'}
+    result = redact_document(original)
+    assert '991399-1234567' not in result['region_scope']
+    assert '010-1234-5678' not in result['source_organization']
+    assert original['region_scope'].endswith('991399-1234567')
+
+
 @pytest.mark.parametrize("case", CASES)
 def test_shared_input_policy(case):
     assert sensitive_input(case["text"]) is case["sensitive"]

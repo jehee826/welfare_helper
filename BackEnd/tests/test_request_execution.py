@@ -287,7 +287,7 @@ def test_store_status_and_snapshot_apply_transaction_local_budget(monkeypatch):
     connection.cursor.return_value.__enter__.return_value = raw
     raw.fetchone.return_value = {"document_id": DOC, "jobs": []}
     raw.fetchall.return_value = []
-    monkeypatch.setattr("BackEnd.documents.retrieval.active_document_chunks", lambda *_a, **_kw: ([], {}, {}, []))
+    monkeypatch.setattr("BackEnd.documents.retrieval.active_document_chunks", lambda *_a, **_kw: ([], {}, {}, [], {}))
     with execution.inference_request(None, 2):
         assert DocumentStore(lambda: connection).status(DOC)[0]["document_id"] == DOC
         assert not PgServiceRepository(lambda: connection).snapshot().chunks

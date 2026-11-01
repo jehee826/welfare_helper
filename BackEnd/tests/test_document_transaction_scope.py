@@ -87,7 +87,7 @@ def test_search_snapshot_keeps_readonly_repeatable_read(monkeypatch):
     conn = Connection()
     conn.cur.execute = lambda *a, **kw: None
     conn.cur.fetchall = lambda: []
-    monkeypatch.setattr('BackEnd.documents.retrieval.active_document_chunks', lambda *a, **kw: ([], {}, {}, []))
+    monkeypatch.setattr('BackEnd.documents.retrieval.active_document_chunks', lambda *a, **kw: ([], {}, {}, [], {}))
     PgServiceRepository(lambda: conn).snapshot()
     assert conn.settings == {'isolation_level': 'REPEATABLE READ', 'readonly': True}
     assert conn.closed

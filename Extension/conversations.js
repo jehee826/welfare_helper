@@ -31,7 +31,11 @@
       const shortened=item.truncated===true||item.quote.length>limits.quote||item.pages.length>limits.references||item.source_blocks.length>limits.references||!!item.context;
       const masked=item.redacted===true||cleanText(item.quote)!==item.quote||source_url!==item.source_url;
       truncated=truncated||shortened;redacted=redacted||masked;
-      return {document_id:item.document_id,chunk_id:item.chunk_id,pages:item.pages.slice(0,limits.references),source_blocks:item.source_blocks.slice(0,limits.references),quote,source_url,truncated:shortened,redacted:masked};
+      const metadata={};
+      for(const key of ['source_organization','region_scope','basis_year','source_updated_at','valid_from','valid_until']){
+        if(typeof item[key]==='string')metadata[key]=cleanText(item[key]).slice(0,300);
+      }
+      return {document_id:item.document_id,chunk_id:item.chunk_id,pages:item.pages.slice(0,limits.references),source_blocks:item.source_blocks.slice(0,limits.references),quote,source_url,truncated:shortened,redacted:masked,...metadata};
     });
     return {values,truncated,redacted};
   }

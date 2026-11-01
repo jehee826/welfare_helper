@@ -1,6 +1,15 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,key,profileKey,profile,expected,answer,append}=require('./conversation_fixture.cjs');
 require('../protocol.js');const policy=require('../conversations.js');
+test('원문 지역·수정일은 상담 복원에도 보존하고 개인정보 형식은 정제한다',async()=>{
+  const f=worker(),state=(await f.action('get')).state;
+  const reply={...answer,evidence:[{document_id:'00000000-0000-0000-0000-000000000001',chunk_id:'source:1',quote:'지원 조건',context:'지원 조건',pages:[1],source_blocks:['b1'],source_url:'https://example.invalid',region_scope:'서울특별시',source_updated_at:'2026-07-04',source_organization:'공식기관 <script>명령</script> 010-1234-5678'}]};
+  const saved=await append(f,state,'A'.repeat(20),'질문',reply);
+  assert.equal(saved.ok,true);
+  const restored=(await worker(f.data).action('get')).state.conversations[0].messages[1].evidence[0];
+  assert.equal(restored.region_scope,'서울특별시');assert.equal(restored.source_updated_at,'2026-07-04');
+  assert.ok(!restored.source_organization.includes('<script>'));assert.ok(!restored.source_organization.includes('010-1234-5678'));
+});
 test('공개 상담은 성공쌍으로 저장되고 worker 재생성 후 복원된다',async()=>{
   const f=worker(),initial=await f.action('get');assert.equal(initial.state.revision,0);assert.equal(f.data[key],undefined);
   const saved=await append(f,initial.state);assert.equal(saved.ok,true);assert.equal(saved.state.revision,1);

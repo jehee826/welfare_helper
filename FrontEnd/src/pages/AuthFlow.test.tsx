@@ -78,7 +78,7 @@ it("서버가 세션을 거부하면 문서 기능을 열지 못한다", async (
 });
 
 it("문서 관리 직접 진입의 비밀번호 실패는 입력을 비우고 업로드를 열지 않는다", async () => {
-  const fetch = vi.fn(async () => json({}, 401));
+  const fetch = vi.fn(async (_url: string) => json({}, 401));
   vi.stubGlobal("fetch", fetch);
   localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(oldHistory));
   mount();

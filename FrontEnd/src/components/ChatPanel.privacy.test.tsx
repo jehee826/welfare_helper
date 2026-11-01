@@ -39,7 +39,7 @@ it("HTTP 채팅과 관리자 질의/검색도 민감 질문을 네트워크 전�
 
 it("정상 질문은 전송하고 응답·근거·이력 콜백에서는 원문 식별정보를 가린다", async () => {
   const answer = { kind: "answer" as const, text: "가상 991399-1234567, 2026년 129/1355 안내", services: [], suggestions: [],
-    evidence: [{ chunk_id: "chunk", document_id: "doc", quote: "991399-1234567", context: "계좌번호: 321-00-000001", pages: [1], source_blocks: ["b1"], source_url: "https://example.invalid" }] };
+    evidence: [{ chunk_id: "chunk", document_id: "doc", quote: "991399-1234567", context: "계좌번호: 321-00-000001", pages: [1], source_blocks: ["b1"], source_url: "https://example.invalid", region_scope: "서울특별시", source_updated_at: "2026-07-04" }] };
   const ask = vi.fn().mockResolvedValue(answer), onAnswered = vi.fn();
   render(<ChatPanel api={{ ask, initialSuggestions: () => [] }} profile={null} onAnswered={onAnswered} />);
   submit("2026년 129 기준, 14일 3권은?");
@@ -48,6 +48,8 @@ it("정상 질문은 전송하고 응답·근거·이력 콜백에서는 원문 
   expect(log).not.toHaveTextContent("991399-1234567");
   expect(log).not.toHaveTextContent("321-00-000001");
   expect(within(log).getByText(/원문 그대로의 인용이 아닙니다/)).toBeInTheDocument();
+  expect(log).toHaveTextContent('지역: 서울특별시 · 자료 수정일: 2026-07-04 · 기준연도: 미기재');
+  expect(log).toHaveTextContent('자료 수정일은 현행 운영 확인일이 아닙니다');
   expect(JSON.stringify(onAnswered.mock.calls)).not.toContain("991399-1234567");
   expect(answer.evidence[0].quote).toBe("991399-1234567");
   expect(ask).toHaveBeenCalledOnce();

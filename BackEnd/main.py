@@ -177,9 +177,10 @@ def runtime_settings():
         "configuration_only": True,
         "readiness_checked": False,
         "qa": {
-            "mode": "document_rag", "policy": "minimal_document_evidence",
+            "mode": "document_rag", "policy": "welfare_document_evidence",
             "profile_supported": True, "history_supported": True, "conversation_summary_supported": True,
             "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
+            "source_span_validation_enabled": True, "semantic_entailment_verified": False,
         },
         "llm": {
             "model": settings.ollama_llm,

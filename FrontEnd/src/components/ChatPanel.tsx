@@ -132,6 +132,8 @@ export function ChatPanel({ api, profile, onAnswered }: Props) {
                 <p className="bubble__text">{item.context}</p>
                 <p className="muted small">쪽: {item.pages.length ? item.pages.join(", ") : "미확인"} · 원문 블록: {item.source_blocks.join(", ")}</p>
                 <p className="bubble__text muted small">출처: {item.source_url || "미확인"}</p>
+                <p className="muted small">지역: {item.region_scope || "미확인"} · 자료 수정일: {item.source_updated_at || "미확인"} · 기준연도: {item.basis_year || "미기재"}</p>
+                <p className="muted small">자료 수정일은 현행 운영 확인일이 아닙니다. 신청 전 관할 기관의 최신 기준을 확인하세요.</p>
               </li>)}</ol>
             </details>}
           </div>;

@@ -13,7 +13,7 @@ from pydantic import SecretStr
 from BackEnd.core.settings import Settings
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.qa import answer_document
-from BackEnd.documents.context import PREPARE_SYSTEM
+from BackEnd.documents.context import PREPARE_SYSTEM, ANSWER_SYSTEM
 from BackEnd.rag.chat import ChatService
 from BackEnd.rag.evidence import EvidenceChunk
 from BackEnd.rag.repository import CatalogSnapshot
@@ -38,7 +38,10 @@ def components(settings, *, private=False):
     def generate(system, user):
         if system == PREPARE_SYSTEM:
             return json.dumps({"query":json.loads(user)["current_question"],"summary":None,"needs_clarification":False})
-        return ("관리자" if private else "공개") + " 답변. 가상 991399-1234567. 2026년 129/1355 안내"
+        sources = json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
+        documents = [chunk for source in sources for chunk in source['chunks']]
+        return json.dumps({'status':'answer','text':('관리자' if private else '공개') + ' 답변. 가상 991399-1234567. 2026년 129/1355 안내',
+                           'citations':[{'id':doc['id'],'quote':doc['text']} for doc in documents]}, ensure_ascii=False)
     llm = SimpleNamespace(model_digest=Mock(return_value=DIGEST), embed=Mock(return_value=[[.1] * 1024]),
                           context_limit=lambda:32768, input_cost=lambda system,user:len((system+user).encode()),
                           chat_text=Mock(side_effect=generate),
@@ -105,7 +108,8 @@ def test_chat_and_debug_execute_identical_document_qa_once_per_request(diagnosti
     for call in api.qa.call_args_list:
         assert call.args == (service.repo, service, "현재 질문")
         assert call.kwargs == {"profile":body["profile"],"history":body["history"]}
-    assert service.llm.embed.call_count == service.llm.chat_text.call_count == service.llm.chat.call_count == 2
+    assert service.llm.embed.call_count == 2 and service.llm.chat.call_count == 4
+    service.llm.chat_text.assert_not_called()
     assert service.answer_with_diagnostics.call_count == service.answer.call_count == 0
     trace = debug.json()["diagnostics"]
     assert trace["mode"] == "document_rag" and trace["scope_document_id"] is None
@@ -119,9 +123,9 @@ def test_chat_and_debug_execute_identical_document_qa_once_per_request(diagnosti
     assert public_evidence["chunk_id"] == "public:9913991234567"
     assert public_evidence["source_blocks"] == ["block:9913991234567"]
     assert any(item["document_id"] == PRIVATE_DOC for item in chat.json()["evidence"]) is private
-    for prompt in service.llm.chat.call_args_list:
+    for prompt in (call for call in service.llm.chat.call_args_list if call.args[0] == PREPARE_SYSTEM):
         assert "과거 질문" in prompt.args[1] and "부산광역시" in prompt.args[1]
-    for prompt in service.llm.chat_text.call_args_list:
+    for prompt in (call for call in service.llm.chat.call_args_list if call.args[0] == ANSWER_SYSTEM):
         assert "과거 질문" not in prompt.args[1] and "부산광역시" in prompt.args[1]
     assert api.repository.call_count == (2 if private else 0)
     if private:
@@ -207,7 +211,7 @@ def test_real_document_qa_failures_have_matching_status_without_fabricated_trace
         elif failure == "reranker":
             service.reranker.score.side_effect = RuntimeError("virtual-private-exception")
         elif failure == "generation":
-            service.llm.chat_text.side_effect = RuntimeError("virtual-private-exception")
+            service.llm.chat.side_effect = RuntimeError("virtual-private-exception")
         elif failure == "scope":
             service.repo.document_scope = PRIVATE_DOC
         elif failure == "snapshot":
@@ -263,12 +267,12 @@ def test_document_query_retains_scope_and_search_does_not_generate(diagnostic_ap
     assert query.status_code == 200
     assert query.json()["diagnostics"]["scope_document_id"] == DOC
     assert query.json()["response"]["evidence"][0]["document_id"] == DOC
-    assert api.qa.call_count == service.llm.chat_text.call_count == 1
-    service.llm.chat_text.reset_mock()
+    assert api.qa.call_count == service.llm.chat.call_count == 1
+    service.llm.chat.reset_mock()
     search = api.client.post(f"/api/v1/admin/documents/{DOC}/search", headers=headers, json={"query": "현재 질문"})
     assert search.status_code == 200 and search.json()["chunks"]
     assert all(str(call.args[1]) == DOC for call in scoped.call_args_list)
-    service.llm.chat_text.assert_not_called()
+    service.llm.chat.assert_not_called()
     assert api.qa.call_count == 1
 
 
@@ -280,9 +284,10 @@ def test_runtime_reports_effective_document_policy_without_external_calls(diagno
     assert response.status_code == 200
     body = response.json()
     assert body["configuration_only"] is True and body["readiness_checked"] is False
-    assert body["qa"] == {"mode": "document_rag", "policy": "minimal_document_evidence", "profile_supported": True,
+    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": True,
                           "history_supported": True, "conversation_summary_supported": True,
-                          "usage_is_request_specific": True, "strict_citation_validation_enabled": False}
+                          "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
+                          "source_span_validation_enabled": True, "semantic_entailment_verified": False}
     assert body["retrieval"]["candidate_limit"] == api.public.top_n == 40 < api.settings.retrieve_top_n
     assert body["retrieval"]["dense_limit"] == api.public.dense_k
     assert body["retrieval"]["keyword_limit"] == api.public.keyword_k
@@ -306,5 +311,6 @@ def test_chat_and_diagnostics_share_summary_input_and_safe_failure_update(diagno
     assert chat.json()["context_update"]["status"] == "failed"
     assert debug.json()["diagnostics"]["context"]["summary_status"] == "failed"
     assert all(call.kwargs["conversation_context"] == context for call in api.qa.call_args_list)
-    assert api.public.llm.chat_text.call_count == api.public.llm.chat.call_count == 2
+    api.public.llm.chat_text.assert_not_called()
+    assert api.public.llm.chat.call_count == 4
     assert "합성 대화 주제" not in json.dumps(debug.json()["diagnostics"],ensure_ascii=False)

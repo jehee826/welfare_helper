@@ -24,6 +24,7 @@ class CatalogSnapshot:
     unavailable_services: dict[str, str] = field(default_factory=dict)
     service_stamps: dict[str, str] = field(default_factory=dict)
     embeddings: dict[str, Sequence[float]] | None = None
+    document_metadata: dict[str, dict] = field(default_factory=dict)
 
 
 def vector_literal(values: list[float]) -> str:
@@ -87,7 +88,7 @@ class PgServiceRepository:
                 # 문서 API 접수 여부와 검색 자료의 사용 여부는 별개다. 벡터 저장소는 항상 하나다.
                 from BackEnd.documents.retrieval import active_document_chunks
 
-                chunks, vectors, unavailable, identities = active_document_chunks(
+                chunks, vectors, unavailable, identities, document_metadata = active_document_chunks(
                     cur, self.embed_model, self.document_scope, include_local_documents=self.include_local_documents)
         versions={}
         checkpoint()
@@ -100,7 +101,7 @@ class PgServiceRepository:
                           + '\n'.join(c.storage() for c in chunks)
                           + json.dumps(unavailable,sort_keys=True)
                           + json.dumps(identities))
-        return CatalogSnapshot(services,chunks,stamp,versions,unavailable,service_stamps,vectors)
+        return CatalogSnapshot(services,chunks,stamp,versions,unavailable,service_stamps,vectors,document_metadata)
 
     def chunks_for_services(self, ids):
         return [c for c in self.snapshot().chunks if c.service_id in ids]

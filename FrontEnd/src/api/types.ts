@@ -39,6 +39,8 @@ export interface DocumentEvidence {
   pages: number[]; source_blocks: string[]; source_url: string;
   role?: "claim" | "required_context" | "retrieved"; required_by?: string[];
   redacted?: boolean;
+  source_organization?: string; region_scope?: string; basis_year?: string;
+  source_updated_at?: string; valid_from?: string; valid_until?: string;
 }
 export type DocumentChatAnswer = ChatAnswer & { evidence?: DocumentEvidence[] };
 

@@ -1,5 +1,4 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const {JSDOM}=require('../../FrontEnd/node_modules/jsdom');
 const protocol=require('../protocol.js');
 const cases=require('../../BackEnd/tests/fixtures/document_privacy_cases.json');
 const source=name=>fs.readFileSync(path.join(__dirname,'..',name),'utf8');
@@ -20,23 +19,10 @@ test('가림은 표시 텍스트·URL에만 적용하고 식별자·해시·원�
 });
 
 function panel(){
-  const dom=new JSDOM('<main><button>공개 메뉴</button></main>',{url:'https://www.bokjiro.go.kr/',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
-  for(const name of ['protocol.js','dom.js','capture.js','profile.js'])w.eval(source(name));
-  let root,receiver,prepared=0;const packets=[];
-  const attach=w.Element.prototype.attachShadow;
-  w.Element.prototype.attachShadow=function(opts){const value=attach.call(this,opts);if(this.hasAttribute('data-gyeote-host'))root=value;return value;};
-  const access={mode:'anonymous',status:'anonymous',accessId:'one'};
-  w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async msg=>{
-    if(msg.type==='gyeote:profile-get')return {ok:true,state:{schemaVersion:1,revision:0,onboardingCompleted:true,profile:null}};if(msg.type==='gyeote:prepare'){prepared++;return {ok:true,timeoutSeconds:30,documentAccess:access};}
-    if(msg.type==='gyeote:document-access')return access;
-    throw Error('예상하지 않은 브라우저 호출');
-  },connect:()=>({onMessage:{addListener(fn){receiver=fn;}},onDisconnect:{addListener(){}},postMessage(value){packets.push(value);},disconnect(){}})}};
-  w.eval(source('content.js'));
-  const mode=root.querySelector('.mode');mode.value='document';mode.dispatchEvent(new w.Event('change'));
-  return {root,packets,prepared:()=>prepared,send:async text=>{await new Promise(setImmediate);
-    root.querySelector('input[type=text]').value=text;
-    root.querySelector('#gyeote-question').closest('form').dispatchEvent(new w.Event('submit',{cancelable:true}));await new Promise(setImmediate);
-  },answer:body=>receiver({type:'result',requestId:packets.at(-1).requestId,body}),close:()=>{w.dispatchEvent(new w.Event('pagehide'));w.close();}};
+  const {worker,ui}=require('./conversation_fixture.cjs'),f=ui(worker());
+  return {root:f.root,get packets(){return f.ports.map(port=>port.packet);},
+    prepared:()=>f.requests.filter(message=>message.type==='gyeote:prepare').length,
+    send:async text=>{await f.ready();await f.question(text);},answer:body=>f.answer(body),close:f.close};
 }
 
 test('문서 패널은 민감 질문을 메시지·준비·포트 전송 전에 차단한다',async()=>{
@@ -47,7 +33,7 @@ test('문서 패널은 민감 질문을 메시지·준비·포트 전송 전에 
       assert.match(f.root.querySelector('.status').textContent,/개인정보가 포함된 질문은 보낼 수 없습니다/);
     }
     await f.send('2026년 129/1355, 14일 3권');assert.equal(f.packets.length,1);
-    assert.deepEqual(JSON.parse(JSON.stringify(f.packets[0].payload)),{query:'2026년 129/1355, 14일 3권',history:[],profile:null});
+    const payload=f.packets[0].payload;assert.equal(payload.query,'2026년 129/1355, 14일 3권');assert.deepEqual(payload.history,[]);assert.equal(payload.profile,null);assert.ok(payload.conversation_context);
     await f.answer({kind:'answer',text:'정상 답변',evidence:[]});
   }finally{f.close();}
 });
@@ -60,7 +46,7 @@ test('문서 답변·근거 표시와 다음 이력은 정제하며 공공 연�
     }]});
     const shown=f.root.querySelector('.conversation').textContent;
     assert.ok(!shown.includes('991399-1234567')&&!shown.includes('321-00-000001'));
-    assert.match(shown,/원문 그대로의 인용이 아닙니다/);assert.match(shown,/010-0000-0000/);
+    assert.match(shown,/원문 그대로의 인용이 아닙니다/);assert.match(shown,/129\/1355/);assert.ok(!shown.includes('010-0000-0000'));
     await f.send('후속 질문');assert.equal(f.packets.length,2);
     assert.ok(!JSON.stringify(f.packets[1].payload.history).includes('010-0000-0000'));
     await f.answer({kind:'answer',text:'후속 답변',evidence:[]});

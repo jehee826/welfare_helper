@@ -11,7 +11,7 @@ function fixture(data={},failure={}){
  w.document.elementFromPoint=()=>w.document.querySelector('main button');w.requestAnimationFrame=fn=>{queueMicrotask(fn);return 1;};w.cancelAnimationFrame=()=>{};
  w.Storage.prototype.getItem=w.Storage.prototype.setItem=()=>{throw Error('호스트 저장소 사용 금지');};
  w.TextEncoder=TextEncoder;
- for(const name of ['protocol.js','conversations.js','dom.js','capture.js','profile.js','conversation-panel.js'])w.eval(source(name));
+ for(const name of ['protocol.js','conversations.js','dom.js','capture.js','profile.js','conversation-panel.js','input-assist.js'])w.eval(source(name));
  let root,workerListener,changed,contentListener,captureHidden=false;const ports=[],runtimeMessages=[],calls={get:0,set:0};
  const attach=w.Element.prototype.attachShadow;w.Element.prototype.attachShadow=function(options){const r=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))root=r;return r;};
  const session={connection:{token:'x'.repeat(40),timeoutSeconds:30,imageEnabled:true}};

@@ -5,7 +5,7 @@ function fixture({shadow=false,link=false}={}){
  const dom=new JSDOM('<main><button>공개 메뉴</button></main>',{url:'https://www.bokjiro.go.kr/ssis-tbu/index.do',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
  let button=w.document.querySelector('main button');if(link){const a=w.document.createElement('a');a.href='/first';a.textContent='공개 메뉴';button.replaceWith(a);button=a}if(shadow){const host=w.document.createElement('div');button.replaceWith(host);host.attachShadow({mode:'open'}).append(button)}w.Element.prototype.getBoundingClientRect=()=>({x:40,y:60,left:40,top:60,right:180,bottom:100,width:140,height:40});
  const computed=w.getComputedStyle.bind(w);w.getComputedStyle=n=>{const s=computed(n);return {display:s.display,visibility:s.visibility||'visible',opacity:s.opacity||'1',position:s.position||'static'}};w.document.elementFromPoint=()=>button;
- for(const n of ['dom.js','protocol.js','conversations.js','capture.js','profile.js','conversation-panel.js'])w.eval(source(n));
+ for(const n of ['dom.js','protocol.js','conversations.js','capture.js','profile.js','conversation-panel.js','input-assist.js'])w.eval(source(n));
  const attach=w.Element.prototype.attachShadow;let root,receiver,packet;const ports=[],timers=new Map();let timerId=0;
  w.setTimeout=(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id};w.clearTimeout=id=>timers.delete(id);
  w.Element.prototype.attachShadow=function(options){const r=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))root=r;return r};

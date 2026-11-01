@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {JSDOM}=require('../../FrontEnd/node_modules/jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../dom.js'),'utf8');
-function startPanel(w,root){for(const name of ['conversations.js','conversation-panel.js','content.js'])w.eval(fs.readFileSync(path.join(__dirname,'..',name),'utf8'));const mode=root().querySelector('.mode');mode.value='screen';mode.dispatchEvent(new w.Event('change'));}
+function startPanel(w,root){for(const name of ['conversations.js','conversation-panel.js','input-assist.js','content.js'])w.eval(fs.readFileSync(path.join(__dirname,'..',name),'utf8'));const mode=root().querySelector('.mode');mode.value='screen';mode.dispatchEvent(new w.Event('change'));}
 function fixture(html){
   const dom=new JSDOM(html,{url:'https://www.bokjiro.go.kr/ssis-tbu/index.do',runScripts:'outside-only',pretendToBeVisual:true});
   const {window:w}=dom;

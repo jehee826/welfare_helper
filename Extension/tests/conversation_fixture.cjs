@@ -20,7 +20,7 @@ function worker(data={[profileKey]:profile},failure={}){
   const action=(operation,fields={},id=1)=>send({type:'gyeote:conversations-'+operation,accessId:session.documentAccessId,...fields},sender(id));
   return {data,failure,session,calls,messages,clients,send,sender,action,notify:(change,area='local')=>changed(change,area)};
 }
-function ui(server,id=1){
+function ui(server,id=1,setup=()=>{}){
   const {JSDOM}=require('../../FrontEnd/node_modules/jsdom');
   const dom=new JSDOM('<main><button>공개 메뉴</button></main>',{url:'https://www.bokjiro.go.kr/',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;let root,listener;
   const ports=[],requests=[];
@@ -33,7 +33,8 @@ function ui(server,id=1){
   w.chrome={runtime:{id:'x',onMessage:{addListener(fn){listener=fn;server.clients.set(id,fn);}},sendMessage:async message=>{requests.push(plain(message));return server.send(message,server.sender(id));},connect:()=>{
     const port={onMessage:{addListener(fn){port.receive=fn;}},onDisconnect:{addListener(fn){port.disconnectedListener=fn;}},postMessage(packet){port.packet=plain(packet);},disconnect(){port.disconnected=true;port.disconnectedListener?.();}};ports.push(port);return port;
   }}};
-  for(const name of ['protocol.js','conversations.js','dom.js','capture.js','profile.js','conversation-panel.js','content.js'])w.eval(source(name));
+  setup(w);
+  for(const name of JSON.parse(source('manifest.json')).content_scripts[0].js)w.eval(source(name));
   const button=(text,scope=root)=>[...scope.querySelectorAll('button')].find(node=>node.textContent===text);
   return {w,root,ports,requests,ready:settle,button,
     click:async(text,scope=root)=>{const node=button(text,scope);if(!node)throw Error('버튼 없음: '+text);node.click();await settle();},

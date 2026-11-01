@@ -4,21 +4,21 @@ const plain=value=>JSON.parse(JSON.stringify(value));
 const key='gyeote.conversations',profileKey='gyeote.profile';
 const profile={schemaVersion:1,revision:1,onboardingCompleted:true,profile:null};
 const settle=async()=>{for(let i=0;i<6;i++)await new Promise(setImmediate);};
-function worker(data={[profileKey]:profile},failure={}){
-  let listener,changed;const clients=new Map(),messages=[],calls={get:[],set:[],level:[]};
+function worker(data={[profileKey]:profile},failure={},scriptSource=source,fetcher=()=>{throw Error('실제 통신 금지');}){
+  let listener,changed,clicked;const clients=new Map(),messages=[],calls={get:[],set:[],level:[]};
   const session={documentAccess:'anonymous',documentAccessId:'public-1',connection:{token:'x'.repeat(40),timeoutSeconds:30,imageEnabled:false}};
   const chrome={runtime:{id:'x',getURL:name=>'chrome-extension://x/'+name,onMessage:{addListener(fn){listener=fn;}},sendMessage:async message=>messages.push(plain(message)),getContexts:async()=>[{}]},
     storage:{local:{setAccessLevel:async value=>{calls.level.push(value);if(failure.level)throw Error('private failure');},get:async name=>{calls.get.push(name);if(![key,profileKey].includes(name))throw Error('임의 key 접근');if(failure.get)throw Error('private failure');if(failure.beforeGet)await failure.beforeGet(name);return {[name]:plain(data[name]??null)===null?undefined:plain(data[name])};},set:async value=>{
       calls.set.push(plain(value));if(failure.set||failure.quota&&key in value)throw Error('private quota failure');if(failure.beforeSet)await failure.beforeSet(value);
       const changes={};for(const [name,item] of Object.entries(value)){changes[name]={oldValue:data[name],newValue:plain(item)};data[name]=plain(item);}changed(changes,'local');
     }},session:{get:async keys=>Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(name=>[name,session[name]])),set:async value=>{const changes={};for(const [name,item] of Object.entries(value)){changes[name]={oldValue:session[name],newValue:item};session[name]=item;}changed(changes,'session');}},onChanged:{addListener(fn){changed=fn;}}},
-    tabs:{query:async()=>[...clients.keys()].map(id=>({id})),sendMessage:async(id,message)=>clients.get(id)?.(plain(message),{id:'x'},()=>{})},action:{onClicked:{addListener(){}}}};
-  const sandbox={chrome,URL,TextEncoder,TextDecoder,crypto:require('node:crypto').webcrypto,AbortController,setTimeout,clearTimeout,fetch:()=>{throw Error('실제 통신 금지');}};
-  const context=vm.createContext(sandbox);sandbox.importScripts=(...names)=>names.forEach(name=>vm.runInContext(source(name),context));vm.runInContext(source('worker.js'),context);
+    tabs:{query:async()=>[...clients.keys()].map(id=>({id})),sendMessage:async(id,message)=>clients.get(id)?.(plain(message),{id:'x'},()=>{})},action:{onClicked:{addListener(fn){clicked=fn;}}}};
+  const sandbox={chrome,URL,TextEncoder,TextDecoder,crypto:require('node:crypto').webcrypto,AbortController,setTimeout,clearTimeout,fetch:fetcher};
+  const context=vm.createContext(sandbox);sandbox.importScripts=(...names)=>names.forEach(name=>vm.runInContext(scriptSource(name),context));vm.runInContext(scriptSource('worker.js'),context);
   const sender=id=>({id:'x',frameId:0,url:'https://www.bokjiro.go.kr/',tab:{id,url:'https://www.bokjiro.go.kr/'}});
   const send=(message,from=sender(1))=>new Promise(resolve=>{if(!listener(plain(message),from,value=>resolve(plain(value))))resolve(undefined);});
   const action=(operation,fields={},id=1)=>send({type:'gyeote:conversations-'+operation,accessId:session.documentAccessId,...fields},sender(id));
-  return {data,failure,session,calls,messages,clients,send,sender,action,notify:(change,area='local')=>changed(change,area)};
+  return {data,failure,session,calls,messages,clients,send,sender,action,source:scriptSource,click:tab=>clicked(tab),notify:(change,area='local')=>changed(change,area)};
 }
 function ui(server,id=1,setup=()=>{}){
   const {JSDOM}=require('../../FrontEnd/node_modules/jsdom');
@@ -34,7 +34,8 @@ function ui(server,id=1,setup=()=>{}){
     const port={onMessage:{addListener(fn){port.receive=fn;}},onDisconnect:{addListener(fn){port.disconnectedListener=fn;}},postMessage(packet){port.packet=plain(packet);},disconnect(){port.disconnected=true;port.disconnectedListener?.();}};ports.push(port);return port;
   }}};
   setup(w);
-  for(const name of JSON.parse(source('manifest.json')).content_scripts[0].js)w.eval(source(name));
+  const scriptSource=server.source||source;
+  for(const name of JSON.parse(scriptSource('manifest.json')).content_scripts[0].js)w.eval(scriptSource(name));
   const button=(text,scope=root)=>[...scope.querySelectorAll('button')].find(node=>node.textContent===text);
   return {w,root,ports,requests,ready:settle,button,
     click:async(text,scope=root)=>{const node=button(text,scope);if(!node)throw Error('버튼 없음: '+text);node.click();await settle();},

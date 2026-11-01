@@ -80,6 +80,25 @@ docker compose exec -T backend rm /tmp/gyeote-extension-connection.json
 
 ## EC2 전환 준비
 
+### 일반 사용자용 문서 상담 패키지
+
+소스 기본값은 로컬 `http://127.0.0.1:8000`이다. 배포 담당자는 승인된 **HTTPS API origin 하나**로 새 패키지를 만든다. 주소는 설치 파일에 고정하며 페이지 메시지·저장소·연결 JSON으로 바꾸지 않는다. 다음은 **접속하지 않는 더미 예시**다.
+
+```cmd
+node Extension/package.cjs --origin https://api.example.invalid --name remote-example --timeout 600
+```
+
+결과는 `.local/extension-packages/remote-example`이며 운영 파일 17개만 포함한다. 기존 출력은 덮어쓰지 않으므로 재생성할 때 새 이름을 사용한다. manifest의 정확한 호스트 권한과 options/offscreen CSP는 같은 origin으로 생성된다. 원격 요청 기한은 기본 **600초**, `--timeout`은 **1~1800초**다. 로컬 패키지는 origin을 `http://127.0.0.1:8000`으로 지정하며 기존 연결 JSON의 시간과 누락 시 90초를 유지한다.
+
+원격 패키지의 **공개 문서 상담에는 연결 JSON이 필요 없다.** 관리자는 연결 설정에서 직접 비밀번호를 입력한다. 세션은 해당 문서 서버에 묶이며 주소가 바뀌면 다시 로그인해야 한다. 원격 화면 안내·캡처는 제공하지 않으며 화면 토큰은 전송하지 않는다. 화면 안내의 공개 인증·남용 방지는 별도 설계가 필요하다.
+
+배포 준비 순서는 다음과 같다. 실제 실행·배포 검증은 아직 수행하지 않았다.
+
+1. 승인된 API 호스트의 DNS·TLS를 준비하고 기존 Compose `edge` 프로필/Caddy를 검토한다. `PUBLIC_API_HOST`가 HTTPS 호스트를 정하며 Caddy는 `/api/v1/desktop/*`를 공개하지 않는다. 백엔드 8000·Ollama 11434의 외부 공개 없이 edge가 내부 backend로 연결하게 한다.
+2. 관리자 웹의 `VITE_API_BASE_URL`을 **같은 HTTPS origin, `/api` 제외**로 설정하고 프런트를 재빌드·배포한다. 기존 관리자 웹 진입 주소는 유지한다. 비밀번호·서버 키를 `VITE_*`에 넣지 않는다.
+3. 설치·배포 방식에서 확정한 확장 ID의 `chrome-extension://32자ID`를 백엔드 `CORS_ALLOWED_ORIGINS`에 정확히 추가하고 기존 공식 웹/로컬 목록을 유지한다. CORS는 인증을 대신하지 않는다.
+4. 실제 주소로 새 확장 패키지를 생성한 뒤 신규 설치→공개 상담→관리자 로그인/업로드→단절/복구를 확인한다. 실제 주소·확장 ID·인증서는 미확정이므로 현재는 **사용자 테스트 필요**다.
+
 EC2 실행은 별도 기동·테스트 요청 후 진행한다. 변경 코드가 승인 후 원격에 게시된 경우, 초기 런타임 환경 주입 이후 갱신은 저장소에서 다음 두 명령을 사용한다. 현재 로컬 변경이 자동으로 EC2에 전달되는 것은 아니다.
 
 ```sh

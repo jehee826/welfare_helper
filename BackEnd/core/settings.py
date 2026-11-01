@@ -1,6 +1,7 @@
 from functools import lru_cache
 from math import ceil
 from pathlib import Path
+import re
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
@@ -80,8 +81,8 @@ class Settings(BaseSettings):
     @classmethod
     def validate_cors_origins(cls, values: list[str]) -> list[str]:
         allowed = {"https://welfare-helper-iota.vercel.app", "http://localhost:5173", "http://127.0.0.1:5173"}
-        if any(value not in allowed for value in values):
-            raise ValueError("CORS는 공식 프런트와 지정된 로컬 개발 Origin만 허용합니다.")
+        if any(value not in allowed and not re.fullmatch(r"chrome-extension://[a-p]{32}", value) for value in values):
+            raise ValueError("CORS는 공식 프런트·지정된 로컬 개발 Origin·명시한 Chrome 확장 ID만 허용합니다.")
         return list(dict.fromkeys(values))
 
 

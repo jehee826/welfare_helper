@@ -20,6 +20,8 @@
   style.dataset.gyeoteStyle='';style.textContent=palette.map((p,i)=>`.${classes[i]}{outline:4px solid ${p.color}!important;outline-offset:4px!important}.${classes[i]}:focus-visible{outline-style:double!important;outline-width:6px!important}`).join('\n');document.documentElement.append(style);
   let selected=[],snapshot=null,serial=0,frame=0,collapsed=false,ownMutation=false,observer,requestPort=null,busy=false,activeReply=null,history=[],historyUrl='',pageVersion=0,capturing=false,requestTimer;
   let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
+  let screenAllowed=false,configurationReady=false;
+  try{screenAllowed=GyeoteProtocol.screenAvailable();configurationReady=true;}catch{}
   const conversations={screen:[],document:[]};
   const rootStyles=new Map([[document,style]]);
   const observeOptions={subtree:true,childList:true,characterData:true,attributes:true,attributeOldValue:true,attributeFilter:['class','style','hidden','disabled','aria-disabled','aria-hidden','aria-modal','aria-label','aria-labelledby','title','role','href','type','id','for']};
@@ -77,7 +79,7 @@
   $('.consultation').innerHTML='<form><label for="gyeote-question">현재 화면에서 궁금한 점</label><input id="gyeote-question" type="text" maxlength="240" autocomplete="off" placeholder="개인정보 없이 질문하세요"><button type="submit">현재 화면에 질문</button></form><div class="row"><button class="cancel" hidden>요청 취소</button><button class="settings">연결 설정</button><button class="documents" type="button" title="관리자 웹을 새 탭으로 엽니다">문서 관리</button><button class="reset">대화 지우기</button></div>';
   const questionForm=$('.consultation form'),cancelButton=$('.cancel');
   const modeLabel=document.createElement('label'),modeSelect=document.createElement('select');modeSelect.className='mode';modeSelect.setAttribute('aria-label','질문 모드');
-  for(const [value,text] of [['document','복지 상담'],['screen','화면 안내']]){const option=document.createElement('option');option.value=value;option.textContent=text;modeSelect.append(option);}
+  for(const [value,text] of [['document','복지 상담'],['screen','화면 안내']]){const option=document.createElement('option');option.value=value;option.textContent=text;option.disabled=value==='screen'&&!screenAllowed;modeSelect.append(option);}
   modeSelect.value=mode;
   modeLabel.append(document.createTextNode('질문 모드 '),modeSelect);questionForm.before(modeLabel);
   const modeNotice=document.createElement('p');modeNotice.className='muted';modeLabel.after(modeNotice);
@@ -104,6 +106,7 @@
   const accessKey=state=>[state?.mode||'anonymous',state?.status||'anonymous',state?.accessId||'initial'].join(':');
   function resetDocumentHistory(){documentHistory=[];documentHistoryAccess=null;conversations.document=[];if(mode==='document')$('.conversation').replaceChildren();inputAssist?.invalidate();}
   function showDocumentAccess(state){
+    if(configurationReady&&(state?.origin!==GyeoteProtocol.documentOrigin()&&!(state?.origin===undefined&&screenAllowed)))throw new Error('document_access_changed');
     currentAccess=state;
     accessNotice.textContent=state?.mode==='admin'?(state.status==='ready'?'문서 접근: 관리자 연결됨':'문서 접근: 관리자 세션 만료 · 연결 설정에서 다시 로그인하세요.'):'문서 접근: 공개 문서 (익명)';
     $('.reset').textContent=state?.mode==='anonymous'?'새 상담':'임시 대화 지우기';
@@ -119,19 +122,21 @@
   function updateMode(){
     const documentMode=mode==='document',input=$('#gyeote-question');
     panel.setAttribute('aria-label',documentMode?'곁에 복지 상담':'곁에 화면 안내');
-    imageOption.checked=false;imageOption.disabled=documentMode;imageLabel.hidden=documentMode;imageNotice.hidden=documentMode;$('.screen-controls').hidden=documentMode;
+    imageOption.checked=false;imageOption.disabled=documentMode||!screenAllowed;imageLabel.hidden=documentMode;imageNotice.hidden=documentMode;$('.screen-controls').hidden=documentMode;
     input.maxLength=documentMode?300:240;input.value='';
     questionForm.querySelector('label').textContent=documentMode?'등록 문서에 궁금한 점':'현재 화면에서 궁금한 점';
     questionForm.querySelector('button[type="submit"]').textContent=documentMode?'문서에 질문':'현재 화면에 질문';
     modeNotice.textContent=documentMode?'질문·현재 조건·제한한 최근 대화와 누적 요약으로 문서를 다시 검색합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요. 비공개 자료는 연결 설정에서 관리자 로그인 후 질문하세요.':'현재 공개 화면의 정보로 설명하고 필요한 요소를 표시합니다.';
     accessNotice.hidden=!documentMode;if(documentMode){accessNotice.textContent='문서 접근 상태 확인 중';void refreshDocumentAccess();}
     $('.body > p.muted').textContent=documentMode?'등록된 문서의 원문 근거로 답변합니다.':'현재 공개 복지로 화면을 함께 봅니다. 클릭은 직접 해 주세요.';
-    $('.scope-notice').textContent=documentMode?'복지 정보는 등록 문서를 기준으로 안내합니다. 개인정보는 입력하지 마세요.':'다른 사이트·로그인·개인정보 화면은 지원하지 않습니다.';
+    $('.scope-notice').textContent=documentMode?'복지 정보는 등록 문서를 기준으로 안내합니다. 개인정보는 입력하지 마세요.'+(!screenAllowed?' 이 패키지는 원격 화면 안내를 제공하지 않습니다.':''):'다른 사이트·로그인·개인정보 화면은 지원하지 않습니다.';
     setStatus(documentMode?'등록 문서에 질문하세요. 개인정보는 입력하지 마세요.':'공개 화면에서 궁금한 내용을 질문하세요.');
+    if(!configurationReady)setStatus('설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.');
     updateProfileView();
     if(!documentMode)void savedPanel.setAccess(currentAccess,false);
   }
   modeSelect.addEventListener('change',()=>{
+    if(modeSelect.value==='screen'&&!screenAllowed){modeSelect.value=mode;setStatus('이 패키지는 원격 화면 안내를 제공하지 않습니다. 복지 상담을 이용해 주세요.');return;}
     if(!['screen','document'].includes(modeSelect.value)||modeSelect.value===mode)return;
     cancel();snapshot=null;conversations[mode]=[...$('.conversation').children];mode=modeSelect.value;
     $('.conversation').replaceChildren(...conversations[mode]);updateMode();
@@ -141,7 +146,7 @@
     const anonymous=currentAccess?.mode==='anonymous';
     return {mode,key:[mode,serial,accessKey(currentAccess),profilePanel.state?.revision,saved?.generation,saved?.revision,saved?.lastActiveConversationId].join('|'),
       available:host.isConnected&&!panel.hidden&&!collapsed&&!document.hidden&&!questionForm.hidden,
-      blocked:busy||requestPending||mode==='document'&&(!profilePanel.allowed||!currentAccess||anonymous&&(!savedPanel.ready||savedPanel.hasUnsaved)||!anonymous&&currentAccess.status!=='ready'),
+      blocked:!configurationReady||busy||requestPending||mode==='document'&&(!profilePanel.allowed||!currentAccess||anonymous&&(!savedPanel.ready||savedPanel.hasUnsaved)||!anonymous&&currentAccess.status!=='ready'),
       hasHistory:anonymous?!!conversation?.messages.some(m=>m.role==='assistant'):documentHistory.some(m=>m.role==='assistant'),limit:$('#gyeote-question').maxLength};
   }});
   updateMode();
@@ -179,9 +184,11 @@
     }
     message.article.append(details);
   }
-  const errors={connection_required:'연결 설정에서 서버 연결 파일을 먼저 불러오세요.',feature_disabled:'서버의 화면 상담 기능이 꺼져 있습니다.',busy:'서버가 이전 요청을 처리 중입니다. 잠시 후 직접 다시 질문하세요.',input_budget:'공개 화면 정보가 입력 한도를 넘거나 형식을 확인하지 못했습니다.',image_disabled:'이미지 옵션이 꺼져 있습니다. 이미지를 빼고 다시 질문하세요.',image_unsupported:'현재 모델은 이미지 입력을 지원하지 않습니다. 이미지를 무시하지 않고 중지했습니다.',private_connection:'허용된 로컬 연결을 확인하지 못했습니다.',request_stopped:'요청이 취소되거나 설정된 처리 시간을 넘었습니다. 서버 확인 후 직접 다시 질문하세요.',connection_failed:'서버 연결이 끊겼습니다. 연결 확인 후 직접 다시 질문하세요.',generation_failed:'화면 답변을 확인하지 못했습니다. 서버 모델 상태를 확인하세요.',invalid_reply:'응답의 대상 또는 화면 버전을 확인하지 못해 표시하지 않았습니다.'};
+  const errors={connection_configuration_invalid:'설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.',remote_screen_unavailable:'이 패키지는 원격 화면 안내를 제공하지 않습니다.',connection_required:'연결 설정에서 서버 연결 파일을 먼저 불러오세요.',feature_disabled:'서버의 화면 상담 기능이 꺼져 있습니다.',busy:'서버가 이전 요청을 처리 중입니다. 잠시 후 직접 다시 질문하세요.',input_budget:'공개 화면 정보가 입력 한도를 넘거나 형식을 확인하지 못했습니다.',image_disabled:'이미지 옵션이 꺼져 있습니다. 이미지를 빼고 다시 질문하세요.',image_unsupported:'현재 모델은 이미지 입력을 지원하지 않습니다. 이미지를 무시하지 않고 중지했습니다.',private_connection:'허용된 로컬 연결을 확인하지 못했습니다.',request_stopped:'요청이 취소되거나 설정된 처리 시간을 넘었습니다. 서버 확인 후 직접 다시 질문하세요.',connection_failed:'서버 연결이 끊겼습니다. 연결 확인 후 직접 다시 질문하세요.',generation_failed:'화면 답변을 확인하지 못했습니다. 서버 모델 상태를 확인하세요.',invalid_reply:'응답의 대상 또는 화면 버전을 확인하지 못해 표시하지 않았습니다.'};
   async function ask(question){
     cancel();const version=serial,documentMode=mode==='document';
+    if(!configurationReady){setStatus('설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.');return;}
+    if(!documentMode&&!screenAllowed){setStatus('이 패키지는 원격 화면 안내를 제공하지 않습니다.');return;}
     if(documentMode&&!profilePanel.allowed){setStatus('내 정보를 저장하거나 나중 입력을 선택한 뒤 질문해 주세요.');return;}
     let requestProfile,conversationContext,requestAccess,requestInput,publicRequest=false;
     const requestId=GyeoteDOM.id();

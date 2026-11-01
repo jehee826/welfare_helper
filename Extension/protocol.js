@@ -1,4 +1,23 @@
 (() => {
+  const documentDeployment=Object.freeze({origin:'http://127.0.0.1:8000',timeoutSeconds:600});
+  const localDocumentOrigin='http://127.0.0.1:8000';
+  function validateDocumentOrigin(value){
+    try{
+      if(typeof value!=='string'||value!==value.trim())throw new Error();
+      const url=new URL(value);
+      if(value===localDocumentOrigin)return value;
+      if(url.protocol!=='https:'||url.origin!==value||url.username||url.password||url.hostname.includes('*')||!url.hostname||url.hostname.endsWith('.')||url.port==='0')throw new Error();
+      const hostname=url.hostname;
+      if(hostname.startsWith('[')){
+        if(!/^\[[0-9a-f:]+\]$/i.test(hostname))throw new Error();
+      }else if(hostname.length>253||hostname.split('.').some(label=>! /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label)))throw new Error();
+      return value;
+    }catch{throw new Error('connection_configuration_invalid');}
+  }
+  function validateDocumentTimeout(value){if(!Number.isInteger(value)||value<1||value>1800)throw new Error('connection_configuration_invalid');return value;}
+  const documentOrigin=()=>{validateDocumentTimeout(documentDeployment.timeoutSeconds);return validateDocumentOrigin(documentDeployment.origin);};
+  const screenAvailable=()=>documentOrigin()===localDocumentOrigin;
+  const documentTimeoutSeconds=connection=>screenAvailable()?timeoutSeconds(connection):validateDocumentTimeout(documentDeployment.timeoutSeconds);
   const id=value=>typeof value==='string'&&/^[A-F0-9]{20}$/.test(value);
   const text=(value,max)=>typeof value==='string'&&value.trim()&&value.length<=max&&!/\d{4,}|@|[<>\x00-\x08]|주민등록|인증번호|인증코드|비밀번호|password|\bOTP\b/i.test(value);
   const official=value=>{try{const u=new URL(value);return u.origin==='https://www.bokjiro.go.kr'&&!u.username&&!u.password;}catch{return false;}};
@@ -106,6 +125,7 @@
     return redactDocument({kind:body.kind,text:body.text,evidence,...(update?{context_update:update}:{}),...(Object.hasOwn(body,'context_usage')?{context_usage:contextUsage(body.context_usage)}:{})});
   }
   const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
-  const api={id,text,official,request,reply,timeoutSeconds,documentRequest,documentReply,adminSession,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
+  const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&(value.origin===documentOrigin()||value.origin===undefined&&screenAvailable());
+  const api={id,text,official,request,reply,timeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,adminSession,documentSession,documentOrigin,screenAvailable,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

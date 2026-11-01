@@ -140,7 +140,7 @@ docker compose ps
 
 문서 요청의 전체 예산은 `OLLAMA_TIMEOUT`(최대 1800초)이며, 선택적 `timeout_seconds`(1~1800 정수)로 줄일 수 있습니다. 문서·화면 실행은 **프로세스당 1개·대기 0개**로 제한하고 혼잡은 429, 기한 초과는 504, 연결 종료 취소는 가능한 경우 499로 구분합니다. 웹의 취소 버튼은 전송을 중단하며, 이미 실행 중인 DB·ONNX 작업의 즉시 종료를 보장하지 않습니다. native 작업이 끝날 때까지 다음 실행은 받지 않습니다. 다중 worker·문서 적재 프로세스에 걸친 전역 제한은 아닙니다.
 
-리랭커 객체는 설정별 최대 4개를 재사용하지만 문서 snapshot과 BM25는 요청마다 다시 구성합니다. 공통 관리자 비밀번호는 로컬 `.env` 또는 배포 환경의 `ADMIN_PASSWORD`를 변경한 뒤 백엔드를 재생성·재기동해야 적용됩니다. Compose는 `docker compose up -d --force-recreate backend`로 환경값을 다시 주입하며, 단순 `restart`는 변경된 환경값을 반영하지 않습니다.
+리랭커 객체는 설정별 최대4개, 검증한 동일 스냅샷의 문서 BM25는 [제한된 인덱스1개](docs/design/rag-accuracy-design.md#2-검색과-리랭커)를 재사용합니다. DB 스냅샷 검증·Python 유사도 계산은 요청마다 유지합니다. 공통 관리자 비밀번호는 로컬 `.env` 또는 배포 환경의 `ADMIN_PASSWORD`를 변경한 뒤 백엔드를 재생성·재기동해야 적용됩니다. Compose는 `docker compose up -d --force-recreate backend`로 환경값을 다시 주입하며, 단순 `restart`는 변경된 환경값을 반영하지 않습니다.
 
 </details>
 

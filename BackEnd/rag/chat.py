@@ -179,6 +179,7 @@ class ChatService:
         self.analyzer = analyzer or KoreanAnalyzer()
         self.dense_k, self.keyword_k, self.core_k = dense_k, keyword_k, core_k
         self._bm25 = None
+        self._document_bm25 = None
         self._index_stamp = ""
         self._index_lock = Lock()
 

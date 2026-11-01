@@ -10,6 +10,27 @@ from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import prepare_context, fit_answer, ANSWER_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
 
+MAX_CACHED_CHUNKS = 2000
+MAX_CACHED_INDEX_CHARACTERS = 2_000_000
+
+
+def _document_keyword_index(repo, service, snapshot, digest):
+    checkpoint()
+    key = (snapshot.stamp, repo.document_scope, getattr(repo, "include_local_documents", False),
+           getattr(repo, "embed_model", None), getattr(repo, "embed_dim", None), digest, id(service.analyzer))
+    cached = getattr(service, "_document_bm25", None)
+    if cached is not None and cached[0] == key:
+        return cached[1], None
+    # API의 공통 inference gate 안에서 사용한다. 별도 대기 lock과 질문/답변 캐시는 두지 않는다.
+    service._document_bm25 = None
+    names = {chunk.service_id: chunk.document_name for chunk in snapshot.chunks}
+    characters = sum(len(names[c.service_id]) + len(c.section) + len(c.heading_context) + len(c.text) + 3
+                     for c in snapshot.chunks)
+    index = BM25Index(snapshot.chunks, names, service.analyzer)
+    checkpoint()
+    keep = len(snapshot.chunks) <= MAX_CACHED_CHUNKS and characters <= MAX_CACHED_INDEX_CHARACTERS
+    return index, (key, index) if keep else None
+
 
 def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None):
     checkpoint()
@@ -21,10 +42,12 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     snapshot = repo.snapshot()
     checkpoint()
     if repo.document_scope and any(chunk.document_id != str(repo.document_scope) for chunk in snapshot.chunks):
+        service._document_bm25 = None
         raise DocumentError("document_scope_mismatch")
     trace["snapshot"] = snapshot.stamp
     trace["versions"] = sorted({chunk.version for chunk in snapshot.chunks})
     if not snapshot.chunks:
+        service._document_bm25 = None
         trace["reason"] = "no_document_evidence"
         trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
         return {"kind": "fallback", "text": "등록된 문서에서 검색할 원문을 찾지 못했습니다.",
@@ -72,8 +95,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         raise
     except Exception:
         raise DocumentError("document_embedding_failed") from None
-    names = {chunk.service_id: chunk.document_name for chunk in snapshot.chunks}
-    index = BM25Index(snapshot.chunks, names, service.analyzer)
+    index, pending_index = _document_keyword_index(repo, service, snapshot, digest)
     checkpoint()
     keyword = index.search(search_query, service.keyword_k, allowed)
     checkpoint()
@@ -162,6 +184,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     trace["timings_ms"]["generation"] = round((time.monotonic() - generation_started) * 1000, 2)
     trace["generation_metadata"] = dict(llm.last_chat_diagnostics)
     if repo.snapshot().stamp != snapshot.stamp:
+        service._document_bm25 = None
         raise DocumentError("document_changed_during_search")
     checkpoint()
     try:
@@ -172,6 +195,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     except Exception:
         raise DocumentError("document_embedding_failed") from None
     if current_digest != digest:
+        service._document_bm25 = None
         raise DocumentError("embedding_digest_changed")
     try:
         answer = validate_answer(raw_answer, included)
@@ -187,6 +211,10 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             'missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_contact','invalid_source_references'
         } else 'invalid_answer'
     trace['citation_validation'] = 'exact_source_span_and_literal_values_only'
+    # 새 인덱스는 요청의 마지막 원문/digest 확인과 취소 점검이 끝난 뒤에만 게시한다.
+    checkpoint()
+    if pending_index is not None:
+        service._document_bm25 = pending_index
     status = answer.status if answer else 'invalid_evidence_answer'
     trace["reason"] = status
     trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)

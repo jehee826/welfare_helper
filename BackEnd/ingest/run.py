@@ -7,7 +7,7 @@ from BackEnd.ingest.csv_loader import DEFAULT_CSV, CsvFormatError, load_csv
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="CSV 확인 전용입니다. 새 DB는 검토한 문서 작업으로 색인합니다.")
+    parser = argparse.ArgumentParser(description="CSV 확인 전용입니다. 원문은 관리자 업로드 후 자동 분석·청크·임베딩·게시합니다.")
     parser.add_argument("--csv", default=str(DEFAULT_CSV))
     parser.add_argument("--encoding", default="cp949")
     parser.add_argument("--dry-run", action="store_true")
@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if not args.dry_run or args.prune or args.allow_shared_write or args.check_embeddings:
         print("CSV DB 적재·prune·overview 임베딩은 지원하지 않습니다. --dry-run으로 메타데이터만 확인하고 "
-              "문서는 관리자 문서 API에서 분석·검토·색인하세요.", file=sys.stderr)
+              "원문은 관리자 문서 API에 업로드해 자동 분석·청크·임베딩·게시하세요.", file=sys.stderr)
         return 1
     try:
         records = load_csv(args.csv, encoding=args.encoding)

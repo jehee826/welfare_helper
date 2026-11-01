@@ -25,13 +25,17 @@
 
 ## 소개
 
-복지서비스의 공식 원문을 등록하고, 이용자의 질문에 관련 문서를 검색해 답하는 캡스톤 프로젝트입니다.
+복지로 공개 화면의 Chrome 확장에서 조건을 입력하고, 공식 복지 문서를 검색해 상담받는 캡스톤 프로젝트입니다. 관리자는 기존 웹에서 원문을 등록·교체합니다.
 
 - **문서 관리:** PDF·DOCX·Markdown을 분석하고 구조별 청크와 검색 벡터를 자동으로 생성합니다.
 - **문서 상담:** 벡터 검색과 키워드 검색을 결합해 관련 원문을 찾고, 모델 답변과 원문·페이지를 함께 보여줍니다.
-- **이용자 편의:** 조건·지난 상담·글자 크기를 같은 브라우저에 저장합니다.
+- **이용자 편의:** 선택 조건·이전 상담·제한된 요약을 확장에 저장하고, 추천 질문·음성으로 전송할 초안을 작성합니다.
 
-원문에 없는 내용은 없다고 답하도록 설계했지만, 답변의 정확성이나 최종 지원 자격을 보장하지는 않습니다. [Chrome 확장](Extension/README.md)은 복지로 위에서 LLM과 공개 화면 요소를 이용해 설명·버튼 테두리를 표시합니다. VLM 이미지 입력은 선택적 비교 경로이며 기본은 기존 LLM입니다.
+처음 이용할 때 조건 입력 또는 **나중에 입력** → 문서 상담 → 후속 질문·이전 상담 → 필요 시 **화면 안내** 순서로 사용합니다. 기존 React 웹 상담은 보조 경로입니다. [확장 실행·패키지 안내](Extension/README.md)를 참고하세요.
+
+조건·공개 상담·요약은 확장 전용 `chrome.storage.local`에 저장합니다. 관리자·화면 상담 이력은 메모리에, 토큰은 확장 세션 저장소에 두며 상담 전체를 DB에 저장하지 않습니다. 화면 도움은 공개 DOM 기반이며 원격 문서 패키지에서는 제공하지 않습니다.
+
+답변 정확성이나 최종 지원 자격은 보장하지 않습니다. **로컬 Qwen1.5B 실제 서비스 질문 9건은 유효 답변 0건**이었으며 이후 코드 보완의 실제 품질은 재평가하지 않았습니다.
 
 설계와 평가 자료의 위치는 [문서 목차](docs/README.md)를 참고하세요.
 
@@ -39,7 +43,7 @@
 
 | 영역 | 기술 |
 | :--- | :--- |
-| 프런트엔드 | React · TypeScript · Vite · Vitest |
+| 프런트엔드 | Chrome MV3 · React · TypeScript · Vite · Vitest |
 | 백엔드 | Python 3.12 · FastAPI · pytest |
 | 문서·AI | Docling · LangChain · Ollama/Qwen · BGE-M3 · ONNX BGE 리랭커 |
 | 데이터·배포 | Supabase(PostgreSQL·pgvector) · Docker · EC2 · Vercel |
@@ -48,7 +52,9 @@
 
 ```mermaid
 flowchart TB
-    Web["웹 · React / Vite"] --> API["API · FastAPI"]
+    Extension["Chrome 확장 · 이용자 상담"] --> API["API · FastAPI"]
+    Extension -->|문서 관리 열기| Web["웹 · 관리자 / 보조 상담"]
+    Web --> API
     subgraph Ingest["문서 등록"]
         Worker["문서 워커<br/>Docling → 구조별 청크"] --> Embed["Ollama · BGE-M3 임베딩"]
     end
@@ -61,11 +67,11 @@ flowchart TB
     API -->|질문| Search
     DB -->|문서·벡터| Search
     LLM -->|생성 답변| API
-    API -->|답변·검색 원문·페이지| Web
+    API -->|답변·검색 원문·페이지| Extension
     classDef ui fill:#fff,stroke:#222,color:#111
     classDef process fill:#f3f3f3,stroke:#666,color:#111
     classDef store fill:#e5e5e5,stroke:#222,color:#111
-    class Web,API ui
+    class Extension,Web,API ui
     class Worker,Embed,Search,Rank,LLM process
     class DB store
     style Ingest fill:#fafafa,stroke:#aaa,color:#111

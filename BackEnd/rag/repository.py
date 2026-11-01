@@ -45,7 +45,7 @@ class PgServiceRepository:
 
     @staticmethod
     def _unsupported_ingestion():
-        raise ValueError('이전 CSV·직접 상세 벡터 적재와 자동 DDL은 지원하지 않습니다. 문서 API에서 분석·검토·게시하세요.')
+        raise ValueError('이전 CSV·직접 상세 벡터 적재와 자동 DDL은 지원하지 않습니다. 관리자 문서 API 업로드 후 자동 분석·청크·임베딩·게시를 사용하세요.')
 
     def init_schema(self):
         self._unsupported_ingestion()

@@ -77,6 +77,20 @@ it("서버가 세션을 거부하면 문서 기능을 열지 못한다", async (
   expect(fetch.mock.calls.length).toBeLessThanOrEqual(2);
 });
 
+it("문서 관리 직접 진입의 비밀번호 실패는 입력을 비우고 업로드를 열지 않는다", async () => {
+  const fetch = vi.fn(async () => json({}, 401));
+  vi.stubGlobal("fetch", fetch);
+  localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(oldHistory));
+  mount();
+  fireEvent.change(await screen.findByLabelText("비밀번호"), { target: { value: "synthetic-wrong-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "들어가기" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("관리자 비밀번호가 일치하지 않습니다.");
+  expect(screen.getByLabelText("비밀번호")).toHaveValue("");
+  expect(screen.queryByRole("button", { name: "업로드·자동 처리" })).not.toBeInTheDocument();
+  expect(fetch.mock.calls.every(([url]) => String(url).endsWith("/login") || String(url).endsWith("/session"))).toBe(true);
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.history)!)).toEqual(oldHistory);
+});
+
 it("세션이 바뀌면 이전 관리자 응답을 새 세션 화면이나 공개 이력에 남기지 않는다", async () => {
   saveAdminSession({ access_token: "admin-token", session_id: "first", expires_at: Date.now() / 1000 + 3600 });
   vi.stubGlobal("fetch", vi.fn(async () => json({ kind: "answer", text: "이전 계정 원문", services: [], suggestions: [] })));

@@ -1,6 +1,33 @@
 import psycopg2
+from math import ceil
 
 from BackEnd.core.settings import Settings
+from BackEnd.core.execution import current_budget, checkpoint, ExecutionTimeoutError
+
+
+class RequestCursor:
+    """요청의 남은 예산을 각 읽기 SQL에 적용하고 원래 커서의 자료 형식을 유지한다."""
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def __getattr__(self, name):
+        return getattr(self.cursor, name)
+
+    def execute(self, query, params=None):
+        budget = current_budget()
+        try:
+            if budget is not None:
+                milliseconds = max(1, int(budget.remaining() * 1000))
+                self.cursor.execute("SELECT set_config('statement_timeout', %s, true)", (str(milliseconds),))
+                checkpoint()
+            result = self.cursor.execute(query, params)
+        except psycopg2.errors.QueryCanceled:
+            if budget is not None:
+                checkpoint()
+                raise ExecutionTimeoutError() from None
+            raise
+        checkpoint()
+        return result
 
 
 class DatabaseNotConfigured(RuntimeError):
@@ -33,4 +60,15 @@ def connection_options(settings: Settings) -> dict:
 
 
 def connect(settings: Settings):
-    return psycopg2.connect(**connection_options(settings))
+    options = connection_options(settings)
+    budget = current_budget()
+    if budget is not None:
+        remaining = budget.remaining()
+        options["connect_timeout"] = max(1, min(5, ceil(remaining)))
+    connection = psycopg2.connect(**options)
+    try:
+        checkpoint()
+        return connection
+    except Exception:
+        connection.close()
+        raise

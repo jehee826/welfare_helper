@@ -10,6 +10,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from BackEnd.rag.embeddings import validate_embeddings
+from BackEnd.core.execution import ExecutionTimeoutError, ExecutionCancelledError
 
 
 class OllamaError(RuntimeError):
@@ -24,11 +25,11 @@ class VisionUnsupportedError(OllamaError):
     """이미지를 조용히 버리는 대신 미지원 모델 조합을 거부한다."""
 
 
-class GenerationTimeoutError(OllamaError):
+class GenerationTimeoutError(OllamaError, ExecutionTimeoutError):
     """화면 요청의 남은 생성 예산이 소진됐다."""
 
 
-class GenerationCancelledError(OllamaError):
+class GenerationCancelledError(OllamaError, ExecutionCancelledError):
     """화면 요청의 연결이 끊겨 생성 HTTP 스트림을 닫는다."""
 
 
@@ -58,6 +59,10 @@ class OllamaClient:
         self._effective_context = None
         self._template_bytes = 0
         self.last_chat_diagnostics = {}
+
+    def for_request(self, deadline: float, cancelled: Callable[[], bool]):
+        return OllamaClient(self.base_url, self.embed_model, self.llm_model, self.timeout,
+                            dict(self.llm_options), self.embed_dim, deadline, cancelled)
 
     def remaining_timeout(self) -> float:
         if self.request_cancelled and self.request_cancelled():
@@ -96,9 +101,13 @@ class OllamaClient:
     def model_digest(self, model: str | None = None) -> str:
         selected = model or self.embed_model
         try:
-            response = httpx.get(f"{self.base_url}/api/tags", timeout=self.timeout)
-            response.raise_for_status()
-            models = response.json()["models"]
+            if self.request_deadline is not None:
+                data = asyncio.run(self._get_before_deadline("/api/tags"))
+            else:
+                response = httpx.get(f"{self.base_url}/api/tags", timeout=self.timeout)
+                response.raise_for_status()
+                data = response.json()
+            models = data["models"]
             if not isinstance(models, list) or any(not isinstance(row, dict) for row in models):
                 raise ValueError
             names = {selected, selected + ":latest"} if ":" not in selected else {selected}
@@ -109,6 +118,8 @@ class OllamaClient:
             if len(matches) != 1 or not all(isinstance(v, str) and v for v in matches):
                 raise ValueError
             return matches.pop()
+        except (httpx.TimeoutException, TimeoutError):
+            raise GenerationTimeoutError("모델 식별 조회 시간을 넘었습니다.") from None
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             raise OllamaError("설치된 임베딩 모델 digest를 확인하지 못했습니다.") from None
 
@@ -155,12 +166,22 @@ class OllamaClient:
                 response.raise_for_status()
                 return response.json()
 
-    async def _chat_before_deadline(self, system, user, schema, context, images):
+    async def _get_before_deadline(self, path):
+        remaining = self.remaining_timeout()
+        async with self._request_window(remaining):
+            async with httpx.AsyncClient(timeout=remaining) as client:
+                response = await client.get(f"{self.base_url}{path}")
+                response.raise_for_status()
+                return response.json()
+
+    async def _chat_before_deadline(self, system, user, schema, context, images, *, plain_text=False):
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         if images:
             messages[-1]["images"] = images
         payload = {"model": self.llm_model, "messages": messages, "stream": True,
-                   "format": schema if schema is not None else "json", "options": {**self.llm_options, "num_ctx": context}}
+                   "options": {**self.llm_options, "num_ctx": context}}
+        if not plain_text:
+            payload["format"] = schema if schema is not None else "json"
         parts, metadata = [], {}
         done = False
 
@@ -176,7 +197,8 @@ class OllamaClient:
                 raise OllamaError("생성 스트림의 텍스트 형식이 올바르지 않습니다.")
             parts.append(content)
             if data.get("done") is True:
-                metadata = {key: data[key] for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated") if key in data}
+                metadata = {key: data[key] for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated",
+                    "total_duration", "load_duration", "prompt_eval_duration", "eval_duration") if key in data}
                 return True
             return False
 
@@ -226,10 +248,14 @@ class OllamaClient:
         """문서 질의는 JSON 선택 형식 없이 모델의 일반 텍스트 응답을 받는다."""
         self.last_chat_diagnostics = {}
         try:
-            prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
-            model = ChatOllama(model=self.llm_model, base_url=self.base_url,
-                               client_kwargs={"timeout": self.timeout}, **self.llm_options)
-            message = (prompt | model).invoke({"system": system, "user": user})
+            if self.request_deadline is not None:
+                message = asyncio.run(self._chat_before_deadline(system, user, None,
+                    self.llm_options.get("num_ctx", 8192), None, plain_text=True))
+            else:
+                prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
+                model = ChatOllama(model=self.llm_model, base_url=self.base_url,
+                                   client_kwargs={"timeout": self.timeout}, **self.llm_options)
+                message = (prompt | model).invoke({"system": system, "user": user})
             self.last_chat_diagnostics = {key: message.response_metadata[key]
                 for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated", "total_duration",
                             "load_duration", "prompt_eval_duration", "eval_duration")
@@ -237,6 +263,8 @@ class OllamaClient:
             if not isinstance(message.content, str) or not message.content.strip():
                 raise OllamaError("생성 모델의 텍스트 응답이 비어 있습니다.")
             return message.content.strip()
+        except (httpx.TimeoutException, TimeoutError):
+            raise GenerationTimeoutError("문서 답변 처리 시간을 넘었습니다.") from None
         except OllamaError:
             raise
         except Exception as exc:

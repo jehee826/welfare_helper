@@ -7,6 +7,8 @@ import math
 from typing import Callable, Sequence
 
 from BackEnd.ingest.csv_loader import ServiceRecord
+from BackEnd.core.db import RequestCursor
+from BackEnd.core.execution import checkpoint
 from BackEnd.rag.embeddings import validate_embeddings
 from BackEnd.rag.evidence import EvidenceChunk, EvidenceConsistencyError, fingerprint
 
@@ -63,9 +65,11 @@ class PgServiceRepository:
         return self.snapshot().services
 
     def snapshot(self) -> CatalogSnapshot:
+        checkpoint()
         with closing(self._connect()) as conn:
             conn.set_session(isolation_level='REPEATABLE READ', readonly=True)
             with conn, conn.cursor() as cur:
+                cur = RequestCursor(cur)
                 condition = 'EXISTS(SELECT 1 FROM public.rag_documents d WHERE d.program_id=p.program_id AND d.document_id=%s)' \
                     if self.document_scope else 'TRUE' if self.include_local_documents else "NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'"
                 params = (self.document_scope,MAX_CATALOG_ROWS+1) if self.document_scope else (MAX_CATALOG_ROWS+1,)
@@ -86,6 +90,7 @@ class PgServiceRepository:
                 chunks, vectors, unavailable, identities = active_document_chunks(
                     cur, self.embed_model, self.document_scope, include_local_documents=self.include_local_documents)
         versions={}
+        checkpoint()
         for child in chunks:
             versions.setdefault(child.service_id,set()).add(child.version)
         service_stamps={r.service_id:fingerprint(json.dumps(asdict(r),ensure_ascii=False,sort_keys=True)) for r in services}
@@ -120,6 +125,7 @@ class PgServiceRepository:
             return []
         ranked=[]
         for child in chosen:
+            checkpoint()
             vector=(snapshot.embeddings or {}).get(child.chunk_id)
             if vector is None:
                 raise EvidenceConsistencyError('같은 스냅샷의 벡터가 없습니다.')

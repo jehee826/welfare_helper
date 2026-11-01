@@ -2,6 +2,7 @@ import { ApiError } from "./errors";
 import { apiBaseUrl, requireApiBaseUrl } from "./config";
 import { authenticatedFetch } from "./auth";
 import { createMockApi } from "./mockApi";
+import { sensitiveInput, redactDocument, SENSITIVE_INPUT_MESSAGE } from "../lib/privacy";
 import type { AdminProgram, ChatAnswer, Department, ProgramInput, WelfareApi } from "./types";
 
 export { ApiError };
@@ -97,6 +98,7 @@ export function createHttpApi(options: { baseUrl?: string; fallback?: WelfareApi
     getMonthlyStats: fallback.getMonthlyStats,
 
     async ask(query, _profile, signal) {
+      if (sensitiveInput(query)) throw new ApiError(SENSITIVE_INPUT_MESSAGE, 422, "sensitive_input");
       requireApiBaseUrl(baseUrl);
       const response = await authenticatedFetch(`${baseUrl}/api/v1/chat`, {
         method: "POST",
@@ -106,9 +108,10 @@ export function createHttpApi(options: { baseUrl?: string; fallback?: WelfareApi
       });
       if (!response.ok) {
         const error = await failure(response, "상담 응답을 받지 못했어요.");
-        throw error.code === "invalid_request" ? new ApiError("상담 응답을 받지 못했어요.", error.status) : error;
+        const code = /^[a-z][a-z0-9_]{0,100}$/.test(error.code) ? error.code : "";
+        throw new ApiError("상담 응답을 받지 못했어요.", error.status, code);
       }
-      return (await response.json()) as ChatAnswer;
+      return redactDocument((await response.json()) as ChatAnswer);
     },
 
     async listPrograms(query = "") {

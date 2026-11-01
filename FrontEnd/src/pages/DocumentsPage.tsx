@@ -226,7 +226,11 @@ function DocumentWorkspace({ documentId, requestedJob, onReplace, onJobChange }:
       <label className="field">확인 방식<select name="operation" disabled={!ready || busy}><option value="search">청크 검색</option><option value="query">문서 RAG 질의</option></select></label>
       <button className="btn btn--primary" disabled={!ready || busy}>{busy ? "처리 중" : "실행"}</button>
     </form>
-    {result && <section aria-label="검색 결과"><p>검색 청크 {result.chunks.length}개. 유사도는 정답 확률·정확도가 아닙니다.</p>{result.chunks.map(c => <article className="document-block" key={c.chunk_id}><p>{c.chunk_id} · {c.section} · 유사도 {c.similarity.toFixed(4)}</p><pre className="document-text">{c.text}</pre><p>쪽: {c.pages.join(", ")} · 원문 블록: {c.source_blocks.join(", ")} · 위치: {c.start}–{c.end}</p></article>)}</section>}
+    {result && <section aria-label="검색 결과"><p>검색 청크 {result.chunks.length}개. 유사도는 정답 확률·정확도가 아닙니다.</p>{result.chunks.map(c => <article className="document-block" key={c.chunk_id}>
+      <p>{c.chunk_id} · {c.section} · 유사도 {c.similarity.toFixed(4)}</p>
+      {c.redacted && <p className="muted small">개인정보 형식을 가린 자료입니다. 원문 그대로의 인용이 아닙니다. 위치는 가리기 전 원문 기준입니다.</p>}
+      <pre className="document-text">{c.text}</pre><p>쪽: {c.pages.join(", ")} · 원문 블록: {c.source_blocks.join(", ")} · 위치: {c.start}–{c.end}</p>
+    </article>)}</section>}
     {answer && <section aria-label="질의 결과"><p>{answer.response.kind}</p><pre className="document-text">{answer.response.text}</pre><p>보류 사유: {answer.response.reason ?? "없음"}</p><details open><summary>근거·진단</summary><pre className="document-text">{JSON.stringify({ services: answer.response.services, diagnostics: answer.diagnostics }, null, 2)}</pre></details></section>}
   </section>;
 }

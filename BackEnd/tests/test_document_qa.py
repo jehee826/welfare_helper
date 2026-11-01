@@ -43,6 +43,7 @@ def components(*, empty=False, failure=None):
 
     repo = SimpleNamespace(document_scope=DOC_ID, snapshot=lambda: snapshot, dense_search=dense)
     service = SimpleNamespace(llm=SimpleNamespace(model_digest=lambda: "digest", embed=embed, chat_text=generate,
+                                                 context_limit=lambda: 32768, input_cost=lambda system,user: len((system+user).encode()),
                                                  last_chat_diagnostics={"done_reason": "stop", "eval_count": 20}),
                               reranker=SimpleNamespace(score=rerank), dense_k=30, keyword_k=30, top_n=40, core_k=6,
                               analyzer=lambda text: re.findall(r"[가-힣A-Za-z0-9]+", text.lower()))
@@ -76,11 +77,13 @@ def test_real_model_stage_failure_is_exposed_as_a_safe_failure(failure):
         answer_document(repo, service, "질문")
 
 
-def test_document_scope_is_required_and_other_document_sources_are_rejected():
+def test_unscoped_qa_searches_all_documents_and_scoped_qa_rejects_other_sources():
     repo, service, calls = components()
     repo.document_scope = None
-    with pytest.raises(ValueError, match="문서 범위"):
-        answer_document(repo, service, "질문")
+    response, trace = answer_document(repo, service, "질문")
+    assert response["kind"] == "answer" and trace["scope_document_id"] is None
+    assert len(calls["prompts"]) == 1
+    calls["prompts"].clear()
     repo.document_scope = "00000000-0000-0000-0000-000000000002"
     with pytest.raises(DocumentError, match="document_scope_mismatch"):
         answer_document(repo, service, "질문")

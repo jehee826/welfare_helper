@@ -1,13 +1,15 @@
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import ValidationError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from fastapi.responses import PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
 from BackEnd.core.settings import get_settings
+from BackEnd.core.privacy import redact_document, validate_document_input
+from BackEnd.core.execution import checkpoint, current_budget, inference_request
 from BackEnd.documents.auth import require_document_admin
 from BackEnd.admin.session import AdminSession
 from BackEnd.documents.analysis import read_analysis
@@ -19,6 +21,12 @@ router = APIRouter(prefix="/api/v1/admin/documents", tags=["관리자 문서"])
 
 class DocumentQuery(BaseModel):
     query: str = Field(min_length=1, max_length=300)
+    timeout_seconds: int | None = Field(default=None, ge=1, le=1800, strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_privacy(cls, data):
+        return validate_document_input(data)
 
 
 @router.get("/processing", summary="자동 문서 처리 DB 계약 준비 상태")
@@ -52,45 +60,53 @@ def scoped_repository(store, document_id):
 
 
 @router.post("/{document_id}/search")
-def search_document(document_id: UUID, request: DocumentQuery, actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
+def search_document(document_id: UUID, request: DocumentQuery, transport: Request, actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
     try:
         from BackEnd.rag.factory import build_chat_service
 
-        repo = scoped_repository(store, document_id)
-        service = build_chat_service(repo, get_settings())
-        snapshot = repo.snapshot()
-        digest = service.llm.model_digest()
-        ids = [c.chunk_id for c in snapshot.chunks if c.embed_digest == digest]
-        results = repo.dense_search(service.llm.embed([request.query])[0], 30, ids, snapshot=snapshot)
-        if repo.snapshot().stamp != snapshot.stamp:
-            raise DocumentError("document_changed_during_search")
-        if service.llm.model_digest() != digest:
-            raise DocumentError("embedding_digest_changed")
-        return {"document_id": document_id, "model_digest": digest, "chunks": [
-            {"chunk_id": c.chunk_id, "section": c.section, "text": c.text, "similarity": c.score,
-             "start": c.start, "end": c.end, "pages": c.page_refs, "source_blocks": c.source_blocks} for c in results]}
+        with inference_request(transport, get_settings().ollama_timeout, request.timeout_seconds):
+            repo = scoped_repository(store, document_id)
+            service = build_chat_service(repo, get_settings())
+            budget = current_budget()
+            llm = service.llm.for_request(budget.deadline, budget.cancelled.is_set)
+            snapshot = repo.snapshot()
+            checkpoint()
+            digest = llm.model_digest()
+            ids = [c.chunk_id for c in snapshot.chunks if c.embed_digest == digest]
+            results = repo.dense_search(llm.embed([request.query])[0], 30, ids, snapshot=snapshot)
+            checkpoint()
+            if repo.snapshot().stamp != snapshot.stamp:
+                raise DocumentError("document_changed_during_search")
+            if llm.model_digest() != digest:
+                raise DocumentError("embedding_digest_changed")
+            return redact_document({"document_id": document_id, "model_digest": digest, "chunks": [
+                {"chunk_id": c.chunk_id, "section": c.section, "text": c.text, "similarity": c.score,
+                 "start": c.start, "end": c.end, "pages": c.page_refs, "source_blocks": c.source_blocks} for c in results]})
     except Exception as exc:
         document_failure(exc)
 
 
 @router.post("/{document_id}/query")
-def query_document(document_id: UUID, request: DocumentQuery, actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
+def query_document(document_id: UUID, request: DocumentQuery, transport: Request, actor: str = Depends(require_document_admin), store=Depends(get_document_store)):
     try:
         from BackEnd.rag.factory import build_chat_service
         from BackEnd.documents.qa import answer_document
 
-        repo = scoped_repository(store, document_id)
-        service = build_chat_service(repo, get_settings())
-        response, trace = answer_document(repo, service, request.query)
-        doc, _ = store.status(str(document_id))
-        if (doc["test_only"] or doc["program_test_only"]) and response["kind"] == "fallback":
-            response["contacts"] = []
-        return {"scope_document_id": document_id, "test_only": doc["test_only"] or doc["program_test_only"], "response": response, "diagnostics": trace}
+        with inference_request(transport, get_settings().ollama_timeout, request.timeout_seconds):
+            repo = scoped_repository(store, document_id)
+            service = build_chat_service(repo, get_settings())
+            response, trace = answer_document(repo, service, request.query)
+            doc, _ = store.status(str(document_id))
+            if (doc["test_only"] or doc["program_test_only"]) and response["kind"] == "fallback":
+                response["contacts"] = []
+            return redact_document({"scope_document_id": document_id, "test_only": doc["test_only"] or doc["program_test_only"], "response": response, "diagnostics": trace})
     except Exception as exc:
         document_failure(exc)
 
 
 def document_failure(exc):
+    if isinstance(exc, HTTPException):
+        raise exc
     if isinstance(exc, DocumentError):
         code = str(exc)
         status = (503 if code in {"automatic_processing_schema_required", "document_embedding_failed", "document_reranker_failed", "document_generation_failed"} else

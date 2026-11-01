@@ -5,7 +5,6 @@ import re
 import os
 import hmac
 from pathlib import Path
-from threading import BoundedSemaphore
 from time import monotonic
 from typing import Literal
 
@@ -13,12 +12,12 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from BackEnd.core.settings import get_settings
+from BackEnd.core.execution import inference_request, inference_gate as _gate
 from BackEnd.rag.ollama import OllamaClient, VisionUnsupportedError, ContextBudgetError, GenerationTimeoutError, GenerationCancelledError
 from BackEnd.desktop_image import image_bytes
 
 router = APIRouter()
 PUBLIC_LABELS = set(json.loads(Path(__file__).with_name("desktop_public_labels.json").read_text(encoding="utf-8")))
-_gate = BoundedSemaphore(1)
 logger = logging.getLogger("welfare_helper")
 
 class Candidate(BaseModel):
@@ -361,22 +360,23 @@ def desktop_guide(request: GuideRequest | DomGuideRequest, transport: Request = 
         if (os.getenv("BACKEND_BIND_HOST", "127.0.0.1") != "127.0.0.1"
                 or transport is not None and any(key in transport.headers for key in ("forwarded", "x-forwarded-for", "x-real-ip"))):
             raise HTTPException(403, "desktop_image_private_connection_required")
-    if not _gate.acquire(blocking=False):
-        raise HTTPException(429, "화면 안내 요청이 처리 중입니다. 잠시 후 다시 확인하세요.")
     try:
         # 시간 필드가 없는 이전 확장은 90초 계약을 유지한다.
-        budget = min(settings.desktop_timeout_seconds, request.timeout_seconds or 90) if isinstance(request, DomGuideRequest) else None
-        disconnected = transport.scope.get("state", {}).get("desktop_disconnected") if transport else None
-        # RAG와 같은 서버 OLLAMA_LLM 및 같은 Ollama 인스턴스를 사용한다.
-        llm = OllamaClient(settings.ollama_base_url, settings.ollama_embed, settings.ollama_llm,
-            settings.ollama_timeout, {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
-                                    "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
-            embed_dim=settings.embed_dim, **({"request_deadline": monotonic()+budget,
-                "request_cancelled": disconnected.is_set if disconnected else None} if budget else {}))
-        result = generate_step(llm, request)
-        if isinstance(request, DomGuideRequest):
-            return {"reply":{**result.model_dump(),"snapshot_id":request.snapshot_id},"model":settings.ollama_llm}
-        return {"step": result.model_dump(), "model": settings.ollama_llm}
+        seconds = request.timeout_seconds or 90 if isinstance(request, DomGuideRequest) else None
+        with inference_request(transport, settings.desktop_timeout_seconds, seconds,
+                               prefix="desktop_request", started_at=monotonic()) as budget:
+            # RAG와 같은 서버 OLLAMA_LLM 및 같은 Ollama 인스턴스를 사용한다.
+            llm = OllamaClient(settings.ollama_base_url, settings.ollama_embed, settings.ollama_llm,
+                settings.ollama_timeout, {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
+                                        "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
+                embed_dim=settings.embed_dim, request_deadline=budget.deadline,
+                request_cancelled=budget.cancelled.is_set)
+            result = generate_step(llm, request)
+            if isinstance(request, DomGuideRequest):
+                return {"reply":{**result.model_dump(),"snapshot_id":request.snapshot_id},"model":settings.ollama_llm}
+            return {"step": result.model_dump(), "model": settings.ollama_llm}
+    except HTTPException:
+        raise
     except VisionUnsupportedError:
         raise HTTPException(409, "desktop_image_model_unsupported") from None
     except GenerationTimeoutError:
@@ -390,5 +390,3 @@ def desktop_guide(request: GuideRequest | DomGuideRequest, transport: Request = 
         code = exc.args[0] if type(exc) is ValueError and exc.args and exc.args[0] in safe_codes else type(exc).__name__
         logger.warning("desktop guidance failed (%s)", code)
         raise HTTPException(503, "안내 결과를 확인하지 못했습니다. 화면과 로컬 모델 준비 상태를 확인하세요.") from None
-    finally:
-        _gate.release()

@@ -1,7 +1,48 @@
-importScripts('protocol.js');
+importScripts('protocol.js','conversations.js','conversation-store.js');
 const official=GyeoteProtocol.official;
+const documentManagerUrl='https://welfare-helper-iota.vercel.app/admin/documents';
 let creating;
 let authChanges=Promise.resolve();
+const profileKey='gyeote.profile';
+let localChanges=Promise.resolve(),invalidProfile=null,conversationStore;
+const conversationOwners=new Map();
+let profileReady;
+try{profileReady=Promise.resolve(chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}));}
+catch{profileReady=Promise.reject(new Error('profile_storage_failed'));}
+profileReady.catch(()=>{});
+function changeLocal(action){const pending=localChanges.then(()=>profileReady).then(action);localChanges=pending.catch(()=>{});return pending;}
+async function storedProfile(){
+  const data=await chrome.storage.local.get(profileKey),raw=data[profileKey];
+  if(raw===undefined)return {state:{schemaVersion:1,revision:0,onboardingCompleted:false,profile:null}};
+  try{return {state:GyeoteProtocol.profileRecord(raw)};}
+  catch{
+    const serialized=JSON.stringify(raw);
+    if(!invalidProfile||invalidProfile.serialized!==serialized)invalidProfile={serialized,token:crypto.randomUUID()};
+    return {invalid:true,resetToken:invalidProfile.token,raw};
+  }
+}
+async function profileAction(message){
+  const keys=Object.keys(message).sort().join(',');
+  const allowed={'gyeote:profile-get':'type','gyeote:profile-save':'expectedRevision,profile,type','gyeote:profile-clear':'expectedRevision,type','gyeote:profile-reset':'resetToken,type'};
+  if(keys!==allowed[message.type])throw new Error('invalid_profile');
+  const current=await storedProfile();
+  if(message.type==='gyeote:profile-get')return current.invalid?{ok:false,error:'profile_data_invalid',resetToken:current.resetToken}:{ok:true,state:current.state};
+  let state;
+  if(message.type==='gyeote:profile-reset'){
+    if(!current.invalid||typeof message.resetToken!=='string'||message.resetToken!==current.resetToken)throw new Error('profile_conflict');
+    const revision=Number.isSafeInteger(current.raw?.revision)&&current.raw.revision>=0&&current.raw.revision<Number.MAX_SAFE_INTEGER?current.raw.revision+1:0;
+    state={schemaVersion:1,revision,onboardingCompleted:false,profile:null};
+  }else{
+    if(current.invalid)throw new Error('profile_data_invalid');
+    if(!Number.isSafeInteger(message.expectedRevision)||message.expectedRevision<0)throw new Error('invalid_profile');
+    if(message.expectedRevision!==current.state.revision)throw new Error('profile_conflict');
+    if(current.state.revision===Number.MAX_SAFE_INTEGER)throw new Error('profile_revision_limit');
+    state={schemaVersion:1,revision:current.state.revision+1,onboardingCompleted:message.type==='gyeote:profile-save',profile:message.type==='gyeote:profile-save'?GyeoteProtocol.profile(message.profile):null};
+  }
+  await chrome.storage.local.set({[profileKey]:state});
+  invalidProfile=null;
+  return {ok:true,state};
+}
 function changeAuth(action){const pending=authChanges.then(action);authChanges=pending.catch(()=>{});return pending;}
 function authSummary(auth){return {mode:auth.mode,status:auth.mode==='admin'?(auth.session?'ready':'expired'):'anonymous',accessId:auth.accessId};}
 async function readAuth(){
@@ -25,6 +66,27 @@ async function adminRequest(action,session){
   finally{clearTimeout(timer);}
 }
 chrome.storage.onChanged?.addListener((changes,area)=>{
+  if(area==='local'&&'gyeote.conversations' in changes){
+    const value=changes['gyeote.conversations'].newValue;
+    const revision=Number.isSafeInteger(value?.revision)&&value.revision>=0?value.revision:null;
+    const generation=value?.generation==='initial'||typeof value?.generation==='string'&&/^[0-9a-f-]{36}$/i.test(value.generation)?value.generation:null;
+    (async()=>{
+      const message={type:'gyeote:conversations-changed',revision,generation};
+      await chrome.runtime.sendMessage({target:'gyeote:offscreen',...message}).catch(()=>{});
+      const tabs=await chrome.tabs.query({});
+      await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,message,{frameId:0})));
+    })().catch(()=>{});return;
+  }
+  if(area==='local'&&profileKey in changes){
+    let revision=null;try{revision=GyeoteProtocol.profileRecord(changes[profileKey].newValue).revision;}catch{}
+    (async()=>{
+      // 프로필 값은 통지에 싣지 않는다. 수신기는 worker에서 최신 revision을 다시 확인한다.
+      await chrome.runtime.sendMessage({target:'gyeote:offscreen',type:'gyeote:profile-changed',revision}).catch(()=>{});
+      const tabs=await chrome.tabs.query({});
+      await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,{type:'gyeote:profile-changed',revision},{frameId:0})));
+    })().catch(()=>{});
+    return;
+  }
   if(area!=='session'||!('documentAccess' in changes||'documentAdminSession' in changes||'documentAccessId' in changes))return;
   (async()=>{
     // 공개 탭에는 인증 토큰 없이 접근 상태만 전달한다.
@@ -51,6 +113,39 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   const internal=sender.url===chrome.runtime.getURL('offscreen.html');
   const options=sender.url===chrome.runtime.getURL('options.html');
   const content=sender.frameId===0&&official(sender.url)&&official(sender.tab?.url);
+  if(message?.type==='gyeote:document-manager'){
+    if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
+    if(Object.keys(message).join(',')!=='type'){sendResponse({ok:false,error:'invalid_manager_request'});return;}
+    (async()=>{await chrome.tabs.create({url:documentManagerUrl});return {ok:true};})()
+      .then(sendResponse).catch(()=>sendResponse({ok:false,error:'document_manager_open_failed'}));
+    return true;
+  }
+  if(message?.type==='gyeote:conversation-cancel'){
+    if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||Object.keys(message).sort().join(',')!=='pairId,type')return;
+    if(conversationOwners.get(sender.tab.id)?.pairId===message.pairId)conversationOwners.delete(sender.tab.id);
+    sendResponse({ok:true});return;
+  }
+  if(typeof message?.type==='string'&&message.type.startsWith('gyeote:conversations-')){
+    if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
+    if(message.type==='gyeote:conversations-begin'&&GyeoteProtocol.id(message.pairId))conversationOwners.set(sender.tab.id,{pairId:message.pairId,input:null});
+    const owner=conversationOwners.get(sender.tab.id);
+    // local 변경과 인증 전환을 함께 직렬화해 프로필/권한 확인과 쓰기 사이의 경쟁을 막는다.
+    changeLocal(()=>changeAuth(async()=>{
+      conversationStore??=GyeoteConversationStore.create({storage:chrome.storage.local,profile:storedProfile,newId:()=>crypto.randomUUID()});
+      const result=await conversationStore.action(message,await readAuth(),()=>!!owner&&owner.pairId===message.pairId&&conversationOwners.get(sender.tab.id)===owner,owner?.input);
+      if(message.type==='gyeote:conversations-begin'&&result.ok){
+        if(conversationOwners.get(sender.tab.id)!==owner)throw new Error('conversation_request_stopped');
+        owner.input=result.input;
+      }
+      return result;
+    })).then(sendResponse).catch(error=>sendResponse({ok:false,error:/^conversation_(invalid_request|data_invalid|conflict|context_conflict|access_changed|profile_changed|request_stopped|count_limit|messages_limit|bytes_limit|revision_limit)$/.test(error.message)?error.message:'conversation_storage_failed'}));
+    return true;
+  }
+  if(['gyeote:profile-get','gyeote:profile-save','gyeote:profile-clear','gyeote:profile-reset'].includes(message?.type)){
+    if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
+    changeLocal(()=>profileAction(message)).then(sendResponse).catch(error=>sendResponse({ok:false,error:['invalid_profile','profile_conflict','profile_data_invalid','profile_revision_limit'].includes(error.message)?error.message:'profile_storage_failed'}));
+    return true;
+  }
   if(message?.type==='gyeote:connection'&&internal){chrome.storage.session.get('connection').then(({connection})=>sendResponse(connection||null));return true;}
   if(message?.type==='gyeote:document-auth'&&internal){documentAuth().then(sendResponse).catch(()=>sendResponse(null));return true;}
   if(message?.type==='gyeote:admin-invalid'&&internal){invalidateAuth(message.token).then(()=>sendResponse({ok:true})).catch(()=>sendResponse({ok:false}));return true;}

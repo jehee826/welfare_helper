@@ -87,7 +87,7 @@ it("기본 채팅의 권한 오류에서 서버 비밀 문구를 노출하거나
   fireEvent.change(screen.getByLabelText("궁금한 내용"), { target:{ value:"문서 질문" } });
   fireEvent.click(screen.getByRole("button", { name:"질문 보내기" }));
   const log = screen.getByRole("log", { name:"상담 내용" });
-  expect(await within(log).findByText(/서버에 연결하지 못했습니다/)).toBeInTheDocument();
+  expect(await within(log).findByText(/관리자 세션이 없거나 만료됐습니다/)).toBeInTheDocument();
   expect(log).not.toHaveTextContent("private secret");
   expect(fetch).toHaveBeenCalledWith("/api/v1/chat", expect.objectContaining({ method:"POST" }));
   expect(fetch).toHaveBeenCalledTimes(1);

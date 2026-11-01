@@ -5,6 +5,8 @@ from array import array
 from datetime import datetime
 
 from psycopg2.extras import RealDictCursor
+from BackEnd.core.db import RequestCursor
+from BackEnd.core.execution import checkpoint
 
 from BackEnd.documents.contracts import DocumentError, automatic_source_fingerprint, stable_hash, validate_review
 from BackEnd.rag.evidence import read_chunk, validate_version
@@ -32,6 +34,7 @@ def validate_document_vectors(doc, job, rows):
     by_block = {b['id']:b for b in analysis['blocks']}
     chunks, vectors = [], {}
     for index, row in enumerate(rows):
+        checkpoint()
         metadata = row['evidence_metadata'].get('chunk', {})
         chunk = read_chunk(metadata.get('chunk_id',''), doc['service_id'], json.dumps(metadata,ensure_ascii=False), doc['source_url'])
         if (row['chunk_index'] != index or str(row['document_id']) != str(doc['document_id'])
@@ -115,6 +118,7 @@ def active_document_chunks(cur, model, scope=None, *, include_local_documents=Fa
                  "NOT d.test_only AND NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'")
     params = (scope,) if scope else ()
     with cur.connection.cursor(cursor_factory=RealDictCursor) as rows_cur:
+        rows_cur = RequestCursor(rows_cur)
         rows_cur.execute("SELECT d.document_id,d.document_name,d.source_url,d.source_organization,d.source_updated_at,d.basis_year,d.test_only,"
                          "d.valid_from,d.valid_until,d.region_scope,d.file_sha256,d.file_format,"
                          "d.markdown,d.analysis_json,d.reviewed_by,d.reviewed_at,d.local_ingestion,d.updated_at,"

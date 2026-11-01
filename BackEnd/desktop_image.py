@@ -3,50 +3,7 @@ import base64
 import binascii
 import struct
 import zlib
-import asyncio
-from threading import Event
-
-
-class DesktopBodyLimit:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope.get("path") != "/api/v1/desktop/guide":
-            return await self.app(scope, receive, send)
-        messages, size = [], 0
-        while True:
-            message = await receive()
-            if message["type"] == "http.disconnect":
-                return
-            size += len(message.get("body", b""))
-            if size > 2 * 1024 * 1024 + 65536:
-                from starlette.responses import JSONResponse
-                return await JSONResponse({"detail": "desktop_body_size_limit"}, status_code=413)(scope, receive, send)
-            messages.append(message)
-            if not message.get("more_body"):
-                break
-        disconnected = Event()
-        scope.setdefault("state", {})["desktop_disconnected"] = disconnected
-
-        async def watch_disconnect():
-            while True:
-                if (await receive())["type"] == "http.disconnect":
-                    disconnected.set()
-                    return
-
-        # 본문을 다 읽은 뒤 receive는 한 곳에서만 소비하고, 취소를 생성 스레드에 전달한다.
-        watcher = asyncio.create_task(watch_disconnect())
-        async def replay():
-            if messages:
-                return messages.pop(0)
-            await asyncio.shield(watcher)
-            return {"type": "http.disconnect"}
-        try:
-            return await self.app(scope, replay, send)
-        finally:
-            watcher.cancel()
-            await asyncio.gather(watcher, return_exceptions=True)
+from BackEnd.core.execution import InferenceBodyLimit as DesktopBodyLimit
 
 
 def image_bytes(encoded: str) -> bytes:

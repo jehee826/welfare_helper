@@ -68,9 +68,9 @@ describe("httpApi 채팅", () => {
     expect(JSON.parse(init.body)).toEqual({ query: "연금" });
   });
 
-  it("서버 오류면 서버가 준 안내 문구로 예외를 던진다", async () => {
-    stubFetch(json({ detail: "보건복지상담센터 129로 문의해 주세요." }, 503));
-    await expect(api().ask("연금", null)).rejects.toThrow("129");
+  it("채팅 서버 오류는 내부 문구를 노출하지 않는다", async () => {
+    stubFetch(json({ detail: "가상 내부 예외 SECRET" }, 503));
+    await expect(api().ask("연금", null)).rejects.toMatchObject({ message: "상담 응답을 받지 못했어요.", status: 503, code: "" });
   });
 });
 

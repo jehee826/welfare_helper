@@ -310,6 +310,7 @@ def test_endpoint_timeout_releases_gate_and_preserves_busy(monkeypatch):
     settings = Settings(_env_file=None, desktop_guidance_enabled=True, desktop_extension_token='x'*40, ollama_timeout=600)
     monkeypatch.setattr(guide, 'get_settings', lambda: settings)
     monkeypatch.setattr(guide, 'monotonic', lambda: 100)
+    monkeypatch.setattr('BackEnd.core.execution.monotonic', lambda: 100)
     deadlines = []
     class Client:
         def __init__(self, *args, **kwargs): deadlines.append(kwargs['request_deadline'])
@@ -333,6 +334,7 @@ def test_legacy_request_uses_90_second_deadline(monkeypatch):
     settings = Settings(_env_file=None, desktop_guidance_enabled=True, desktop_extension_token='x'*40, ollama_timeout=600)
     monkeypatch.setattr(guide, 'get_settings', lambda: settings)
     monkeypatch.setattr(guide, 'monotonic', lambda: 100)
+    monkeypatch.setattr('BackEnd.core.execution.monotonic', lambda: 100)
     deadlines = []
     class Client:
         def __init__(self, *args, **kwargs): deadlines.append(kwargs['request_deadline'])

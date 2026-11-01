@@ -76,6 +76,28 @@ it("DB 자동 처리 설정이 없으면 새 업로드를 막고 적용 안내�
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/documents"))).toBe(false);
 });
 
+it.each([false, true])("검색 결과의 가림 표시=%s와 원문 위치·참조를 함께 보존한다", async redacted => {
+  const chunkId = "chunk-9913991234567", blockId = "block-9913991234567";
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/processing")) return json({ ready: true });
+    if (url.includes("/programs?")) return json({ items: [], next_offset: null });
+    if (url.includes("/jobs/")) return json(makeJob("succeeded"));
+    if (url.endsWith("/search")) return json({ chunks: [{ chunk_id: chunkId, text: redacted ? "[개인정보 가림]" : "안전한 본문", section: "content", similarity: .8,
+      pages: [1], source_blocks: [blockId], start: 10, end: 27, ...(redacted ? { redacted: true } : {}) }] });
+    return json(makeDoc(makeJob("succeeded")));
+  }));
+  mount("/admin/documents?document=" + id);
+  await waitFor(() => expect(screen.getByRole("button", { name: "실행" })).toBeEnabled());
+  fireEvent.change(screen.getByLabelText("질문"), { target: { value: "2026년 문서 내용" } });
+  fireEvent.click(screen.getByRole("button", { name: "실행" }));
+  const results = await screen.findByRole("region", { name: "검색 결과" });
+  expect(within(results).getByText(redacted ? "[개인정보 가림]" : "안전한 본문")).toBeInTheDocument();
+  expect(results).toHaveTextContent(chunkId);
+  expect(results).toHaveTextContent(`원문 블록: ${blockId} · 위치: 10–27`);
+  expect(within(results).queryByText(/원문 그대로의 인용이 아닙니다/)).toBe(redacted ? within(results).getByText(/원문 그대로의 인용이 아닙니다/) : null);
+  if (redacted) expect(results).toHaveTextContent("위치는 가리기 전 원문 기준입니다.");
+});
+
 it.each(["awaiting_review", "failed"])("기존 %s 문서는 몰래 재처리하지 않고 같은 ID 재첨부를 제공한다", async state => {
   vi.stubEnv("DEV", true);
   const job = { ...makeJob(state), processing_mode: "manual" as const, error_code: state === "failed" ? "ModuleNotFoundError" : null, finished_at: state === "failed" ? "2026-10-28T01:25:28Z" : null };

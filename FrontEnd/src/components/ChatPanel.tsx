@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { ChatAnswer, DocumentChatAnswer, UserProfile, WelfareApi } from "../api/types";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
-import { documentError } from "../api/documentApi";
+import { chatError } from "../api/errors";
+import { sensitiveInput, redactDocument, PRIVACY_NOTICE, SENSITIVE_INPUT_MESSAGE } from "../lib/privacy";
 import { SuggestionChips } from "./SuggestionChips";
 import { VoiceButton } from "./VoiceButton";
 
@@ -26,12 +27,33 @@ export function ChatPanel({ api, profile, onAnswered }: Props) {
   const [suggestions, setSuggestions] = useState(() => api.initialSuggestions(profile));
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const nextId = useRef(1);
   const logRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const requestRef = useRef<AbortController>();
+  const timerRef = useRef<ReturnType<typeof setInterval>>();
 
-  useEffect(() => () => requestRef.current?.abort(), []);
+  function stopTimer() {
+    clearInterval(timerRef.current);
+    timerRef.current = undefined;
+  }
+
+  useEffect(() => () => {
+    requestRef.current?.abort();
+    requestRef.current = undefined;
+    stopTimer();
+  }, []);
+
+  function cancelRequest() {
+    const request = requestRef.current;
+    if (!request) return;
+    requestRef.current = undefined;
+    request.abort();
+    stopTimer();
+    setPending(false);
+    setMessages(m => [...m, { id: nextId.current++, role: "bot", text: "요청을 취소했습니다. 다시 질문할 수 있습니다." }]);
+  }
 
   const handleTranscript = useCallback((text: string) => {
     setInput(text);
@@ -49,26 +71,39 @@ export function ChatPanel({ api, profile, onAnswered }: Props) {
   async function send(question: string) {
     const text = question.trim();
     if (!text || requestRef.current) return;
+    if (sensitiveInput(text)) {
+      setInput("");
+      setMessages(m => [...m, { id: nextId.current++, role: "bot", text: SENSITIVE_INPUT_MESSAGE }]);
+      return;
+    }
     const request = new AbortController();
     requestRef.current = request;
     setMessages((m) => [...m, { id: nextId.current++, role: "user", text }]);
     setInput("");
     setPending(true);
+    setElapsed(0);
+    const started = Date.now();
+    timerRef.current = setInterval(() => {
+      if (requestRef.current === request) setElapsed(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
     try {
-      const answer = await api.ask(text, profile, request.signal);
-      if (request.signal.aborted) return;
+      const answer = redactDocument(await api.ask(text, profile, request.signal));
+      if (request.signal.aborted || requestRef.current !== request) return;
       setMessages((m) => [...m, { id: nextId.current++, role: "answer", answer }]);
       setSuggestions(answer.suggestions);
       onAnswered(text, answer);
     } catch (error) {
-      if (request.signal.aborted) return;
+      if (request.signal.aborted || requestRef.current !== request) return;
       setMessages((m) => [
         ...m,
-        { id: nextId.current++, role: "bot", text: documentError(error) },
+        { id: nextId.current++, role: "bot", text: chatError(error) },
       ]);
     } finally {
-      if (!request.signal.aborted) setPending(false);
-      if (requestRef.current === request) requestRef.current = undefined;
+      if (requestRef.current === request) {
+        stopTimer();
+        requestRef.current = undefined;
+        setPending(false);
+      }
     }
   }
 
@@ -90,6 +125,7 @@ export function ChatPanel({ api, profile, onAnswered }: Props) {
               <summary>원문 근거 보기 ({m.answer.evidence.length}건)</summary>
               <ol>{m.answer.evidence.map((item, index) => <li key={`${item.chunk_id}:${index}`}>
                 <p className="badge">{item.role === "retrieved" ? "검색 원문" : item.role === "required_context" ? "필수 원문 맥락" : "답변 인용"}</p>
+                {item.redacted && <p className="muted small">개인정보 형식을 가린 자료입니다. 원문 그대로의 인용이 아닙니다.</p>}
                 {item.role === "retrieved" && <p className="muted small">모델에 전달한 검색 자료입니다. 모델 답변의 정확한 인용으로 검증한 내용은 아닙니다.</p>}
                 {item.role === "required_context" && <p className="muted small">답변과 함께 확인할 조건·예외의 원문입니다.</p>}
                 {item.quote.trim() && <blockquote>{item.quote}</blockquote>}
@@ -101,9 +137,11 @@ export function ChatPanel({ api, profile, onAnswered }: Props) {
           </div>;
         })}
         {pending && (
-          <p className="bubble bubble--bot bubble--pending" role="status">
-            찾고 있어요…
-          </p>
+          <div className="bubble bubble--bot bubble--pending" role="status">
+            <p>문서를 확인하고 답변을 준비하고 있습니다.</p>
+            <span role="timer" aria-live="off">{elapsed}초 경과</span>{" "}
+            <button type="button" className="btn btn--soft btn--sm" onClick={cancelRequest} aria-label="답변 요청 취소">취소</button>
+          </div>
         )}
       </div>
 
@@ -132,6 +170,7 @@ export function ChatPanel({ api, profile, onAnswered }: Props) {
           onChange={(e) => setInput(e.target.value)}
           placeholder="예: 등록한 문서의 내용을 알려 주세요"
           autoComplete="off"
+          aria-describedby="chat-privacy-notice"
         />
         {voice.supported && (
           <VoiceButton listening={voice.listening} disabled={pending} onStart={voice.start} onStop={voice.stop} />
@@ -140,6 +179,7 @@ export function ChatPanel({ api, profile, onAnswered }: Props) {
           <span aria-hidden="true">↑</span>
         </button>
       </form>
+      <p id="chat-privacy-notice" className="muted small center">{PRIVACY_NOTICE}</p>
       <p className="muted small center scope-notice">등록된 원문을 검색해 모델이 답변합니다. 검색 원문과 페이지를 펼쳐 답변과 대조해 주세요.</p>
     </section>
   );

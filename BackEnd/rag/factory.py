@@ -1,6 +1,6 @@
 from BackEnd.rag.chat import ChatService
 from BackEnd.rag.ollama import OllamaClient
-from BackEnd.rag.reranker import LocalReranker
+from BackEnd.rag.reranker import cached_reranker
 
 
 def build_chat_service(repo, settings):
@@ -8,7 +8,7 @@ def build_chat_service(repo, settings):
         settings.ollama_timeout, {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
                                 "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
         embed_dim=settings.embed_dim)
-    reranker = LocalReranker(settings.rerank_model, settings.rerank_revision, settings.rerank_cache_dir,
+    reranker = cached_reranker(settings.rerank_model, settings.rerank_revision, settings.rerank_cache_dir,
                              settings.rerank_max_length, settings.rerank_threads)
     return ChatService(repo, llm, settings.min_dense_sim, settings.retrieve_top_n,
                        reranker=reranker, min_rerank_score=settings.min_rerank_score,

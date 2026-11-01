@@ -37,7 +37,7 @@ def api(monkeypatch):
     for name in ("connect", "build_chat_service", "PgServiceRepository", "LocalReranker"):
         monkeypatch.setattr(main, name, unexpected)
     monkeypatch.setattr("BackEnd.rag.factory.OllamaClient", unexpected)
-    monkeypatch.setattr("BackEnd.rag.factory.LocalReranker", unexpected)
+    monkeypatch.setattr("BackEnd.rag.factory.cached_reranker", unexpected)
 
     service = SimpleNamespace(repo=object())
     result = {"kind": "fallback", "text": "확인 필요", "contacts": [], "suggestions": []}
@@ -56,7 +56,7 @@ def test_chat_returns_document_rag_result(api):
     )
     assert response.status_code == 200
     assert response.json() == api.result
-    api.rag.assert_called_once_with(api.service.repo, api.service, "연금")
+    api.rag.assert_called_once_with(api.service.repo, api.service, "연금", profile={"age":70,"income":"under50","household":"single","region":"서울특별시","disability":False})
 
 
 @pytest.mark.parametrize("profile", [{}, {"profile": None}])
@@ -107,19 +107,19 @@ def test_health(api):
     api.rag.assert_not_called()
 
 
-def test_optional_history_is_accepted_without_forwarding_to_document_rag(api):
+def test_optional_history_is_forwarded_to_common_document_rag(api):
     history = [{"role": "user", "content": "돈이 없어"}, {"role": "assistant", "content": "어떤 도움이 필요하세요?"}]
     response = api.client.post("/api/v1/chat", json={"query": "생활비", "history": history})
     assert response.status_code == 200
     assert response.json() == api.result
-    api.rag.assert_called_once_with(api.service.repo, api.service, "생활비")
+    api.rag.assert_called_once_with(api.service.repo, api.service, "생활비", history=history)
 
 
 def test_history_is_limited_to_12_messages_and_6000_characters(api):
     assert api.client.post("/api/v1/chat", json={"query": "생활비", "history": [
         {"role": "user", "content": "말" * 500} for _ in range(12)
     ]}).status_code == 200
-    api.rag.assert_called_once_with(api.service.repo, api.service, "생활비")
+    api.rag.assert_called_once_with(api.service.repo, api.service, "생활비", history=[{"role":"user","content":"말"*500} for _ in range(12)])
     api.rag.reset_mock()
     assert api.client.post("/api/v1/chat", json={"query": "생활비", "history": [
         {"role": "user", "content": "말"} for _ in range(13)
@@ -182,7 +182,10 @@ def test_debug_route_requires_explicit_enablement_and_separate_token(api, monkey
     response = api.client.post("/debug/rag", json={"query": "테스트"}, headers={"X-Rag-Debug-Token": token})
     assert response.status_code == 200
     assert token not in response.text
-    api.service.answer_with_diagnostics.assert_called_once_with("테스트", None, [])
+    assert response.json() == {"response": api.result, "diagnostics": {"mode": "document_rag"}}
+    api.rag.assert_called_once_with(api.service.repo, api.service, "테스트")
+    api.service.answer_with_diagnostics.assert_not_called()
     monkeypatch.setenv("VERCEL", "1")
     assert api.client.post("/debug/rag", json={"query": "테스트"}, headers={"X-Rag-Debug-Token": token}).status_code == 404
-    assert api.service.answer_with_diagnostics.call_count == 1
+    assert api.rag.call_count == 1
+    api.service.answer_with_diagnostics.assert_not_called()

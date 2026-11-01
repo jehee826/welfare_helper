@@ -61,3 +61,9 @@ postgres_data/
 welfare_helper__key.pem
 /.local/extension-connection.json
 /.local/.gyeote-connection-*
+/.local/extension-packages/
+/.local/t5_*.py
+/.local/t5-*.json
+/.local/t5-*.jsonl
+/.local/t5-*.zip
+/.local/t10c-*/

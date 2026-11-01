@@ -1,5 +1,4 @@
 import { ApiError, createHttpApi } from "./httpApi";
-import { createMockApi } from "./mockApi";
 import type { AdminProgram } from "./types";
 
 const rawProgram = {
@@ -49,7 +48,7 @@ function stubFetch(...responses: Response[]) {
   return fetchMock;
 }
 
-const api = () => createHttpApi({ fallback: createMockApi({ latencyMs: 0 }) });
+const api = () => createHttpApi();
 
 describe("httpApi 채팅", () => {
   afterEach(() => {
@@ -156,9 +155,9 @@ describe("httpApi 관리자 제도", () => {
     await expect(api().listDepartments()).rejects.toMatchObject({ status: 422, code: "invalid_request" });
   });
 
-  it("이용 통계는 아직 목업 데이터를 쓴다", async () => {
+  it("미연동 통계는 목업 수치나 네트워크 호출 없이 명시적으로 거절한다", async () => {
     const fetchMock = stubFetch();
-    expect((await api().getMonthlyStats()).length).toBeGreaterThan(0);
+    await expect(api().getMonthlyStats()).rejects.toMatchObject({ status: 503, code: "stats_unavailable" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

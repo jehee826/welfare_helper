@@ -1,67 +1,47 @@
 import { useEffect, useState } from "react";
+import { ApiError } from "../../api/errors";
 import type { MonthlyStat, WelfareApi } from "../../api/types";
 
-const percent = (part: number, whole: number) => (whole === 0 ? "-" : `${Math.round((1 - part / whole) * 100)}%`);
+type Result = { api: WelfareApi } & (
+  | { status: "ready"; stats: MonthlyStat[] }
+  | { status: "unavailable" | "error" }
+);
 
 export function StatsPanel({ api }: { api: WelfareApi }) {
-  const [stats, setStats] = useState<MonthlyStat[]>([]);
+  const [result, setResult] = useState<Result | null>(null);
 
   useEffect(() => {
-    void api.getMonthlyStats().then(setStats);
+    let active = true;
+    void api.getMonthlyStats().then(stats => {
+      if (active) setResult({ api, status: "ready", stats });
+    }).catch((error: unknown) => {
+      if (active) setResult({ api, status: error instanceof ApiError && error.code === "stats_unavailable" ? "unavailable" : "error" });
+    });
+    return () => { active = false; };
   }, [api]);
 
-  if (stats.length === 0) return <p className="muted">통계를 불러오는 중이에요…</p>;
-  const latest = stats[stats.length - 1];
-  const previous = stats[stats.length - 2];
-
+  const current = result?.api === api ? result : null;
   return (
-    <section className="card" aria-labelledby="stats-title">
+    <section className="card" aria-labelledby="stats-title" aria-busy={!current}>
       <h2 id="stats-title">이용 통계</h2>
-      <p className="muted small">목업 데이터예요. 실제 수치는 상담 기록이 쌓이면 집계돼요.</p>
-      <div className="tiles">
-        <div className="tile">
-          <p className="tile__label">{latest.month} 챗봇 문의</p>
-          <p className="tile__value">{latest.inquiries.toLocaleString()}건</p>
-        </div>
-        <div className="tile">
-          <p className="tile__label">{latest.month} 상담원 연결</p>
-          <p className="tile__value">{latest.connections.toLocaleString()}건</p>
-          {previous && <p className="tile__delta">전월 {previous.connections}건</p>}
-        </div>
-        <div className="tile">
-          <p className="tile__label">챗봇으로 해결한 비율</p>
-          <p className="tile__value">{percent(latest.connections, latest.inquiries)}</p>
-        </div>
-      </div>
-      <div className="table-wrap">
-        <table className="table">
-          <caption className="sr-only">월별 문의와 상담원 연결 건수</caption>
-          <thead>
-            <tr>
-              <th scope="col">월</th>
-              <th scope="col" className="num">
-                챗봇 문의
-              </th>
-              <th scope="col" className="num">
-                상담원 연결
-              </th>
-              <th scope="col" className="num">
-                챗봇 해결률
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...stats].reverse().map((s) => (
-              <tr key={s.month}>
-                <th scope="row">{s.month}</th>
-                <td className="num">{s.inquiries.toLocaleString()}</td>
-                <td className="num">{s.connections.toLocaleString()}</td>
-                <td className="num">{percent(s.connections, s.inquiries)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <p className="muted">이용 통계는 아직 서버와 연동되지 않았습니다.</p>
+      {!current && <p role="status">통계를 불러오는 중이에요…</p>}
+      {current?.status === "unavailable" && <p role="status">실제 문의·상담원 연결 통계는 제공하지 않습니다.</p>}
+      {current?.status === "error" && <p role="alert">통계를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>}
+      {current?.status === "ready" && (current.stats.length === 0 ? <p role="status">표시할 통계가 없습니다.</p> : (
+        <>
+          <p className="muted small">아래 값은 테스트로 전달된 자료입니다. 실제 상담원 연결 기능은 제공하지 않습니다.</p>
+          <div className="table-wrap">
+            <table className="table">
+              <caption className="sr-only">테스트용 월별 문의와 연결 건수</caption>
+              <thead><tr><th scope="col">월</th><th scope="col" className="num">문의</th><th scope="col" className="num">연결 집계(테스트)</th></tr></thead>
+              <tbody>{[...current.stats].reverse().map(stat => (
+                <tr key={stat.month}><th scope="row">{stat.month}</th><td className="num">{stat.inquiries.toLocaleString()}</td><td className="num">{stat.connections.toLocaleString()}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </>
+      ))}
     </section>
   );
 }

@@ -98,10 +98,11 @@ describe("관리자 화면", () => {
     expect(screen.queryByRole("cell", { name: /에너지바우처/ })).not.toBeInTheDocument();
   });
 
-  it("이용 통계 탭에서 월별 문의와 연결 건수를 본다", async () => {
+  it("주입한 테스트 통계와 운영 미연동 안내를 구분한다", async () => {
     const { user } = await login();
     await user.click(screen.getByRole("tab", { name: "이용 통계" }));
-    expect(await screen.findByRole("table", { name: "월별 문의와 상담원 연결 건수" })).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "테스트용 월별 문의와 연결 건수" })).toBeInTheDocument();
+    expect(screen.getByText("이용 통계는 아직 서버와 연동되지 않았습니다.")).toBeInTheDocument();
   });
 });
 

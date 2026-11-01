@@ -1,7 +1,6 @@
 import { ApiError } from "./errors";
 import { apiBaseUrl, requireApiBaseUrl } from "./config";
 import { authenticatedFetch } from "./auth";
-import { createMockApi } from "./mockApi";
 import { sensitiveInput, redactDocument, SENSITIVE_INPUT_MESSAGE } from "../lib/privacy";
 import type { AdminProgram, ChatAnswer, Department, ProgramInput, WelfareApi } from "./types";
 
@@ -76,12 +75,8 @@ async function failure(response: Response, fallbackMessage: string): Promise<Api
   return new ApiError(`${fallbackMessage} (${response.status})`, response.status);
 }
 
-/**
- * 채팅(ask)과 관리자 제도 관리는 백엔드 API를 호출하고, 아직 백엔드가 없는 이용 통계는 목업에 맡긴다.
- */
-export function createHttpApi(options: { baseUrl?: string; fallback?: WelfareApi } = {}): WelfareApi {
+export function createHttpApi(options: { baseUrl?: string } = {}): WelfareApi {
   const baseUrl = (options.baseUrl ?? apiBaseUrl).replace(/\/+$/, "");
-  const fallback = options.fallback ?? createMockApi();
 
   async function admin<T>(path: string, init: RequestInit = {}): Promise<T> {
     requireApiBaseUrl(baseUrl);
@@ -95,7 +90,9 @@ export function createHttpApi(options: { baseUrl?: string; fallback?: WelfareApi
 
   return {
     initialSuggestions: () => [],
-    getMonthlyStats: fallback.getMonthlyStats,
+    async getMonthlyStats() {
+      throw new ApiError("이용 통계는 아직 연동되지 않았습니다.", 503, "stats_unavailable");
+    },
 
     async ask(query, _profile, signal) {
       if (sensitiveInput(query)) throw new ApiError(SENSITIVE_INPUT_MESSAGE, 422, "sensitive_input");

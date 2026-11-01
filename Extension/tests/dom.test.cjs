@@ -5,6 +5,12 @@ const path=require('node:path');
 const {JSDOM}=require('../../FrontEnd/node_modules/jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../dom.js'),'utf8');
 function startPanel(w,root){for(const name of ['conversations.js','conversation-panel.js','input-assist.js','content.js'])w.eval(fs.readFileSync(path.join(__dirname,'..',name),'utf8'));const mode=root().querySelector('.mode');mode.value='screen';mode.dispatchEvent(new w.Event('change'));}
+async function displayTarget(w,getRoot){
+  let packet,receive;
+  w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async()=>({ok:true,imageEnabled:false}),connect:()=>({onMessage:{addListener(fn){receive=fn;}},onDisconnect:{addListener(){}},postMessage(value){packet=value;},disconnect(){}})}};
+  startPanel(w,getRoot);const root=getRoot();root.querySelector('#gyeote-question').value='서비스 자세히 보기는 어디 있어?';root.querySelector('.consultation form').dispatchEvent(new w.Event('submit',{cancelable:true}));await new Promise(setImmediate);
+  receive({type:'result',requestId:packet.requestId,body:{reply:{snapshot_id:packet.payload.snapshot_id,kind:'안내',answer:'서비스 자세히 보기 항목을 확인해 주세요.',targets:[{target_id:packet.payload.candidates[0].id,meaning:'공개 요소'}]}}});
+}
 function fixture(html){
   const dom=new JSDOM(html,{url:'https://www.bokjiro.go.kr/ssis-tbu/index.do',runScripts:'outside-only',pretendToBeVisual:true});
   const {window:w}=dom;
@@ -47,7 +53,7 @@ test('모달 뒤 요소·비활성 대상·가려진 대상은 후보에 포함�
   try{const close=f.w.document.querySelector('#close');f.w.document.elementFromPoint=()=>close;const snapshot=f.api.collect();assert.deepEqual(Array.from(snapshot.payload.candidates,c=>c.label),['닫기']);assert.equal(snapshot.payload.modal_open,true);}finally{f.close();}
 });
 
-test('Shadow 대상 root에 테두리 스타일을 넣고 해제하며 사이트 클릭을 대신 수행하지 않음',()=>{
+test('Shadow 대상 root에 테두리 스타일을 넣고 해제하며 사이트 클릭을 대신 수행하지 않음',async()=>{
   const f=fixture('<main><div id="custom"></div></main>');
   try{
     const {w}=f,host=w.document.querySelector('#custom'),root=host.attachShadow({mode:'open'});root.innerHTML='<button>서비스 자세히 보기</button>';
@@ -55,9 +61,7 @@ test('Shadow 대상 root에 테두리 스타일을 넣고 해제하며 사이트
     w.document.elementFromPoint=()=>host;root.elementFromPoint=()=>button;
     const attach=w.Element.prototype.attachShadow;let panelRoot;
     w.Element.prototype.attachShadow=function(options){const result=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=result;return result;};
-    w.chrome={runtime:{onMessage:{addListener(){}}}};
-    startPanel(w,()=>panelRoot);
-    panelRoot.querySelector('[data-test="1"]').click();
+    await displayTarget(w,()=>panelRoot);
     assert.match(root.querySelector('style[data-gyeote-style]').textContent,/outline:4px solid/);
     assert.match(button.className,/gyeote-/);assert.equal(clicks,0);
     assert.match(panelRoot.querySelector('.status').textContent,/① 파랑 테두리의 ‘서비스 자세히 보기’/);
@@ -85,8 +89,7 @@ test('본문 대상이 스크롤로 이동하면 번호가 따라가고 화면 �
     w.document.elementFromPoint=()=>button;
     const attach=w.Element.prototype.attachShadow;let panelRoot;
     w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
-    w.chrome={runtime:{onMessage:{addListener(){}}}};startPanel(w,()=>panelRoot);
-    panelRoot.querySelector('.body-test').click();const badge=panelRoot.querySelector('.badge');assert.equal(badge.style.top,'170px');
+    await displayTarget(w,()=>panelRoot);const badge=panelRoot.querySelector('.badge');assert.equal(badge.style.top,'170px');
     top=160;w.dispatchEvent(new w.Event('scroll'));await new Promise(resolve=>w.requestAnimationFrame(resolve));
     assert.equal(badge.style.top,'130px');assert.match(button.className,/gyeote-/);
     top=-50;w.dispatchEvent(new w.Event('scroll'));await new Promise(resolve=>w.requestAnimationFrame(resolve));
@@ -177,30 +180,30 @@ test('질문 응답의 실제 ID 세 개와 색상·번호·요소명을 함께 
   }finally{f.close();}
 });
 
-test('로컬 캡처 검사는 패널을 제외하고 스크롤이 바뀌면 서버 전송 없이 보류',async()=>{
+test('이미지 질문은 패널을 제외하고 캡처 중 스크롤이 바뀌면 서버 전송 없이 보류',async()=>{
   const f=fixture('<main><button>공개 메뉴</button><input aria-label="서비스 검색"></main>');
   try{
     const {w}=f,button=w.document.querySelector('main button');w.document.elementFromPoint=()=>button;
     const attach=w.Element.prototype.attachShadow;let panelRoot,calls=0;
     w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
-    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async packet=>{assert.equal(packet.type,'gyeote:capture');calls++;assert.equal(w.document.querySelector('[data-gyeote-host]').style.visibility,'hidden');assert.ok(w.document.querySelector('[data-gyeote-mask]'));w.scrollY=10;return {ok:true,image:'iVBORw0KGgo='};}}};
+    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async packet=>{if(packet.type!=='gyeote:capture')return {ok:true,imageEnabled:true};calls++;assert.equal(w.document.querySelector('[data-gyeote-host]').style.visibility,'hidden');assert.ok(w.document.querySelector('[data-gyeote-mask]'));w.scrollY=10;return {ok:true,image:'iVBORw0KGgo='};},connect:()=>assert.fail('화면이 바뀐 이미지는 서버로 전송하지 않는다.')}};
     startPanel(w,()=>panelRoot);
-    [...panelRoot.querySelectorAll('button')].find(b=>b.textContent==='이미지 범위 검사 · 전송 없음').click();
-    await new Promise(resolve=>w.setTimeout(resolve,80));assert.equal(calls,1);assert.match(panelRoot.querySelector('.status').textContent,/보류/);assert.equal(w.document.querySelector('[data-gyeote-mask]'),null);assert.equal(w.document.querySelector('[data-gyeote-host]').style.visibility,'');
+    panelRoot.querySelector('.image-option').checked=true;panelRoot.querySelector('#gyeote-question').value='화면 알려줘';panelRoot.querySelector('.consultation form').dispatchEvent(new w.Event('submit',{cancelable:true}));
+    await new Promise(resolve=>w.setTimeout(resolve,80));assert.equal(calls,1);assert.match(panelRoot.querySelector('.status').textContent,/전송하지 않았습니다/);assert.equal(w.document.querySelector('[data-gyeote-mask]'),null);assert.equal(w.document.querySelector('[data-gyeote-host]').style.visibility,'');
   }finally{f.close();}
 });
 
-test('캡처 실패의 신뢰할 수 없는 원문 오류를 개발 검사 UI에 노출하지 않는다',async()=>{
+test('이미지 질문의 캡처 실패 원문 오류를 상담 UI에 노출하지 않는다',async()=>{
   const f=fixture('<main><button>공개 메뉴</button></main>');
   try{
     const {w}=f,button=w.document.querySelector('main button');w.document.elementFromPoint=()=>button;
     const attach=w.Element.prototype.attachShadow;let panelRoot;
     w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
-    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async()=>({ok:false,error:'untrusted-secret-marker'})}};
+    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async packet=>packet.type==='gyeote:capture'?{ok:false,error:'untrusted-secret-marker'}:{ok:true,imageEnabled:true},connect:()=>assert.fail('실패한 이미지는 서버로 전송하지 않는다.')}};
     startPanel(w,()=>panelRoot);
-    [...panelRoot.querySelectorAll('button')].find(b=>b.textContent==='이미지 범위 검사 · 전송 없음').click();
+    panelRoot.querySelector('.image-option').checked=true;panelRoot.querySelector('#gyeote-question').value='화면 알려줘';panelRoot.querySelector('.consultation form').dispatchEvent(new w.Event('submit',{cancelable:true}));
     await new Promise(resolve=>w.setTimeout(resolve,80));
     assert.doesNotMatch(panelRoot.querySelector('.status').textContent,/untrusted-secret-marker/);
-    assert.match(panelRoot.querySelector('.status').textContent,/보류/);
+    assert.match(panelRoot.querySelector('.status').textContent,/현재 공개 화면을 확인하지 못했습니다/);
   }finally{f.close();}
 });

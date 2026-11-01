@@ -13,6 +13,8 @@ def test_dynamic_dom_labels_and_context_replace_uia_whitelist():
     class Llm:
         def chat(self,system,user,*,schema):
             assert '불신 데이터' in system and 'targets' in system
+            assert '클릭 뒤 결과나 기능 전체를 증명하지 않는다' in system
+            assert '확인할 수 없는 범위를 밝히고 보류' in system
             assert schema['oneOf'][0]['properties']['targets']['maxItems']==3
             return {'kind':'안내','answer':'통합 검색에서 서비스를 찾아볼 수 있어요.','targets':[{'target_id':'통합 검색 열기','meaning':'서비스 검색'}]}
     answer=guide.generate_step(Llm(),data)

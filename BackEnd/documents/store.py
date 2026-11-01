@@ -22,8 +22,11 @@ class DocumentStore:
 
     @contextmanager
     def cursor(self):
-        with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            yield cur
+        with closing(self.connect()) as conn:
+            # 풀 연결의 기본 읽기 전용 상태에 등록·게시 트랜잭션을 맡기지 않는다.
+            conn.set_session(readonly=False)
+            with conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+                yield cur
 
     @staticmethod
     def _admin(cur, actor, local=False):

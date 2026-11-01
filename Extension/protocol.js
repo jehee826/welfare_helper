@@ -28,6 +28,21 @@
     if([r.answer,...r.targets.map(t=>t.meaning)].some(v=>/파란|파랑|주황|보라|①|②|③|\d+\s*번|왼쪽|오른쪽|위쪽|아래쪽|좌표|javascript:|querySelector/i.test(v)))throw new Error('invalid_reply');
     return r;
   }
-  const api={id,text,official,request,reply,timeoutSeconds};globalThis.GyeoteProtocol=Object.freeze(api);
+  // 문서 원문에는 연도·금액·기호가 있으므로 화면 라벨의 제한을 적용하지 않는다.
+  const documentText=(value,max)=>typeof value==='string'&&!!value.trim()&&value.length<=max;
+  function documentRequest(payload){
+    if(!payload||Object.keys(payload).some(k=>!['query','history'].includes(k))||!documentText(payload.query,300))throw new Error('invalid_request');
+    const history=payload.history||[];
+    if(!Array.isArray(history)||history.length>12||history.some(h=>!h||!['user','assistant'].includes(h.role)||!documentText(h.content,6000)||Object.keys(h).some(k=>!['role','content'].includes(k)))||history.reduce((n,h)=>n+h.content.length,0)>6000)throw new Error('invalid_request');
+    return {query:payload.query,history};
+  }
+  function documentReply(body){
+    if(!body||!['answer','fallback'].includes(body.kind)||!documentText(body.text,60000)||body.evidence!==undefined&&!Array.isArray(body.evidence))throw new Error('invalid_reply');
+    const evidence=body.evidence||[];
+    if(evidence.length>60||evidence.some(e=>!e||typeof e.chunk_id!=='string'||typeof e.document_id!=='string'||typeof e.context!=='string'||typeof e.quote!=='string'||typeof e.source_url!=='string'||!Array.isArray(e.pages)||e.pages.some(p=>!Number.isInteger(p)||p<1)||!Array.isArray(e.source_blocks)||e.source_blocks.some(b=>typeof b!=='string')))throw new Error('invalid_reply');
+    return {kind:body.kind,text:body.text,evidence};
+  }
+  const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
+  const api={id,text,official,request,reply,timeoutSeconds,documentRequest,documentReply,adminSession};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

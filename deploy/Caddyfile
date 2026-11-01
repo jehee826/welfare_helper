@@ -27,6 +27,10 @@ https://{$PUBLIC_API_HOST} {
 	@desktop path /api/v1/desktop /api/v1/desktop/*
 	respond @desktop 404
 
+	# 공개 상태 확인은 /health만 제공하고 내부 진단·API 문서는 노출하지 않는다.
+	@diagnostics path /health/* /docs /docs/* /redoc /redoc/* /openapi.json /debug /debug/*
+	respond @diagnostics 404
+
 	reverse_proxy backend:8000 {
 		transport http {
 			dial_timeout 10s

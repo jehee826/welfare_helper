@@ -81,6 +81,8 @@ flowchart TB
 
 운영은 **Vercel(프런트) + EC2(Docker API·워커·Ollama) + Supabase(DB)**로 구성합니다.
 
+공개 edge는 단순 `/health`와 기존 API를 제공하고 내부 진단·API 문서는 차단합니다. [운영 경계와 재현성](deploy/README.md)을 참고하세요.
+
 ## 로컬 빠른 시작
 
 ### 1. 준비와 저장소 받기

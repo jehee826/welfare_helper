@@ -98,7 +98,7 @@ node Extension/package.cjs --origin https://api.example.invalid --name remote-ex
 
 배포 준비 순서는 다음과 같다. 실제 실행·배포 검증은 아직 수행하지 않았다.
 
-1. 승인된 API 호스트의 DNS·TLS를 준비하고 기존 Compose `edge` 프로필/Caddy를 검토한다. `PUBLIC_API_HOST`가 HTTPS 호스트를 정하며 Caddy는 `/api/v1/desktop/*`를 공개하지 않는다. 백엔드 8000·Ollama 11434의 외부 공개 없이 edge가 내부 backend로 연결하게 한다.
+1. 승인된 API 호스트의 DNS·TLS를 준비하고 기존 Compose `edge` 프로필/Caddy를 검토한다. `PUBLIC_API_HOST`가 HTTPS 호스트를 정하며 Caddy는 내부 진단·API 문서와 `/api/v1/desktop/*`를 차단한다. [운영 경계](../deploy/README.md)를 따라 백엔드8000·Ollama11434의 외부 공개 없이 edge가 내부 backend로 연결하게 한다.
 2. 관리자 웹의 `VITE_API_BASE_URL`을 **같은 HTTPS origin, `/api` 제외**로 설정하고 프런트를 재빌드·배포한다. 기존 관리자 웹 진입 주소는 유지한다. 비밀번호·서버 키를 `VITE_*`에 넣지 않는다.
 3. 설치·배포 방식에서 확정한 확장 ID의 `chrome-extension://32자ID`를 백엔드 `CORS_ALLOWED_ORIGINS`에 정확히 추가하고 기존 공식 웹/로컬 목록을 유지한다. CORS는 인증을 대신하지 않는다.
 4. 실제 주소로 새 확장 패키지를 생성한 뒤 신규 설치→공개 상담→관리자 로그인/업로드→단절/복구를 확인한다. 실제 주소·확장 ID·인증서는 미확정이므로 현재는 **사용자 테스트 필요**다.

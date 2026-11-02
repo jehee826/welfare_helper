@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     bokjiro_timeout: float = Field(default=15, gt=0, le=60)
 
     desktop_guidance_enabled: bool = False
+    remote_dom_guidance_enabled: bool = False
     desktop_image_enabled: bool = False
     desktop_extension_token: SecretStr | None = None
 

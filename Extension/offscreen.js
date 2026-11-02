@@ -6,7 +6,7 @@ chrome.runtime.onMessage.addListener((packet,sender,sendResponse)=>{
   }
   if(packet?.target==='gyeote:offscreen'&&['gyeote:auth-changed','gyeote:profile-changed'].includes(packet.type)&&sender.id===chrome.runtime.id&&!sender.tab){if(active?.documentMode&&(packet.type==='gyeote:auth-changed'||active.profileRevision===undefined||packet.revision!==active.profileRevision))active.controller.abort();return;}
   if(packet?.target!=='gyeote:offscreen'||packet.type!=='gyeote:process-image'||sender.id!==chrome.runtime.id||sender.tab)return;
-  try{if(!GyeoteProtocol.screenAvailable()){sendResponse({ok:false,error:'remote_screen_unavailable'});return;}}catch{sendResponse({ok:false,error:'connection_configuration_invalid'});return;}
+  try{if(!GyeoteProtocol.isLocalOrigin()){sendResponse({ok:false,error:'remote_screen_unavailable'});return;}}catch{sendResponse({ok:false,error:'connection_configuration_invalid'});return;}
   GyeoteImage.prepare(packet.dataUrl,packet.viewport,packet.masks).then(image=>sendResponse({ok:true,image})).catch(()=>sendResponse({ok:false,error:'capture_failed'}));return true;
 });
 chrome.runtime.onConnect.addListener(port=>{
@@ -27,12 +27,13 @@ chrome.runtime.onConnect.addListener(port=>{
       const mode=packet.mode??'screen';
       if(!['screen','document'].includes(mode))throw new Error('invalid_reply');
       const documentMode=mode==='document';
-      const origin=GyeoteProtocol.documentOrigin(),local=GyeoteProtocol.screenAvailable();
-      if(!documentMode&&!local)throw new Error('remote_screen_unavailable');
+      const origin=GyeoteProtocol.documentOrigin(),local=GyeoteProtocol.isLocalOrigin();
+      if(!documentMode&&!GyeoteProtocol.screenAvailable())throw new Error('remote_screen_unavailable');
+      if(!documentMode&&!local&&Object.keys(packet).some(key=>!['requestId','mode','payload','deadlineAt'].includes(key)))throw new Error('invalid_reply');
       active.documentMode=documentMode;
       if(documentMode&&packet.profileRevision!==undefined&&(!Number.isSafeInteger(packet.profileRevision)||packet.profileRevision<0))throw new Error('invalid_profile');
       active.profileRevision=documentMode?packet.profileRevision:undefined;
-      payload=documentMode?GyeoteProtocol.documentRequest(packet.payload):GyeoteProtocol.request(packet.payload);
+      payload=documentMode?GyeoteProtocol.documentRequest(packet.payload):local?GyeoteProtocol.request(packet.payload):GyeoteProtocol.remoteScreenRequest(packet.payload);
       if(documentMode&&payload.conversation_context&&payload.conversation_context.profileRevision!==packet.profileRevision)throw new Error('invalid_reply');
       const connection=local?await chrome.runtime.sendMessage({type:'gyeote:connection'}):null;
       if(documentMode){
@@ -48,23 +49,23 @@ chrome.runtime.onConnect.addListener(port=>{
           active.conversationContext=context;
         }
       }
-      if(!documentMode&&(!connection?.token||connection.token.length<32))throw new Error('connection_required');
-      const budget=(documentMode?GyeoteProtocol.documentTimeoutSeconds(connection):GyeoteProtocol.timeoutSeconds(connection))*1000;
+      if(!documentMode&&local&&(!connection?.token||connection.token.length<32))throw new Error('connection_required');
+      const budget=(documentMode?GyeoteProtocol.documentTimeoutSeconds(connection):GyeoteProtocol.screenTimeoutSeconds(connection))*1000;
       if(packet.deadlineAt!==undefined&&(!Number.isFinite(packet.deadlineAt)||packet.deadlineAt<=0))throw new Error('invalid_reply');
       const remaining=Math.min(budget,(packet.deadlineAt??Date.now()+budget)-Date.now());
       if(remaining<=0)throw new Error('request_stopped');
       clearTimeout(timer);timer=setTimeout(()=>controller.abort(),Math.min(remaining,adminSession?Math.max(0,adminSession.expiresAt*1000-Date.now()):remaining));
       payload.timeout_seconds=Math.min(payload.timeout_seconds??1800,Math.max(1,Math.ceil(remaining/1000)));
-      if(payload.image&&!connection.imageEnabled)throw new Error('image_disabled');
+      if(payload.image&&(!local||!connection?.imageEnabled))throw new Error('image_disabled');
       if(controller.signal.aborted)throw new Error('request_stopped');
       if(adminSession&&!GyeoteProtocol.documentSession(adminSession))throw new Error('document_auth_required');
       const headers={'Content-Type':'application/json'};
-      if(!documentMode)headers.Authorization='Bearer '+connection.token;
+      if(!documentMode&&local)headers.Authorization='Bearer '+connection.token;
       else if(adminSession)headers.Authorization='Bearer '+adminSession.token;
-      const responsePending=fetch(origin+(documentMode?'/api/v1/chat':'/api/v1/desktop/guide'),{method:'POST',headers,body:JSON.stringify(payload),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
+      const responsePending=fetch(origin+(documentMode?'/api/v1/chat':local?'/api/v1/desktop/guide':'/api/v1/screen/guide'),{method:'POST',headers,body:JSON.stringify(payload),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
       delete payload.image;
       const response=await responsePending;
-      if(!response.ok){if(documentMode&&adminSession&&[401,403].includes(response.status))await chrome.runtime.sendMessage({type:'gyeote:admin-invalid',token:adminSession.token});const code=await response.json().then(r=>r.detail).catch(()=>null);throw new Error(documentMode&&code==='sensitive_input'?'sensitive_input':documentMode&&[401,403].includes(response.status)?'document_auth_required':documentMode&&response.status===504?'request_timeout':documentMode&&response.status===499?'request_cancelled':documentMode&&response.status===429&&code==='chat_rate_limited'?'chat_rate_limited':({401:'connection_required',404:'feature_disabled',409:code==='desktop_image_model_unsupported'?'image_unsupported':'image_disabled',422:'input_budget',429:'busy',403:'private_connection',499:'request_stopped',504:'request_stopped'})[response.status]||'generation_failed');}
+      if(!response.ok){if(documentMode&&adminSession&&[401,403].includes(response.status))await chrome.runtime.sendMessage({type:'gyeote:admin-invalid',token:adminSession.token});const code=await response.json().then(r=>r.detail).catch(()=>null);throw new Error(documentMode&&code==='sensitive_input'?'sensitive_input':documentMode&&[401,403].includes(response.status)?'document_auth_required':documentMode&&response.status===504?'request_timeout':documentMode&&response.status===499?'request_cancelled':response.status===429&&code==='chat_rate_limited'?'chat_rate_limited':({401:'connection_required',404:'feature_disabled',409:code==='desktop_image_model_unsupported'?'image_unsupported':'image_disabled',413:'input_budget',422:'input_budget',429:'busy',403:'private_connection',499:'request_stopped',504:'request_stopped'})[response.status]||'generation_failed');}
       const reader=response.body.getReader();let size=0,chunks=[];
       try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>(documentMode?1024*1024:65536))throw new Error('invalid_reply');chunks.push(value);}}
       finally{await reader.cancel().catch(()=>{});}

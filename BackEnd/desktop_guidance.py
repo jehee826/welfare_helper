@@ -156,21 +156,18 @@ class ScreenHistory(BaseModel):
     _text = field_validator("text")(dom_text)
 
 
-class DomGuideRequest(BaseModel):
+class DomGuidePayload(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     source: Literal["dom"]
     snapshot_id: str = Field(pattern=r"^[A-F0-9]{20}$")
     question: str = Field(min_length=1, max_length=240)
-    title: str = Field(default="", max_length=120)
     candidates: list[DomCandidate] = Field(max_length=60)
     screen_context: list[DomContext] = Field(default_factory=list, max_length=8)
     history: list[ScreenHistory] = Field(default_factory=list, max_length=4)
     modal_open: bool = False
     partial: bool = False
     timeout_seconds: int | None = Field(default=None, ge=1, le=1800)
-    image: str | None = Field(default=None, max_length=2 * 1024 * 1024, repr=False)
-    _text = field_validator("question", "title")(dom_text)
-    _image = field_validator("image")(GuideRequest.valid_image.__func__)
+    _text = field_validator("question")(dom_text)
 
     @model_validator(mode="after")
     def unique_and_bounded(self):
@@ -181,6 +178,17 @@ class DomGuideRequest(BaseModel):
         if sum(len(h.text) for h in self.history) > 1000:
             raise ValueError("history_budget")
         return self
+
+
+class DomGuideRequest(DomGuidePayload):
+    title: str = Field(default="", max_length=120)
+    image: str | None = Field(default=None, max_length=2 * 1024 * 1024, repr=False)
+    _title = field_validator("title")(dom_text)
+    _image = field_validator("image")(GuideRequest.valid_image.__func__)
+
+
+class RemoteDomGuideRequest(DomGuidePayload):
+    """원격에서는 이미지·제목·URL·문서 조건을 필드로 받지 않는다."""
 
 
 class GuideTarget(BaseModel):
@@ -346,6 +354,19 @@ def generate_step(llm, request):
     return step
 
 
+def guidance_result(request, settings, budget):
+    # 로컬·원격 DOM 모두 공통 모델 설정과 같은 응답 검증을 사용한다.
+    llm = OllamaClient(settings.ollama_base_url, settings.ollama_embed, settings.ollama_llm,
+        settings.ollama_timeout, {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
+                                "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
+        embed_dim=settings.embed_dim, request_deadline=budget.deadline,
+        request_cancelled=budget.cancelled.is_set)
+    result = generate_step(llm, request)
+    if isinstance(request, DomGuideRequest):
+        return {"reply": {**result.model_dump(), "snapshot_id": request.snapshot_id}, "model": settings.ollama_llm}
+    return {"step": result.model_dump(), "model": settings.ollama_llm}
+
+
 @router.post("/api/v1/desktop/guide")
 def desktop_guide(request: GuideRequest | DomGuideRequest, transport: Request = None):
     settings = get_settings()
@@ -369,16 +390,7 @@ def desktop_guide(request: GuideRequest | DomGuideRequest, transport: Request = 
         seconds = request.timeout_seconds or 90 if isinstance(request, DomGuideRequest) else None
         with inference_request(transport, settings.desktop_timeout_seconds, seconds,
                                prefix="desktop_request", started_at=monotonic()) as budget:
-            # RAG와 같은 서버 OLLAMA_LLM 및 같은 Ollama 인스턴스를 사용한다.
-            llm = OllamaClient(settings.ollama_base_url, settings.ollama_embed, settings.ollama_llm,
-                settings.ollama_timeout, {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
-                                        "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
-                embed_dim=settings.embed_dim, request_deadline=budget.deadline,
-                request_cancelled=budget.cancelled.is_set)
-            result = generate_step(llm, request)
-            if isinstance(request, DomGuideRequest):
-                return {"reply":{**result.model_dump(),"snapshot_id":request.snapshot_id},"model":settings.ollama_llm}
-            return {"step": result.model_dump(), "model": settings.ollama_llm}
+            return guidance_result(request, settings, budget)
     except HTTPException:
         raise
     except VisionUnsupportedError:

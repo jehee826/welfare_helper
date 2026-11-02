@@ -25,7 +25,7 @@ python scripts/ci_python.py tests
 
 ## 모델 없는 CI
 
-`.github/workflows/ci.yml`은 backend/worker/dev를 분리 설치해 pip check·최소 import를 실행하고, dev에서는 `scripts/ci_python.py`의 선정 계약/API 검사를 실행한다. FrontEnd는 npm ci·test:ci·build:ci, Extension은 workflow에 지정한 여섯 계약 파일을 검사한다. 실제 .env를 읽지 않으며 개인정보·인증·빈도 제한 가드는 유지한다.
+`.github/workflows/ci.yml`은 backend/worker/dev를 분리 설치해 pip check·최소 import를 실행하고, dev에서는 `scripts/ci_python.py`의 선정 계약/API 검사를 실행한다. 원격 DOM의 opt-in·금지 필드·공유 예산·loopback 전송 검사도 포함한다. FrontEnd는 npm ci·test:ci·build:ci, Extension은 workflow에 지정한 일곱 계약 파일을 검사한다. 실제 .env를 읽지 않으며 개인정보·인증·빈도 제한 가드는 유지한다.
 
 실제 DB·Ollama·모델 가중치·Docling PDF 해석은 기본 CI에 포함하지 않는다. 해당 통합 검사는 준비된 별도 환경에서 명시적으로 선택해 실행한다. CPU torch 배포 패키지 설치는 모델 가중치 다운로드나 추론이 아니다.
 

@@ -1,9 +1,9 @@
 const status=document.querySelector('#status');
 let screenAllowed=false,configurationReady=false;
-try{const origin=GyeoteProtocol.documentOrigin();screenAllowed=GyeoteProtocol.screenAvailable();configurationReady=true;document.querySelector('#document-server').textContent='문서 서버: '+origin+' · 공개 상담은 연결 파일 없이 사용할 수 있습니다.';}
+try{const origin=GyeoteProtocol.documentOrigin();screenAllowed=GyeoteProtocol.isLocalOrigin();configurationReady=true;document.querySelector('#document-server').textContent='문서 서버: '+origin+' · 공개 상담은 연결 파일 없이 사용할 수 있습니다.';}
 catch{document.querySelector('#document-server').textContent='설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.';}
 document.querySelector('#screen-connection').hidden=!screenAllowed;document.querySelector('#file').disabled=!screenAllowed;
-if(!screenAllowed)status.textContent='이 패키지는 원격 화면 안내를 제공하지 않습니다.';
+if(!screenAllowed)status.textContent=configurationReady&&GyeoteProtocol.screenAvailable()?'공개 DOM 화면 안내는 연결 파일 없이 사용합니다. 이미지 전송은 제공하지 않습니다.':'이 패키지는 원격 화면 안내를 제공하지 않습니다.';
 document.querySelector('#file').addEventListener('change',async event=>{
   try{
     if(!screenAllowed)throw new Error();

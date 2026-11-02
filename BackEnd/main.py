@@ -21,6 +21,7 @@ from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
 from BackEnd.core.privacy import redact_document, validate_document_input, sensitive_input
 from BackEnd.desktop_guidance import router as desktop_guidance_router
+from BackEnd.screen_guidance import router as screen_guidance_router, remote_screen_enabled
 from BackEnd.rag.chat import ChatService
 from BackEnd.rag.factory import build_chat_service
 from BackEnd.rag.repository import PgServiceRepository
@@ -38,7 +39,9 @@ logger = logging.getLogger("welfare_helper")
 
 app = FastAPI(title="welfare_helper")
 app.include_router(desktop_guidance_router)
-app.add_middleware(InferenceBodyLimit, timeout_seconds=lambda: get_settings().ollama_timeout)
+app.include_router(screen_guidance_router)
+app.add_middleware(InferenceBodyLimit, timeout_seconds=lambda: get_settings().ollama_timeout,
+                   screen_enabled=remote_screen_enabled)
 app.add_middleware(DocumentBodyLimit)
 app.include_router(document_router)
 app.include_router(program_router)
@@ -50,8 +53,8 @@ app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_ori
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
-    if request.url.path == "/api/v1/desktop/guide":
-        return JSONResponse(status_code=422, content={"detail": "invalid_desktop_request"})
+    if request.url.path in {"/api/v1/desktop/guide", "/api/v1/screen/guide"}:
+        return JSONResponse(status_code=422, content={"detail": "invalid_screen_request" if request.url.path == "/api/v1/screen/guide" else "invalid_desktop_request"})
     if request.url.path in {"/api/v1/chat", "/debug/rag"} or (
         request.url.path.startswith("/api/v1/admin/documents/")
         and request.url.path.endswith(("/query", "/search"))
@@ -271,7 +274,7 @@ def admin_session(actor=Depends(require_document_admin)):
 @app.middleware("http")
 async def private_responses(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith(("/api/v1/admin", "/api/v1/desktop")) or request.url.path in {"/api/v1/chat", "/debug/rag"}:
+    if request.url.path.startswith(("/api/v1/admin", "/api/v1/desktop", "/api/v1/screen")) or request.url.path in {"/api/v1/chat", "/debug/rag"}:
         response.headers["Cache-Control"] = "no-store"
     return response
 

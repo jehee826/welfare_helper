@@ -175,7 +175,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     changeLocal(()=>profileAction(message)).then(sendResponse).catch(error=>sendResponse({ok:false,error:['invalid_profile','profile_conflict','profile_data_invalid','profile_revision_limit'].includes(error.message)?error.message:'profile_storage_failed'}));
     return true;
   }
-  if(message?.type==='gyeote:connection'&&internal){if(Object.keys(message).join(',')!=='type')return;try{if(!GyeoteProtocol.screenAvailable()){sendResponse(null);return;}}catch{sendResponse(null);return;}chrome.storage.session.get('connection').then(({connection})=>sendResponse(connection||null));return true;}
+  if(message?.type==='gyeote:connection'&&internal){if(Object.keys(message).join(',')!=='type')return;try{if(!GyeoteProtocol.isLocalOrigin()){sendResponse(null);return;}}catch{sendResponse(null);return;}chrome.storage.session.get('connection').then(({connection})=>sendResponse(connection||null));return true;}
   if(message?.type==='gyeote:document-auth'&&internal){if(Object.keys(message).join(',')!=='type')return;documentAuth().then(sendResponse).catch(()=>sendResponse(null));return true;}
   if(message?.type==='gyeote:admin-invalid'&&internal){invalidateAuth(message.token).then(()=>sendResponse({ok:true})).catch(()=>sendResponse({ok:false}));return true;}
   if(options&&['gyeote:admin-connect','gyeote:admin-check','gyeote:admin-logout'].includes(message?.type)){
@@ -200,7 +200,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(!content)return;
   if(message?.type==='gyeote:document-access'){documentAuth().then(auth=>sendResponse(authSummary(auth))).catch(()=>sendResponse({mode:'admin',status:'expired'}));return true;}
   if(message?.type==='gyeote:capture'){
-    try{if(!GyeoteProtocol.screenAvailable()){sendResponse({ok:false,error:'remote_screen_unavailable'});return;}}catch{sendResponse({ok:false,error:'connection_configuration_invalid'});return;}
+    try{if(!GyeoteProtocol.isLocalOrigin()){sendResponse({ok:false,error:'remote_screen_unavailable'});return;}}catch{sendResponse({ok:false,error:'connection_configuration_invalid'});return;}
     let failure='capture_tab_changed';
     (async()=>{
       const before=await chrome.tabs.get(sender.tab.id),window=await chrome.windows.get(sender.tab.windowId);
@@ -219,6 +219,6 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message?.type==='gyeote:options'){chrome.runtime.openOptionsPage();sendResponse({ok:true});return;}
   if(message?.type==='gyeote:prepare'){
     if(Object.keys(message).some(key=>!['type','mode'].includes(key))||message.mode!==undefined&&!['screen','document'].includes(message.mode)){sendResponse({ok:false,error:'connection_required'});return;}
-    (async()=>{const local=GyeoteProtocol.screenAvailable();if(message.mode!=='document'&&!local)throw new Error('remote_screen_unavailable');const {connection}=local?await chrome.storage.session.get('connection'):{};if(message.mode!=='document'&&(typeof connection?.token!=='string'||connection.token.length<32))throw new Error('connection_required');const timeoutSeconds=message.mode==='document'?GyeoteProtocol.documentTimeoutSeconds(connection):GyeoteProtocol.timeoutSeconds(connection);const access=message.mode==='document'?authSummary(await documentAuth()):undefined;if(access?.status==='expired'){sendResponse({ok:false,error:'document_auth_required'});return;}await prepare();sendResponse({ok:true,imageEnabled:message.mode!=='document'&&connection?.imageEnabled===true,timeoutSeconds,...(access?{documentAccess:access}:{})});})().catch(error=>sendResponse({ok:false,error:['remote_screen_unavailable','connection_configuration_invalid'].includes(error.message)?error.message:'connection_required'}));return true;
+    (async()=>{const local=GyeoteProtocol.isLocalOrigin();if(message.mode!=='document'&&!GyeoteProtocol.screenAvailable())throw new Error('remote_screen_unavailable');const {connection}=local?await chrome.storage.session.get('connection'):{};if(message.mode!=='document'&&local&&(typeof connection?.token!=='string'||connection.token.length<32))throw new Error('connection_required');const timeoutSeconds=message.mode==='document'?GyeoteProtocol.documentTimeoutSeconds(connection):GyeoteProtocol.screenTimeoutSeconds(connection);const access=message.mode==='document'?authSummary(await documentAuth()):undefined;if(access?.status==='expired'){sendResponse({ok:false,error:'document_auth_required'});return;}await prepare();sendResponse({ok:true,imageEnabled:message.mode!=='document'&&local&&connection?.imageEnabled===true,timeoutSeconds,...(access?{documentAccess:access}:{})});})().catch(error=>sendResponse({ok:false,error:['remote_screen_unavailable','connection_configuration_invalid'].includes(error.message)?error.message:'connection_required'}));return true;
   }
 });

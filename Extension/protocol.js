@@ -1,5 +1,6 @@
 (() => {
   const documentDeployment=Object.freeze({origin:'http://127.0.0.1:8000',timeoutSeconds:600});
+  const remoteScreenDeployment=false;
   const localDocumentOrigin='http://127.0.0.1:8000';
   function validateDocumentOrigin(value){
     try{
@@ -16,8 +17,10 @@
   }
   function validateDocumentTimeout(value){if(!Number.isInteger(value)||value<1||value>1800)throw new Error('connection_configuration_invalid');return value;}
   const documentOrigin=()=>{validateDocumentTimeout(documentDeployment.timeoutSeconds);return validateDocumentOrigin(documentDeployment.origin);};
-  const screenAvailable=()=>documentOrigin()===localDocumentOrigin;
-  const documentTimeoutSeconds=connection=>screenAvailable()&&connection?.timeoutSeconds!==undefined?timeoutSeconds(connection):validateDocumentTimeout(documentDeployment.timeoutSeconds);
+  const isLocalOrigin=()=>documentOrigin()===localDocumentOrigin;
+  const screenAvailable=()=>isLocalOrigin()||remoteScreenDeployment;
+  const screenTimeoutSeconds=connection=>isLocalOrigin()?timeoutSeconds(connection):Math.min(90,validateDocumentTimeout(documentDeployment.timeoutSeconds));
+  const documentTimeoutSeconds=connection=>isLocalOrigin()&&connection?.timeoutSeconds!==undefined?timeoutSeconds(connection):validateDocumentTimeout(documentDeployment.timeoutSeconds);
   const id=value=>typeof value==='string'&&/^[A-F0-9]{20}$/.test(value);
   const text=(value,max)=>typeof value==='string'&&value.trim()&&value.length<=max&&!/\d{4,}|@|[<>\x00-\x08]|주민등록|인증번호|인증코드|비밀번호|password|\bOTP\b/i.test(value);
   const official=value=>{try{const u=new URL(value);return u.origin==='https://www.bokjiro.go.kr'&&!u.username&&!u.password;}catch{return false;}};
@@ -38,6 +41,14 @@
     const history=payload.history||[];
     if(!Array.isArray(history)||history.length>4||history.some(h=>!['user','assistant'].includes(h.role)||!text(h.text,420))||history.reduce((n,h)=>n+h.text.length,0)>1000)throw new Error('invalid_request');
     return payload;
+  }
+  function remoteScreenRequest(payload){
+    const keys=(value,allowed)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).every(key=>allowed.includes(key));
+    if(!keys(payload,['source','snapshot_id','question','candidates','screen_context','history','modal_open','partial','timeout_seconds'])
+      ||!Array.isArray(payload.candidates)||payload.candidates.some(c=>!keys(c,['id','label','role','context','enabled','visible','in_modal']))
+      ||(payload.screen_context!==undefined&&(!Array.isArray(payload.screen_context)||payload.screen_context.some(c=>!keys(c,['kind','text']))))
+      ||(payload.history!==undefined&&(!Array.isArray(payload.history)||payload.history.some(c=>!keys(c,['role','text'])))))throw new Error('invalid_request');
+    return request(payload);
   }
   function reply(body,payload){
     const r=body?.reply;
@@ -125,7 +136,7 @@
     return redactDocument({kind:body.kind,text:body.text,evidence,...(update?{context_update:update}:{}),...(Object.hasOwn(body,'context_usage')?{context_usage:contextUsage(body.context_usage)}:{})});
   }
   const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
-  const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&(value.origin===documentOrigin()||value.origin===undefined&&screenAvailable());
-  const api={id,text,official,request,reply,timeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,adminSession,documentSession,documentOrigin,screenAvailable,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
+  const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&(value.origin===documentOrigin()||value.origin===undefined&&isLocalOrigin());
+  const api={id,text,official,request,remoteScreenRequest,reply,timeoutSeconds,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,adminSession,documentSession,documentOrigin,isLocalOrigin,screenAvailable,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

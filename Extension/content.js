@@ -20,8 +20,8 @@
   style.dataset.gyeoteStyle='';style.textContent=palette.map((p,i)=>`.${classes[i]}{outline:4px solid ${p.color}!important;outline-offset:4px!important}.${classes[i]}:focus-visible{outline-style:double!important;outline-width:6px!important}`).join('\n');document.documentElement.append(style);
   let selected=[],snapshot=null,serial=0,frame=0,collapsed=false,ownMutation=false,observer,requestPort=null,busy=false,activeReply=null,history=[],historyUrl='',pageVersion=0,capturing=false,requestTimer;
   let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
-  let screenAllowed=false,configurationReady=false,pendingQuestion=null;
-  try{screenAllowed=GyeoteProtocol.screenAvailable();configurationReady=true;}catch{}
+  let screenAllowed=false,localOrigin=false,configurationReady=false,pendingQuestion=null;
+  try{screenAllowed=GyeoteProtocol.screenAvailable();localOrigin=GyeoteProtocol.isLocalOrigin();configurationReady=true;}catch{}
   const conversations={screen:[],document:[]};
   const rootStyles=new Map([[document,style]]);
   const observeOptions={subtree:true,childList:true,characterData:true,attributes:true,attributeOldValue:true,attributeFilter:['class','style','hidden','disabled','aria-disabled','aria-hidden','aria-modal','aria-label','aria-labelledby','title','role','href','type','id','for']};
@@ -111,7 +111,7 @@
   const accessKey=state=>[state?.mode||'anonymous',state?.status||'anonymous',state?.accessId||'initial'].join(':');
   function resetDocumentHistory(){documentHistory=[];documentHistoryAccess=null;conversations.document=[];if(mode==='document')$('.conversation').replaceChildren();inputAssist?.invalidate();}
   function showDocumentAccess(state){
-    if(configurationReady&&(state?.origin!==GyeoteProtocol.documentOrigin()&&!(state?.origin===undefined&&screenAllowed)))throw new Error('document_access_changed');
+    if(configurationReady&&(state?.origin!==GyeoteProtocol.documentOrigin()&&!(state?.origin===undefined&&localOrigin)))throw new Error('document_access_changed');
     currentAccess=state;
     accessNotice.textContent=state?.mode==='admin'?(state.status==='ready'?'문서 접근: 관리자 연결됨':'문서 접근: 관리자 세션 만료 · 연결 설정에서 다시 로그인하세요.'):'문서 접근: 공개 문서 (익명)';
     $('.reset').textContent=state?.mode==='anonymous'?'새 상담':'임시 대화 지우기';
@@ -127,11 +127,11 @@
   function updateMode(){
     const documentMode=mode==='document',input=$('#gyeote-question');
     panel.setAttribute('aria-label',documentMode?'곁에 복지 상담':'곁에 화면 안내');
-    imageOption.checked=false;imageOption.disabled=documentMode||!screenAllowed;imageLabel.hidden=documentMode;imageNotice.hidden=documentMode;$('.screen-controls').hidden=documentMode;
+    imageOption.checked=false;imageOption.disabled=documentMode||!localOrigin;imageLabel.hidden=documentMode||!localOrigin;imageNotice.hidden=documentMode||!localOrigin;$('.screen-controls').hidden=documentMode;
     input.maxLength=documentMode?300:240;input.value='';
     questionForm.querySelector('label').textContent=documentMode?'등록 문서에 궁금한 점':'현재 화면에서 궁금한 점';
     questionForm.querySelector('button[type="submit"]').textContent=documentMode?'문서에 질문':'현재 화면에 질문';
-    modeNotice.textContent=documentMode?'질문·현재 조건·제한한 최근 대화와 누적 요약으로 문서를 다시 검색합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요. 비공개 자료는 연결 설정에서 관리자 로그인 후 질문하세요.':'현재 공개 화면의 정보로 설명하고 필요한 요소를 표시합니다.';
+    modeNotice.textContent=documentMode?'질문·현재 조건·제한한 최근 대화와 누적 요약으로 문서를 다시 검색합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요. 비공개 자료는 연결 설정에서 관리자 로그인 후 질문하세요.':localOrigin?'현재 공개 화면의 정보로 설명하고 필요한 요소를 표시합니다.':'질문을 보낼 때 공개 화면의 요소 이름·주변 문구를 연결 서버로 전송합니다. 이미지·입력값·내 정보는 보내지 않습니다. 클릭은 직접 해 주세요.';
     accessNotice.hidden=!documentMode;if(documentMode){accessNotice.textContent='문서 접근 상태 확인 중';void refreshDocumentAccess();}
     $('.body > p.muted').textContent=documentMode?'등록된 문서의 원문 근거로 답변합니다.':'현재 공개 복지로 화면을 함께 봅니다. 클릭은 직접 해 주세요.';
     $('.scope-notice').textContent=documentMode?'복지 정보는 등록 문서를 기준으로 안내합니다. 개인정보는 입력하지 마세요.'+(!screenAllowed?' 이 패키지는 원격 화면 안내를 제공하지 않습니다.':''):'다른 사이트·로그인·개인정보 화면은 지원하지 않습니다.';
@@ -156,6 +156,7 @@
   }});
   updateMode();
   async function capture(source,version){
+    if(!localOrigin)throw new Error('remote_screen_unavailable');
     const before={revision:pageVersion,url:location.href,x:scrollX,y:scrollY,width:innerWidth,height:innerHeight},mask=GyeoteCapture.plan(),prior=host.style.visibility;
     capturing=true;host.style.visibility='hidden';mask.mount();let result,timer;
     try{
@@ -190,6 +191,7 @@
     message.article.append(details);
   }
   const errors={connection_configuration_invalid:'설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.',remote_screen_unavailable:'이 패키지는 원격 화면 안내를 제공하지 않습니다.',connection_required:'연결 설정에서 서버 연결 파일을 먼저 불러오세요.',feature_disabled:'서버의 화면 상담 기능이 꺼져 있습니다.',busy:'서버가 이전 요청을 처리 중입니다. 잠시 후 직접 다시 질문하세요.',input_budget:'공개 화면 정보가 입력 한도를 넘거나 형식을 확인하지 못했습니다.',image_disabled:'이미지 옵션이 꺼져 있습니다. 이미지를 빼고 다시 질문하세요.',image_unsupported:'현재 모델은 이미지 입력을 지원하지 않습니다. 이미지를 무시하지 않고 중지했습니다.',private_connection:'허용된 로컬 연결을 확인하지 못했습니다.',request_stopped:'요청이 취소되거나 설정된 처리 시간을 넘었습니다. 서버 확인 후 직접 다시 질문하세요.',connection_failed:'서버 연결이 끊겼습니다. 연결 확인 후 직접 다시 질문하세요.',generation_failed:'화면 답변을 확인하지 못했습니다. 서버 모델 상태를 확인하세요.',invalid_reply:'응답의 대상 또는 화면 버전을 확인하지 못해 표시하지 않았습니다.'};
+  errors.chat_rate_limited='질문 요청이 많습니다. 잠시 기다린 뒤 직접 다시 질문해 주세요.';
   async function ask(question){
     cancel();const version=serial,documentMode=mode==='document';
     if(!configurationReady){setStatus('설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.');return;}
@@ -199,7 +201,7 @@
     const requestId=GyeoteDOM.id();
     const startedAt=Date.now();let budgetSeconds;
     const stoppedText=()=>budgetSeconds?`요청이 취소되거나 설정된 ${budgetSeconds}초를 넘었습니다. 서버 확인 후 직접 다시 질문하세요.`:errors.request_stopped;
-    const includeImage=!documentMode&&imageOption.checked;imageOption.checked=false;
+    const includeImage=!documentMode&&localOrigin&&imageOption.checked;imageOption.checked=false;
     if(documentMode?(!question.trim()||question.length>300):!GyeoteProtocol.text(question,240)){setStatus(`개인정보 없이 질문을 ${documentMode?300:240}자 이내로 입력하세요.`);return;}
     requestPending=true;inputAssist.update();
     try{
@@ -216,7 +218,8 @@
       else{
         snapshot=GyeoteDOM.collect(question);source=snapshot;
         if(historyUrl!==source.url){history=[];historyUrl=source.url;}
-        payload={...source.payload,question,history:history.slice(-4)};GyeoteProtocol.request(payload);
+        payload={...source.payload,question,history:history.slice(-4)};
+        if(!localOrigin){delete payload.title;GyeoteProtocol.remoteScreenRequest(payload);}else GyeoteProtocol.request(payload);
       }
       const questionMessage=appendMessage('user',question);if(documentMode)pendingQuestion=questionMessage.article;busy=true;questionForm.querySelector('button[type="submit"]').disabled=true;cancelButton.hidden=false;setStatus(documentMode?'등록 문서에서 답변을 찾고 있습니다.':'현재 공개 화면을 확인해 답변하고 있습니다.');
       requestTimer=setTimeout(()=>{if(version===serial)cancel(errors.connection_failed);},10000);

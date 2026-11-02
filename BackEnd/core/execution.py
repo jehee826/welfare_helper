@@ -73,16 +73,20 @@ def inference_request(transport, server_timeout: float, timeout_seconds: int | N
 
 
 def inference_path(path: str) -> bool:
-    return path in {"/api/v1/chat", "/debug/rag", "/api/v1/desktop/guide"} or (
+    return path in {"/api/v1/chat", "/debug/rag", "/api/v1/desktop/guide", "/api/v1/screen/guide"} or (
         path.startswith("/api/v1/admin/documents/") and path.endswith(("/query", "/search")))
 
 
 class InferenceBodyLimit:
-    def __init__(self, app, timeout_seconds=lambda: 1800):
+    def __init__(self, app, timeout_seconds=lambda: 1800, screen_enabled=lambda: False):
         self.app = app
         self.timeout_seconds = timeout_seconds
+        self.screen_enabled = screen_enabled
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path") == "/api/v1/screen/guide" and not self.screen_enabled():
+            return await JSONResponse({"detail": "screen_guidance_disabled"}, status_code=404,
+                                      headers={"Cache-Control": "no-store"})(scope, receive, send)
         if scope["type"] != "http" or scope.get("method") != "POST" or not inference_path(scope.get("path", "")):
             return await self.app(scope, receive, send)
         desktop = scope["path"] == "/api/v1/desktop/guide"

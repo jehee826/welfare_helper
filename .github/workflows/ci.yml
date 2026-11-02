@@ -1,0 +1,62 @@
+name: 모델 없는 검사
+
+"on":
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [backend, worker, dev]
+    env:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_INPUT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: 새 Python 환경
+        run: |
+          python -m venv .venv-ci
+          echo "$GITHUB_WORKSPACE/.venv-ci/bin" >> "$GITHUB_PATH"
+      - run: python -m pip install --require-hashes -r requirements/locks/build-py312-linux.txt
+      - run: python -m pip install --require-hashes --no-build-isolation -r requirements/locks/${{ matrix.profile }}-py312-linux.txt
+      - run: python -m pip check
+      - run: python scripts/ci_python.py imports --profile ${{ matrix.profile }}
+      - if: matrix.profile == 'dev'
+        run: python scripts/ci_python.py tests
+
+  web-extension:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: FrontEnd/package-lock.json
+      - run: npm ci
+        working-directory: FrontEnd
+      - run: npm run test:ci
+        working-directory: FrontEnd
+      - run: npm run build:ci
+        working-directory: FrontEnd
+        env:
+          VITE_API_BASE_URL: https://example.invalid
+      - run: node --test Extension/tests/protocol.test.cjs Extension/tests/profile_content.test.cjs Extension/tests/conversations_content.test.cjs Extension/tests/conversation_context.test.cjs Extension/tests/panel_usability.test.cjs Extension/tests/timeout.test.cjs

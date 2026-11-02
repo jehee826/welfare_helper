@@ -29,6 +29,6 @@ Uvicorn 시작은 `--no-proxy-headers`를 유지한다. 관리자 로그인은 *
 
 ## 재현성의 현재 범위
 
-Python은3.12 범위이고 직접 의존성 일부만 고정했다. Python 전체 전이 의존성·해시 잠금과 깨끗한 설치 CI는 완료하지 않았다. 프런트는 package-lock과 npm ci 경로가 있지만 이것만으로 깨끗한 전체 설치·배포를 검증한 것은 아니다.
+Python 3.12 Linux AMD64의 backend/worker/dev·빌드 도구를 버전·해시 잠금으로 분리했고 Docker와 모델 없는 CI가 해당 파일을 사용한다. 생성·설치·검사 범위는 [의존성 잠금](../requirements/README.md)을 참고한다. Windows나 다른 CPU 플랫폼의 설치 성공과 원격 CI·배포 성공까지 보장하지 않는다.
 
-Docker의 Python/Caddy 버전 태그와 Ollama latest는 이미지 digest 고정이 아니다. apt·pip 자체 업그레이드와 플랫폼별 패키지 선택도 재현성에 영향을 준다. 검증된 근거 없이 버전을 추측해 고정하거나 현재 환경을 업그레이드하지 않는다. 완전한 잠금 생성·깨끗한 설치·실제 이미지/모델 식별 검증은 승인 환경에서 별도로 수행한다.
+Ollama는 기존 실행에서 확인한 0.40.13과 같은 공식 태그로 고정했다. Python/Caddy/Ollama 태그는 이미지 digest 고정이 아니며 OS apt 저장소와 모델 파일도 별도 식별이 필요하다. 프로세스·모델 캐시·GPU deploy 수동 주석 해제 방식을 이 변경으로 바꾸지 않는다.

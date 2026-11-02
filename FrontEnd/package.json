@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:ci": "node scripts/ci.mjs test",
+    "build:ci": "tsc -b && node scripts/ci.mjs build"
   },
   "dependencies": {
     "react": "18.3.1",

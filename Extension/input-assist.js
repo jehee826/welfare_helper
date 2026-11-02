@@ -25,14 +25,14 @@
     function stop(message){
       voiceVersion++;const prior=recognition;recognition=null;ownerKey=null;clearTimeout(timer);timer=null;
       if(prior){prior.onresult=prior.onerror=prior.onend=null;try{prior.abort();}catch{}}
-      if(message)status.textContent=message;
+      if(message!==undefined)status.textContent=message;
       update();
     }
     function update(){
       if(disposed){suggestions.hidden=true;start.disabled=true;cancel.hidden=true;onListening(false);return;}
       const current=state();
       if(recognition&&(!current.available||current.blocked||ownerKey!==current.key)){
-        stop('입력 상태가 바뀌어 음성 입력을 중지했습니다.');return;
+        stop('');return;
       }
       const listening=!!recognition,blocked=!current.available||current.blocked;
       start.disabled=blocked||listening||!supported;start.setAttribute('aria-pressed',String(listening));cancel.hidden=!listening;voice.setAttribute('aria-busy',String(listening));
@@ -78,15 +78,15 @@
       };
       next.onerror=event=>{if(owns())stop(Object.hasOwn(errors,event.error)?errors[event.error]:'음성 인식을 완료하지 못했습니다. 직접 입력하거나 다시 시도해 주세요.');};
       next.onend=()=>{if(owns())stop(errors['no-speech']);};
-      status.textContent='한국어 음성을 듣고 있습니다. 최대 30초이며 자동 전송하지 않습니다.';
-      update();timer=setTimeout(()=>{if(owns())stop('30초가 지나 음성 입력을 중지했습니다. 직접 입력하거나 다시 눌러 주세요.');},30000);
+      status.textContent='';
+      update();timer=setTimeout(()=>{if(owns())stop('');},30000);
       try{next.start();}catch(error){if(owns())stop(error?.name==='NotAllowedError'?errors['not-allowed']:'음성 입력을 시작하지 못했습니다. 직접 입력하거나 다시 눌러 주세요.');}
     }
-    function edit(){if(recognition)stop('직접 입력한 질문을 유지하고 음성 입력을 중지했습니다.');}
-    start.addEventListener('click',begin);cancel.addEventListener('click',()=>stop('음성 입력을 취소했습니다. 직접 입력하거나 다시 눌러 주세요.'));
+    function edit(){if(recognition)stop('');}
+    start.addEventListener('click',begin);cancel.addEventListener('click',()=>stop(''));
     input.addEventListener('input',edit);update();
-    return {update,invalidate(){recommendationVersion++;viewKey='';if(recognition)stop('음성 입력을 중지했습니다.');else update();},
-      cancel:()=>stop('음성 입력을 중지했습니다.'),
+    return {update,invalidate(){recommendationVersion++;viewKey='';if(recognition)stop('');else update();},
+      cancel:()=>{if(recognition)stop('');},
       dispose(){disposed=true;recommendationVersion++;stop();input.removeEventListener('input',edit);},
       resume(){disposed=false;viewKey='';input.addEventListener('input',edit);update();}};
   }

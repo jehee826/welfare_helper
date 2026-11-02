@@ -55,7 +55,7 @@ for(const prefixed of [false,true])test(`명시 클릭으로만 한국어 단회
 test('수동 편집은 인식을 중단하고 옛 result/end/error가 새 인식을 건드리지 않는다',()=>{
   const f=fixture();try{
     f.start();const first=f.instances[0],late={result:first.onresult,end:first.onend,error:first.onerror};
-    f.edit('직접 작성한 질문');assert.equal(first.aborts,1);late.result(f.result('덮어쓸 문장'));assert.equal(f.input.value,'직접 작성한 질문');
+    f.edit('직접 작성한 질문');assert.equal(first.aborts,1);assert.equal(f.status(),'');late.result(f.result('덮어쓸 문장'));assert.equal(f.input.value,'직접 작성한 질문');
     f.input.value='';f.start();const second=f.instances[1];late.result(f.result('이전 문장'));late.end();late.error({error:'network',message:'private transcript'});
     assert.equal(second.aborts,0);assert.equal(f.input.value,'');assert.equal(f.form.querySelector('.voice-start').getAttribute('aria-pressed'),'true');
     second.onresult(f.result('새 인식 초안'));assert.equal(f.input.value,'새 인식 초안');
@@ -64,9 +64,9 @@ test('수동 편집은 인식을 중단하고 옛 result/end/error가 새 인식
 test('30초 기한과 명시 취소는 abort하며 늦은 타이머도 다음 인식을 취소하지 않는다',()=>{
   const f=fixture();try{
     f.start();const first=f.instances[0],late=first.onresult,deadline=[...f.timers.values()][0];deadline();
-    assert.equal(first.aborts,1);assert.match(f.status(),/30초/);late(f.result('기한 이후 문장'));assert.equal(f.input.value,'');
+    assert.equal(first.aborts,1);assert.equal(f.status(),'');late(f.result('기한 이후 문장'));assert.equal(f.input.value,'');
     f.start();const second=f.instances[1];deadline();assert.equal(second.aborts,0);
-    f.form.querySelector('.voice-cancel').click();assert.equal(second.aborts,1);assert.equal(f.timers.size,0);
+    f.form.querySelector('.voice-cancel').click();assert.equal(second.aborts,1);assert.equal(f.status(),'');assert.equal(f.timers.size,0);
   }finally{f.close();}
 });
 test('컨텍스트 무효화·페이지 수명 종료 후 결과는 무시하고 복귀 때 재사용한다',()=>{
@@ -84,7 +84,7 @@ test('긴 인식 결과를 자르지 않고 수정 가능한 초안으로 보존
 for(const code of ['not-allowed','audio-capture','network','no-speech','service-not-allowed','language-not-supported','aborted','unrecognized'])test(`음성 오류 ${code}는 원시 정보 없이 텍스트 대체를 유지한다`,()=>{
   const f=fixture();try{
     f.start();const first=f.instances[0];first.onerror({error:code,message:'private transcript'});
-    assert.equal(first.aborts,1);assert.doesNotMatch(f.status(),/private transcript/);assert.match(f.status(),/입력/);assert.equal(f.form.querySelector('.voice-start').disabled,false);
+    assert.equal(first.aborts,1);assert.doesNotMatch(f.status(),/private transcript/);assert.match(f.status(),/입력/);assert.equal(f.form.querySelector('.voice-start').disabled,false);const message=f.status();f.assist.cancel();assert.equal(f.status(),message);assert.deepEqual(f.counts(),{submits:0,fetches:0});
     f.edit('계속 직접 입력');assert.equal(f.input.value,'계속 직접 입력');assert.equal(f.instances.length,1);
   }finally{f.close();}
 });

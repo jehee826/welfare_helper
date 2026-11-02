@@ -29,12 +29,14 @@ test('닫기·다시 열기·접기·펼치기는 상태와 초안을 유지하�
     await f.ready();const input=f.root.querySelector('#gyeote-question'),collapse=f.root.querySelector('.collapse');input.value='확인할 질문';
     f.root.querySelector('.close').click();assert.equal(f.root.activeElement,f.root.querySelector('.open'));
     f.root.querySelector('.open').click();assert.equal(f.root.activeElement,input);assert.equal(input.value,'확인할 질문');
-    collapse.focus();collapse.click();assert.equal(collapse.getAttribute('aria-expanded'),'false');assert.equal(collapse.getAttribute('aria-label'),'패널 펼치기');assert.equal(f.root.querySelector('.body').hidden,true);
+    const status=f.root.querySelector('.status');status.textContent='합성 오류';collapse.focus();collapse.click();assert.equal(collapse.getAttribute('aria-expanded'),'false');assert.equal(collapse.getAttribute('aria-label'),'패널 펼치기');assert.equal(f.root.querySelector('.body').hidden,true);assert.equal(status.textContent,'합성 오류');
     f.root.querySelector('.close').click();f.root.querySelector('.open').click();assert.equal(f.root.activeElement,collapse);
-    collapse.click();assert.equal(collapse.getAttribute('aria-expanded'),'true');assert.equal(collapse.getAttribute('aria-label'),'패널 접기');assert.equal(f.root.activeElement,input);assert.equal(input.value,'확인할 질문');
+    collapse.click();assert.equal(collapse.getAttribute('aria-expanded'),'true');assert.equal(collapse.getAttribute('aria-label'),'패널 접기');assert.equal(f.root.activeElement,input);assert.equal(input.value,'확인할 질문');assert.equal(status.textContent,'합성 오류');
     f.notify({type:'gyeote:toggle'});assert.equal(f.root.activeElement,f.root.querySelector('.open'));f.notify({type:'gyeote:toggle'});assert.equal(f.root.activeElement,input);
   }finally{f.close();}
 });
+
+test('진행 중 접기는 요청과 대기 표시를 지우고 접힘 안내를 남기지 않는다',async()=>{const f=ui(worker());try{await f.ready();await f.question('합성 질문');const port=f.ports.at(-1);assert.ok(f.root.querySelector('.pending-reply'));f.root.querySelector('.collapse').click();assert.equal(port.disconnected,true);assert.equal(f.root.querySelector('.pending-reply'),null);assert.doesNotMatch(f.root.querySelector('.status').textContent,/접었|펼쳤/);f.root.querySelector('.collapse').click();assert.doesNotMatch(f.root.querySelector('.status').textContent,/접었|펼쳤/);}finally{f.close();}});
 
 test('첫 이용 폼이 열려 있으면 다시 열 때 조작 가능한 조건 입력에 포커스한다',async()=>{
   const f=ui(worker({[profileKey]:{schemaVersion:1,revision:0,onboardingCompleted:false,profile:null}}));try{

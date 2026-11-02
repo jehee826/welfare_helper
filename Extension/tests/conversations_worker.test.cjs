@@ -118,7 +118,7 @@ test('새 요청과 접근·프로필·revision 변경 뒤 이전 소유권은 �
     if(kind==='new-pair')assert.equal((await f.action('begin',{...fields,pairId:'1'.repeat(20)})).ok,true);
     if(kind==='access')f.session.documentAccessId='changed';
     if(kind==='profile')f.data[profileKey]={...profile,revision:2};
-    if(kind==='revision')assert.equal((await f.action('new',{expectedRevision:state.revision,generation:state.generation})).ok,true);
+    if(kind==='revision')assert.equal((await append(f,state,'2'.repeat(20),'다른 탭 질문',answer,2)).ok,true);
     const restarted=worker(f.data,{},f.source,undefined,f.session),sender=restarted.sender(1);
     if(kind==='url'){sender.url='https://www.bokjiro.go.kr/other';sender.tab.url=sender.url;}
     const result=await restarted.send({type:'gyeote:conversations-append',accessId:'public-1',...fields,question:'질문',answer},sender);assert.equal(result.ok,false,kind);assert.equal(result.error,{'new-pair':'conversation_request_stopped',access:'conversation_access_changed',profile:'conversation_profile_changed',revision:'conversation_conflict',url:'conversation_request_stopped'}[kind]);assert.equal(restarted.calls.set.length,0,kind);
@@ -136,7 +136,7 @@ test('원문 지역·수정일은 상담 복원에도 보존하고 개인정보 
 test('공개 상담은 성공쌍으로 저장되고 worker 재생성 후 복원된다',async()=>{
   const f=worker(),initial=await f.action('get');assert.equal(initial.state.revision,0);assert.equal(f.data[key],undefined);
   const saved=await append(f,initial.state);assert.equal(saved.ok,true);assert.equal(saved.state.revision,1);
-  const conversation=saved.state.conversations[0];assert.equal(conversation.messages.length,2);assert.equal(conversation.title,'합성 질문');assert.equal(saved.state.lastActiveConversationId,conversation.id);
+  const conversation=saved.state.conversations[0];assert.equal(conversation.messages.length,2);assert.equal(conversation.title,undefined);assert.equal(conversation.messages[0].content,'합성 질문');assert.equal(saved.state.lastActiveConversationId,conversation.id);
   assert.deepEqual((await worker(f.data).action('get')).state,saved.state);assert.deepEqual(f.data[profileKey],profile);
   assert.deepEqual(JSON.parse(JSON.stringify(f.calls.level)),[{accessLevel:'TRUSTED_CONTEXTS'}]);
   assert.ok(f.messages.every(message=>!JSON.stringify(message).includes('합성 질문')));
@@ -147,14 +147,12 @@ test('같은 pair의 재시도는 멱등이고 내용 바꿔 덮어쓰기는 거
   assert.deepEqual(await f.action('append',fields),saved);assert.equal(f.calls.set.length,1);
   assert.equal((await f.action('append',{...fields,question:'바뀐 질문'})).error,'conversation_conflict');
 });
-test('새 상담·선택·개별삭제·전체삭제는 revision을 유지하고 늦은 응답을 막는다',async()=>{
-  const f=worker(),first=await append(f,(await f.action('get')).state),id=first.state.lastActiveConversationId;
-  const second=await f.action('new',{expectedRevision:1,generation:'initial'});assert.equal(second.state.conversations.length,2);assert.notEqual(second.state.lastActiveConversationId,id);
-  const selected=await f.action('select',{expectedRevision:2,generation:'initial',conversationId:id});assert.equal(selected.state.lastActiveConversationId,id);
-  const deleted=await f.action('delete',{expectedRevision:3,generation:'initial',conversationId:id});assert.equal(deleted.state.lastActiveConversationId,null);
-  assert.equal((await append(f,selected.state,'B'.repeat(20))).error,'conversation_conflict');
-  const cleared=await f.action('clear',{expectedRevision:4,generation:'initial'});assert.equal(cleared.state.revision,5);assert.deepEqual(cleared.state.conversations,[]);
-  assert.equal((await append(f,second.state,'C'.repeat(20))).error,'conversation_conflict');assert.deepEqual(f.data[profileKey],profile);
+test('폐기된 방 조작은 거절하고 전체 삭제 세대는 늦은 응답을 막는다',async()=>{
+  const f=worker(),first=await append(f,(await f.action('get')).state),state=first.state;
+  for(const op of ['new','select','delete'])assert.equal((await f.action(op,{expectedRevision:state.revision,generation:state.generation,...(op==='new'?{}:{conversationId:state.lastActiveConversationId})})).ok,false);
+  const fields={...expected(state),pairId:'B'.repeat(20),profileRevision:1};assert.equal((await f.action('begin',fields)).ok,true);
+  const cleared=await f.action('clear',{expectedRevision:state.revision,generation:state.generation});assert.notEqual(cleared.state.generation,state.generation);assert.deepEqual(cleared.state.conversations,[]);
+  assert.equal((await f.action('append',{...fields,question:'늦은 질문',answer})).ok,false);assert.deepEqual(f.data[profileKey],profile);
 });
 test('복수 탭 쓰기는 하나만 성공하며 같은 선택의 오래된 revision도 거절한다',async()=>{
   const f=worker();const replies=await Promise.all([append(f,(await f.action('get')).state,'A'.repeat(20),'첫 탭',answer,1),append(f,(await f.action('get')).state,'B'.repeat(20),'둘째 탭',answer,2)]);
@@ -188,17 +186,14 @@ test('quota 실패는 자료를 보존하고 추론 없이 같은 pair를 재저
   assert.equal((await append(f,state)).error,'conversation_storage_failed');assert.equal(f.data[key],undefined);
   f.failure.quota=false;assert.equal((await append(f,state)).state.conversations[0].messages.length,2);
 });
-test('최대 30상담·100메시지·4MiB 한도는 자동삭제하지 않는다',async()=>{
-  const f=worker();let state=(await f.action('get')).state;
-  for(let i=0;i<30;i++)state=(await f.action('new',{expectedRevision:state.revision,generation:state.generation})).state;
-  const raw=JSON.stringify(f.data);assert.equal((await f.action('new',{expectedRevision:state.revision,generation:state.generation})).error,'conversation_count_limit');assert.equal(JSON.stringify(f.data),raw);
-  const g=worker();state=(await g.action('get')).state;
-  for(let i=1;i<=50;i++)state=(await append(g,state,i.toString(16).toUpperCase().padStart(20,'0'))).state;
-  assert.equal((await append(g,state,'F'.repeat(20))).error,'conversation_messages_limit');assert.equal(g.data[key].conversations[0].messages.length,100);
+test('31번째 쌍은 오래된 쌍만 정리하고 4MiB 초과는 원본을 보존한다',async()=>{
+  const g=worker();let state=(await g.action('get')).state;
+  for(let i=1;i<=31;i++){const result=await append(g,state,i.toString(16).toUpperCase().padStart(20,'0'),'질문 '+i);assert.equal(result.ok,true);state=result.state;}
+  assert.equal(g.data[key].conversations[0].messages.length,60);assert.equal(g.data[key].conversations[0].messages[0].content,'질문 2');
   const h=worker();state=(await h.action('get')).state;
   const long={kind:'answer',text:'가'.repeat(60000),evidence:[]};let response;
-  for(let i=1;i<=30;i++){response=await append(h,state,i.toString(16).toUpperCase().padStart(20,'0'),'질문',long);if(!response.ok)break;state=response.state;}
-  assert.equal(response.error,'conversation_bytes_limit');assert.ok(policy.bytes(h.data[key])<=4*1024*1024);assert.equal(h.data[key].revision,state.revision);
+  let before;for(let i=1;i<=30;i++){before=JSON.stringify(h.data[key]);response=await append(h,state,i.toString(16).toUpperCase().padStart(20,'0'),'질문',long);if(!response.ok)break;state=response.state;}
+  assert.equal(response.error,'conversation_bytes_limit');assert.equal(JSON.stringify(h.data[key]),before);assert.ok(policy.bytes(h.data[key])<=4*1024*1024);assert.equal(h.data[key].revision,state.revision);
 });
 test('손상 저장소는 자동초기화하지 않고 확인한 상태만 새 세대로 재설정한다',async()=>{
   const f=worker({[profileKey]:profile,[key]:{schemaVersion:8,revision:'broken',secret:'not exposed'}}),read=await f.action('get');assert.equal(read.error,'conversation_data_invalid');assert.ok(read.resetToken);assert.equal(f.calls.set.length,0);assert.ok(!JSON.stringify(read).includes('secret'));

@@ -24,9 +24,9 @@ test('추천은 초안만 만들고 명시 전송 때 현재 profile/history/sum
     assert.equal(payload.conversation_context.text,server.data[key].conversations[0].summary.text);assert.equal(payload.conversation_context.batch.length,6);
   }finally{f.close();}
 });
-test('새 상담·모드 전환에서 옛 추천은 무효이고 초안은 덮지 않는다',async()=>{
+test('전체 삭제·모드 전환에서 옛 추천은 무효이고 초안은 덮지 않는다',async()=>{
   const server=worker(seed()),f=ui(server);try{
-    await f.ready();const old=suggestions(f)[0];await f.click('새 상담',f.root.querySelector('.conversation-nav'));old.click();assert.equal(f.root.querySelector('#gyeote-question').value,'');
+    await f.ready();const old=suggestions(f)[0];await f.click('전체 대화 삭제');await f.click('삭제 확인');old.click();assert.equal(f.root.querySelector('#gyeote-question').value,'');
     const first=suggestions(f)[0];assert.match(first.textContent,/내 조건/);f.root.querySelector('#gyeote-question').value='직접 쓴 초안';first.click();assert.equal(f.root.querySelector('#gyeote-question').value,'직접 쓴 초안');
     await f.mode('screen');first.click();assert.equal(f.root.querySelector('.question-suggestions').hidden,true);assert.equal(f.root.querySelector('#gyeote-question').value,'');assert.equal(f.ports.length,0);
   }finally{f.close();}
@@ -50,10 +50,10 @@ test('탭 숨김은 음성을 취소하고 복귀하면 추천·음성을 다시
   }finally{f.close();}
 });
 for(const boundary of ['mode','conversation','profile','access','close','collapse','pagehide','hash'])test(`음성 중 ${boundary} 전환은 이전 결과를 적용하지 않는다`,async()=>{
-  const server=worker(),voice=speech(),f=ui(server,1,voice.setup);try{
+  const server=worker(boundary==='conversation'?seed():undefined),voice=speech(),f=ui(server,1,voice.setup);try{
     await f.ready();await f.click('음성 입력');const first=voice.instances[0],late={result:first.onresult,end:first.onend,error:first.onerror};
     if(boundary==='mode')await f.mode('screen');
-    if(boundary==='conversation')await f.click('새 상담',f.root.querySelector('.conversation-nav'));
+    if(boundary==='conversation'){await f.click('전체 대화 삭제');await f.click('삭제 확인');}
     if(boundary==='profile')await f.click('내 정보 수정');
     if(boundary==='access')await f.notify({type:'gyeote:document-access-changed',state:{mode:'admin',status:'ready',accessId:'other'}});
     if(boundary==='close')f.root.querySelector('.close').click();

@@ -59,4 +59,4 @@ jobs:
         working-directory: FrontEnd
         env:
           VITE_API_BASE_URL: https://example.invalid
-      - run: node --test Extension/tests/protocol.test.cjs Extension/tests/profile_content.test.cjs Extension/tests/conversations_content.test.cjs Extension/tests/conversation_context.test.cjs Extension/tests/continuous_conversation.test.cjs Extension/tests/panel_usability.test.cjs Extension/tests/timeout.test.cjs Extension/tests/remote_screen.test.cjs
+      - run: node --test Extension/tests/protocol.test.cjs Extension/tests/profile_content.test.cjs Extension/tests/conversations_content.test.cjs Extension/tests/conversation_context.test.cjs Extension/tests/continuous_conversation.test.cjs Extension/tests/panel_usability.test.cjs Extension/tests/timeout.test.cjs Extension/tests/remote_screen.test.cjs Extension/tests/remote_connection.test.cjs

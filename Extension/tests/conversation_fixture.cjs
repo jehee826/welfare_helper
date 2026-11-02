@@ -6,7 +6,7 @@ const profile={schemaVersion:1,revision:1,onboardingCompleted:true,profile:null}
 const settle=async()=>{for(let i=0;i<6;i++)await new Promise(setImmediate);};
 function worker(data={[profileKey]:profile},failure={},scriptSource=source,fetcher=()=>{throw Error('실제 통신 금지');},sharedSession=null){
   let listener,changed,clicked,removed;const clients=new Map(),messages=[],calls={get:[],set:[],level:[]};
-  const session=sharedSession||{documentAccess:'anonymous',documentAccessId:'public-1',connection:{token:'x'.repeat(40),timeoutSeconds:30,imageEnabled:false}};
+  const session=sharedSession||{documentAccess:'anonymous',documentAccessId:'public-1'};
   const chrome={runtime:{id:'x',getURL:name=>'chrome-extension://x/'+name,onMessage:{addListener(fn){listener=fn;}},sendMessage:async message=>messages.push(plain(message)),getContexts:async()=>[{}]},
     storage:{local:{setAccessLevel:async value=>{calls.level.push(value);if(failure.level)throw Error('private failure');},get:async name=>{calls.get.push(name);if(![key,profileKey].includes(name))throw Error('임의 key 접근');if(failure.get)throw Error('private failure');if(failure.beforeGet)await failure.beforeGet(name);return {[name]:plain(data[name]??null)===null?undefined:plain(data[name])};},set:async value=>{
       calls.set.push(plain(value));if(failure.set||failure.quota&&key in value)throw Error('private quota failure');if(failure.beforeSet)await failure.beforeSet(value);

@@ -177,14 +177,14 @@ test('프로필 변경은 이전 요청만 중지하고 저장 대화는 보존�
 test('권한 전환은 공개 요청을 중지하고 관리자 답변은 영구저장하지 않는다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('공개 질문');await f.answer(answer);const persisted=JSON.stringify(server.data[key]);await f.question('전환 전 질문');const old=f.ports.at(-1);
-    await server.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600}},{id:'x',url:'chrome-extension://x/options.html'});await settle();
+    await server.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:require('../protocol.js').documentOrigin()}},{id:'x',url:'chrome-extension://x/options.html'});await settle();
     await f.answer({kind:'answer',text:'권한 전환 뒤 늦은 공개 응답',evidence:[]},old);assert.equal(f.root.querySelector('.saved-slot').hidden,true);
     await f.question('관리자 합성 문서');assert.equal(f.ports.at(-1).packet.conversationContext,undefined);await f.answer({kind:'answer',text:'합성 관리자 전용 응답',evidence:[]});assert.equal(JSON.stringify(server.data[key]),persisted);
     await server.send({type:'gyeote:admin-logout'},{id:'x',url:'chrome-extension://x/options.html'});await settle();assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/관리자 전용/);assert.match(f.root.querySelector('.conversation').textContent,/공개 질문/);
   }finally{f.close();}
 });
 test('인증 통지를 놓쳐도 전송 직전 접근 확인이 관리자 이력의 공개 혼입을 막는다',async()=>{
-  const server=worker();server.session.documentAccess='admin';server.session.documentAdminSession={token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600};
+  const server=worker();server.session.documentAccess='admin';server.session.documentAdminSession={token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:require('../protocol.js').documentOrigin()};
   const f=ui(server);try{
     await f.ready();await f.question('관리자 질문');await f.answer({kind:'answer',text:'관리자 전용 합성 답변',evidence:[]});assert.equal(server.data[key],undefined);
     server.session.documentAccess='anonymous';server.session.documentAccessId='public-new';server.session.documentAdminSession=null;
@@ -193,7 +193,7 @@ test('인증 통지를 놓쳐도 전송 직전 접근 확인이 관리자 이력
   }finally{f.close();}
 });
 test('접근 확인과 prepare 사이 권한이 바뀌면 익명으로 내려 보내지 않고 중지한다',async()=>{
-  const server=worker();server.session.documentAccess='admin';server.session.documentAdminSession={token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600};
+  const server=worker();server.session.documentAccess='admin';server.session.documentAdminSession={token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:require('../protocol.js').documentOrigin()};
   const f=ui(server);try{
     await f.ready();await f.question('관리자 질문');await f.answer({kind:'answer',text:'관리자 전용 이전 응답',evidence:[]});const count=f.ports.length;
     const send=f.w.chrome.runtime.sendMessage;f.w.chrome.runtime.sendMessage=message=>{

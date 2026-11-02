@@ -1,14 +1,12 @@
 (() => {
   const documentDeployment=Object.freeze({origin:'https://15.164.190.21',timeoutSeconds:600});
-  const remoteScreenDeployment=true;
-  const localDocumentOrigin='http://127.0.0.1:8000';
   function validateDocumentOrigin(value){
     try{
       if(typeof value!=='string'||value!==value.trim())throw new Error();
       const url=new URL(value);
-      if(value===localDocumentOrigin)return value;
       if(url.protocol!=='https:'||url.origin!==value||url.username||url.password||url.hostname.includes('*')||!url.hostname||url.hostname.endsWith('.')||url.port==='0')throw new Error();
       const hostname=url.hostname;
+      if(hostname==='localhost'||hostname.endsWith('.localhost')||hostname==='[::1]'||hostname==='0.0.0.0'||/^127\./.test(hostname))throw new Error();
       if(hostname.startsWith('[')){
         if(!/^\[[0-9a-f:]+\]$/i.test(hostname))throw new Error();
       }else if(hostname.length>253||hostname.split('.').some(label=>! /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label)))throw new Error();
@@ -17,27 +15,20 @@
   }
   function validateDocumentTimeout(value){if(!Number.isInteger(value)||value<1||value>1800)throw new Error('connection_configuration_invalid');return value;}
   const documentOrigin=()=>{validateDocumentTimeout(documentDeployment.timeoutSeconds);return validateDocumentOrigin(documentDeployment.origin);};
-  const isLocalOrigin=()=>documentOrigin()===localDocumentOrigin;
-  const screenAvailable=()=>isLocalOrigin()||remoteScreenDeployment;
-  const screenTimeoutSeconds=connection=>isLocalOrigin()?timeoutSeconds(connection):Math.min(90,validateDocumentTimeout(documentDeployment.timeoutSeconds));
-  const documentTimeoutSeconds=connection=>isLocalOrigin()&&connection?.timeoutSeconds!==undefined?timeoutSeconds(connection):validateDocumentTimeout(documentDeployment.timeoutSeconds);
+  const screenTimeoutSeconds=()=>Math.min(90,validateDocumentTimeout(documentDeployment.timeoutSeconds));
+  const documentTimeoutSeconds=()=>validateDocumentTimeout(documentDeployment.timeoutSeconds);
   const id=value=>typeof value==='string'&&/^[A-F0-9]{20}$/.test(value);
   const text=(value,max)=>typeof value==='string'&&value.trim()&&value.length<=max&&!/\d{4,}|@|[<>\x00-\x08]|주민등록|인증번호|인증코드|비밀번호|password|\bOTP\b/i.test(value);
   const official=value=>{try{const u=new URL(value);return u.origin==='https://www.bokjiro.go.kr'&&!u.username&&!u.password;}catch{return false;}};
-  function timeoutSeconds(connection){
-    const value=connection?.timeoutSeconds===undefined?90:connection.timeoutSeconds;
-    if(!Number.isInteger(value)||value<1||value>1800)throw new Error('connection_required');
-    return value;
-  }
   function request(payload){
-    if(payload&&(Object.hasOwn(payload,'profile')||Object.hasOwn(payload,'conversation_context')))throw new Error('invalid_request');
+    if(payload&&['profile','conversation_context','image','title'].some(key=>Object.hasOwn(payload,key)))throw new Error('invalid_request');
     if(!payload||payload.source!=='dom'||!id(payload.snapshot_id)||!text(payload.question,240)||!Array.isArray(payload.candidates)||payload.candidates.length>60||!Array.isArray(payload.screen_context)||payload.screen_context.length>8)throw new Error('invalid_request');
     const ids=new Set();
     if(payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('invalid_request');
     let budget=0;
     for(const c of payload.candidates){if(!id(c.id)||ids.has(c.id)||!text(c.label,80)||c.context&&!text(c.context,100)||!['Button','Hyperlink','MenuItem','Input','ComboBox','CheckBox','RadioButton'].includes(c.role)||typeof c.enabled!=='boolean'||typeof c.visible!=='boolean')throw new Error('invalid_request');ids.add(c.id);budget+=c.label.length+(c.context?.length||0);}
     for(const item of payload.screen_context){if(!['heading','text','label','help'].includes(item.kind)||!text(item.text,160))throw new Error('invalid_request');budget+=item.text.length;}
-    if(budget>4000||payload.title&&!text(payload.title,120)||payload.image&&(typeof payload.image!=='string'||payload.image.length>2*1024*1024||!/^iVBOR[A-Za-z0-9+/=]+$/.test(payload.image)))throw new Error('invalid_request');
+    if(budget>4000)throw new Error('invalid_request');
     const history=payload.history||[];
     if(!Array.isArray(history)||history.length>4||history.some(h=>!['user','assistant'].includes(h.role)||!text(h.text,420))||history.reduce((n,h)=>n+h.text.length,0)>1000)throw new Error('invalid_request');
     return payload;
@@ -136,7 +127,7 @@
     return redactDocument({kind:body.kind,text:body.text,evidence,...(update?{context_update:update}:{}),...(Object.hasOwn(body,'context_usage')?{context_usage:contextUsage(body.context_usage)}:{})});
   }
   const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
-  const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&(value.origin===documentOrigin()||value.origin===undefined&&isLocalOrigin());
-  const api={id,text,official,request,remoteScreenRequest,reply,timeoutSeconds,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,adminSession,documentSession,documentOrigin,isLocalOrigin,screenAvailable,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
+  const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&value.origin===documentOrigin();
+  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

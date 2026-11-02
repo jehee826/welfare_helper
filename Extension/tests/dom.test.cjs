@@ -7,7 +7,7 @@ const source=fs.readFileSync(path.join(__dirname,'../dom.js'),'utf8');
 function startPanel(w,root){for(const name of ['conversations.js','conversation-panel.js','input-assist.js','content.js'])w.eval(fs.readFileSync(path.join(__dirname,'..',name),'utf8'));const mode=root().querySelector('.mode');mode.value='screen';mode.dispatchEvent(new w.Event('change'));}
 async function displayTarget(w,getRoot){
   let packet,receive;
-  w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async()=>({ok:true,imageEnabled:false}),connect:()=>({onMessage:{addListener(fn){receive=fn;}},onDisconnect:{addListener(){}},postMessage(value){packet=value;},disconnect(){}})}};
+  w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async()=>({ok:true,timeoutSeconds:90}),connect:()=>({onMessage:{addListener(fn){receive=fn;}},onDisconnect:{addListener(){}},postMessage(value){packet=value;},disconnect(){}})}};
   startPanel(w,getRoot);const root=getRoot();root.querySelector('#gyeote-question').value='서비스 자세히 보기는 어디 있어?';root.querySelector('.consultation form').dispatchEvent(new w.Event('submit',{cancelable:true}));await new Promise(setImmediate);
   receive({type:'result',requestId:packet.requestId,body:{reply:{snapshot_id:packet.payload.snapshot_id,kind:'안내',answer:'서비스 자세히 보기 항목을 확인해 주세요.',targets:[{target_id:packet.payload.candidates[0].id,meaning:'공개 요소'}]}}});
 }
@@ -19,7 +19,7 @@ function fixture(html){
   w.getComputedStyle=node=>{const style=computed(node);return {display:style.display,visibility:style.visibility||'visible',opacity:style.opacity||'1',position:style.position||'static'};};
   w.eval(source);
   w.eval(fs.readFileSync(path.join(__dirname,'../protocol.js'),'utf8'));
-  w.eval(fs.readFileSync(path.join(__dirname,'../capture.js'),'utf8'));w.eval(fs.readFileSync(path.join(__dirname,'../profile.js'),'utf8'));
+w.eval(fs.readFileSync(path.join(__dirname,'../profile.js'),'utf8'));
   return {w,api:w.GyeoteDOM,close:()=>{w.dispatchEvent(new w.Event('pagehide'));w.close();}};
 }
 test('원본 DOM의 숨겨진 CSS 자식·입력값·민감 영역은 공개 문구에 포함하지 않음',()=>{
@@ -97,68 +97,6 @@ test('본문 대상이 스크롤로 이동하면 번호가 따라가고 화면 �
   }finally{f.close();}
 });
 
-test('캡처 전 입력란을 가리고 값은 읽지 않으며 불투명 콘텐츠는 거부',()=>{
-  const f=fixture('<main><label>검색어<input value="개인 입력값"></label></main>');
-  try{
-    const input=f.w.document.querySelector('input');Object.defineProperty(input,'value',{get(){throw Error('값 읽기 금지');}});
-    let maskRoot;const attach=f.w.Element.prototype.attachShadow;
-    f.w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-mask'))maskRoot=root;return root;};
-    const plan=f.w.GyeoteCapture.plan();assert.equal(plan.masks.length,1);plan.mount();assert.equal(maskRoot.firstElementChild.style.background,'rgb(0, 0, 0)');plan.remove();assert.equal(f.w.document.querySelector('[data-gyeote-mask]'),null);
-    const frame=f.w.document.createElement('iframe');f.w.document.querySelector('main').append(frame);const partial=f.w.GyeoteCapture.plan();assert.equal(partial.partial,true);assert.equal(partial.masks.length,2);assert.equal(partial.masks[1].x,32);assert.equal(partial.masks[1].width,156);
-  }finally{f.close();}
-});
-
-test('열린 선택 목록과 닫힌 Shadow는 거부하고 마스크 60개 상한을 지킨다',()=>{
-  const f=fixture('<main><div role="combobox" aria-expanded="true"></div></main>');
-  try{
-    assert.throws(()=>f.w.GyeoteCapture.plan(),/capture_expanded_combo/);
-    f.w.document.querySelector('main').innerHTML='<private-widget></private-widget>';assert.throws(()=>f.w.GyeoteCapture.plan(),/capture_closed_shadow/);
-    f.w.document.querySelector('main').innerHTML='<input>'.repeat(61);assert.throws(()=>f.w.GyeoteCapture.plan(),/capture_mask_limit/);
-  }finally{f.close();}
-});
-
-test('마스크 대상 이동·출현·제거는 캡처 정합성을 무효화한다',()=>{
-  for(const change of ['move','add','remove']){
-    const f=fixture('<main><input></main>');
-    try{
-      const input=f.w.document.querySelector('input');let left=40;
-      input.getBoundingClientRect=()=>({left,top:60,right:left+140,bottom:100,width:140,height:40});
-      const plan=f.w.GyeoteCapture.plan();assert.equal(plan.current(),true);
-      if(change==='move')left=41;
-      if(change==='add')f.w.document.querySelector('main').append(f.w.document.createElement('input'));
-      if(change==='remove')input.remove();
-      assert.equal(plan.current(),false);
-    }finally{f.close();}
-  }
-});
-
-test('캡처 중 마스크 이동 시 이미지 질문을 전송하지 않는다',async()=>{
-  const f=fixture('<main><button>공개 메뉴</button><input></main>');
-  try{
-    const {w}=f,button=w.document.querySelector('button'),input=w.document.querySelector('input');let left=40,ports=0;
-    input.getBoundingClientRect=()=>({left,top:60,right:left+140,bottom:100,width:140,height:40});w.document.elementFromPoint=()=>button;
-    const attach=w.Element.prototype.attachShadow;let panelRoot;
-    w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
-    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async data=>{if(data.type==='gyeote:capture'){left=60;return {ok:true,image:'iVBORw0KGgo='}}return {ok:true,imageEnabled:true,timeoutSeconds:90}},connect:()=>{ports++;throw Error('전송하면 안 됨')}}};
-    startPanel(w,()=>panelRoot);panelRoot.querySelector('.image-option').checked=true;
-    panelRoot.querySelector('input[type=text]').value='화면 알려줘';panelRoot.querySelector('#gyeote-question').closest('form').dispatchEvent(new w.Event('submit',{cancelable:true}));
-    await new Promise(resolve=>w.setTimeout(resolve,80));assert.equal(ports,0);assert.match(panelRoot.querySelector('.status').textContent,/전송하지 않았습니다/);
-  }finally{f.close();}
-});
-
-test('불투명 영역을 가린 이미지 질문은 partial을 전달한다',async()=>{
-  const f=fixture('<main><button>공개 메뉴</button><iframe></iframe></main>');
-  try{
-    const {w}=f,button=w.document.querySelector('main button');w.document.elementFromPoint=()=>button;
-    const attach=w.Element.prototype.attachShadow;let panelRoot,packet;
-    w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
-    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async data=>data.type==='gyeote:capture'?{ok:true,image:'iVBORw0KGgo='}:{ok:true,imageEnabled:true,timeoutSeconds:90},connect:()=>({onMessage:{addListener(){}},onDisconnect:{addListener(){}},postMessage(data){packet=JSON.parse(JSON.stringify(data))},disconnect(){}})}};
-    startPanel(w,()=>panelRoot);
-    panelRoot.querySelector('.image-option').checked=true;panelRoot.querySelector('input[type=text]').value='화면 알려줘';panelRoot.querySelector('#gyeote-question').closest('form').dispatchEvent(new w.Event('submit',{cancelable:true}));
-    await new Promise(resolve=>w.setTimeout(resolve,80));assert.equal(packet.payload.partial,true);assert.ok(packet.payload.image);
-  }finally{f.close();}
-});
-
 test('질문 응답의 실제 ID 세 개와 색상·번호·요소명을 함께 적용하고 오류 때 현행 지시를 지움',async()=>{
   const f=fixture('<main><button>통합 검색</button><button>복지서비스 찾기</button><button>도움말</button></main>');
   try{
@@ -167,7 +105,7 @@ test('질문 응답의 실제 ID 세 개와 색상·번호·요소명을 함께 
     w.document.elementFromPoint=(_x,y)=>buttons.find(b=>y>=b.getBoundingClientRect().top&&y<=b.getBoundingClientRect().bottom);
     const attach=w.Element.prototype.attachShadow;let panelRoot,receiver,packet,calls=0;
     w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
-    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async()=>({ok:true,imageEnabled:false}),connect:()=>({onMessage:{addListener(fn){receiver=fn;}},onDisconnect:{addListener(){}},postMessage(data){packet=data;calls++;},disconnect(){}})}};
+    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async()=>({ok:true,timeoutSeconds:90}),connect:()=>({onMessage:{addListener(fn){receiver=fn;}},onDisconnect:{addListener(){}},postMessage(data){packet=data;calls++;},disconnect(){}})}};
     startPanel(w,()=>panelRoot);
     const send=async question=>{panelRoot.querySelector('input[type=text]').value=question;panelRoot.querySelector('#gyeote-question').closest('form').dispatchEvent(new w.Event('submit',{cancelable:true}));await new Promise(setImmediate);};
     await send('검색과 복지서비스와 도움말 메뉴를 알려줘');
@@ -177,33 +115,5 @@ test('질문 응답의 실제 ID 세 개와 색상·번호·요소명을 함께 
     await send('검색은 어디서 해?');receiver({type:'error',requestId:packet.requestId,error:'connection_failed'});
     assert.equal(panelRoot.querySelectorAll('.badge').length,0);assert.doesNotMatch(panelRoot.querySelector('.status').textContent,/테두리/);assert.equal(calls,2);
     assert.doesNotMatch(panelRoot.querySelector('.conversation article:nth-child(2)').textContent,/①|②|③/);
-  }finally{f.close();}
-});
-
-test('이미지 질문은 패널을 제외하고 캡처 중 스크롤이 바뀌면 서버 전송 없이 보류',async()=>{
-  const f=fixture('<main><button>공개 메뉴</button><input aria-label="서비스 검색"></main>');
-  try{
-    const {w}=f,button=w.document.querySelector('main button');w.document.elementFromPoint=()=>button;
-    const attach=w.Element.prototype.attachShadow;let panelRoot,calls=0;
-    w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
-    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async packet=>{if(packet.type!=='gyeote:capture')return {ok:true,imageEnabled:true};calls++;assert.equal(w.document.querySelector('[data-gyeote-host]').style.visibility,'hidden');assert.ok(w.document.querySelector('[data-gyeote-mask]'));w.scrollY=10;return {ok:true,image:'iVBORw0KGgo='};},connect:()=>assert.fail('화면이 바뀐 이미지는 서버로 전송하지 않는다.')}};
-    startPanel(w,()=>panelRoot);
-    panelRoot.querySelector('.image-option').checked=true;panelRoot.querySelector('#gyeote-question').value='화면 알려줘';panelRoot.querySelector('.consultation form').dispatchEvent(new w.Event('submit',{cancelable:true}));
-    await new Promise(resolve=>w.setTimeout(resolve,80));assert.equal(calls,1);assert.match(panelRoot.querySelector('.status').textContent,/전송하지 않았습니다/);assert.equal(w.document.querySelector('[data-gyeote-mask]'),null);assert.equal(w.document.querySelector('[data-gyeote-host]').style.visibility,'');
-  }finally{f.close();}
-});
-
-test('이미지 질문의 캡처 실패 원문 오류를 상담 UI에 노출하지 않는다',async()=>{
-  const f=fixture('<main><button>공개 메뉴</button></main>');
-  try{
-    const {w}=f,button=w.document.querySelector('main button');w.document.elementFromPoint=()=>button;
-    const attach=w.Element.prototype.attachShadow;let panelRoot;
-    w.Element.prototype.attachShadow=function(options){const root=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))panelRoot=root;return root;};
-    w.chrome={runtime:{onMessage:{addListener(){}},sendMessage:async packet=>packet.type==='gyeote:capture'?{ok:false,error:'untrusted-secret-marker'}:{ok:true,imageEnabled:true},connect:()=>assert.fail('실패한 이미지는 서버로 전송하지 않는다.')}};
-    startPanel(w,()=>panelRoot);
-    panelRoot.querySelector('.image-option').checked=true;panelRoot.querySelector('#gyeote-question').value='화면 알려줘';panelRoot.querySelector('.consultation form').dispatchEvent(new w.Event('submit',{cancelable:true}));
-    await new Promise(resolve=>w.setTimeout(resolve,80));
-    assert.doesNotMatch(panelRoot.querySelector('.status').textContent,/untrusted-secret-marker/);
-    assert.match(panelRoot.querySelector('.status').textContent,/현재 공개 화면을 확인하지 못했습니다/);
   }finally{f.close();}
 });

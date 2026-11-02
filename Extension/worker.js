@@ -122,7 +122,7 @@ chrome.storage.onChanged?.addListener((changes,area)=>{
 async function prepare(){
   const url=chrome.runtime.getURL('offscreen.html');
   if(!(await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT'],documentUrls:[url]})).length){
-    if(!creating)creating=chrome.offscreen.createDocument({url:'offscreen.html',reasons:['BLOBS'],justification:'요청 시점의 화면 Blob 처리와 유한 상담 요청을 확장 내부 문서에서 처리합니다.'}).finally(()=>creating=null);
+    if(!creating)creating=chrome.offscreen.createDocument({url:'offscreen.html',reasons:['BLOBS'],justification:'유한 상담 응답의 Blob 데이터를 확장 내부 문서에서 처리합니다.'}).finally(()=>creating=null);
     await creating;
   }
 }
@@ -175,7 +175,6 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     changeLocal(()=>profileAction(message)).then(sendResponse).catch(error=>sendResponse({ok:false,error:['invalid_profile','profile_conflict','profile_data_invalid','profile_revision_limit'].includes(error.message)?error.message:'profile_storage_failed'}));
     return true;
   }
-  if(message?.type==='gyeote:connection'&&internal){if(Object.keys(message).join(',')!=='type')return;try{if(!GyeoteProtocol.isLocalOrigin()){sendResponse(null);return;}}catch{sendResponse(null);return;}chrome.storage.session.get('connection').then(({connection})=>sendResponse(connection||null));return true;}
   if(message?.type==='gyeote:document-auth'&&internal){if(Object.keys(message).join(',')!=='type')return;documentAuth().then(sendResponse).catch(()=>sendResponse(null));return true;}
   if(message?.type==='gyeote:admin-invalid'&&internal){invalidateAuth(message.token).then(()=>sendResponse({ok:true})).catch(()=>sendResponse({ok:false}));return true;}
   if(options&&['gyeote:admin-connect','gyeote:admin-check','gyeote:admin-logout'].includes(message?.type)){
@@ -199,26 +198,15 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   }
   if(!content)return;
   if(message?.type==='gyeote:document-access'){documentAuth().then(auth=>sendResponse(authSummary(auth))).catch(()=>sendResponse({mode:'admin',status:'expired'}));return true;}
-  if(message?.type==='gyeote:capture'){
-    try{if(!GyeoteProtocol.isLocalOrigin()){sendResponse({ok:false,error:'remote_screen_unavailable'});return;}}catch{sendResponse({ok:false,error:'connection_configuration_invalid'});return;}
-    let failure='capture_tab_changed';
-    (async()=>{
-      const before=await chrome.tabs.get(sender.tab.id),window=await chrome.windows.get(sender.tab.windowId);
-      if(!before.active||!window.focused||before.url!==sender.url)throw new Error('capture_tab_changed');
-      failure='capture_offscreen_failed';await prepare();
-      failure='capture_permission_or_failed';
-      let dataUrl=await chrome.tabs.captureVisibleTab(sender.tab.windowId,{format:'png'});
-      failure='capture_tab_changed';
-      const after=await chrome.tabs.get(sender.tab.id),afterWindow=await chrome.windows.get(sender.tab.windowId);
-      if(!after.active||!afterWindow.focused||after.url!==before.url)throw new Error('capture_tab_changed');
-      failure='capture_processing_failed';
-      const result=await chrome.runtime.sendMessage({target:'gyeote:offscreen',type:'gyeote:process-image',dataUrl,masks:message.masks,viewport:message.viewport});dataUrl=null;
-      if(!result?.ok)throw new Error('capture_failed');sendResponse(result);
-    })().catch(()=>sendResponse({ok:false,error:failure}));return true;
-  }
   if(message?.type==='gyeote:options'){chrome.runtime.openOptionsPage();sendResponse({ok:true});return;}
   if(message?.type==='gyeote:prepare'){
-    if(Object.keys(message).some(key=>!['type','mode'].includes(key))||message.mode!==undefined&&!['screen','document'].includes(message.mode)){sendResponse({ok:false,error:'connection_required'});return;}
-    (async()=>{const local=GyeoteProtocol.isLocalOrigin();if(message.mode!=='document'&&!GyeoteProtocol.screenAvailable())throw new Error('remote_screen_unavailable');const {connection}=local?await chrome.storage.session.get('connection'):{};if(message.mode!=='document'&&local&&(typeof connection?.token!=='string'||connection.token.length<32))throw new Error('connection_required');const timeoutSeconds=message.mode==='document'?GyeoteProtocol.documentTimeoutSeconds(connection):GyeoteProtocol.screenTimeoutSeconds(connection);const access=message.mode==='document'?authSummary(await documentAuth()):undefined;if(access?.status==='expired'){sendResponse({ok:false,error:'document_auth_required'});return;}await prepare();sendResponse({ok:true,imageEnabled:message.mode!=='document'&&local&&connection?.imageEnabled===true,timeoutSeconds,...(access?{documentAccess:access}:{})});})().catch(error=>sendResponse({ok:false,error:['remote_screen_unavailable','connection_configuration_invalid'].includes(error.message)?error.message:'connection_required'}));return true;
+    if(Object.keys(message).some(key=>!['type','mode'].includes(key))||message.mode!==undefined&&!['screen','document'].includes(message.mode)){sendResponse({ok:false,error:'connection_failed'});return;}
+    (async()=>{
+      GyeoteProtocol.documentOrigin();
+      const timeoutSeconds=message.mode==='document'?GyeoteProtocol.documentTimeoutSeconds():GyeoteProtocol.screenTimeoutSeconds();
+      const access=message.mode==='document'?authSummary(await documentAuth()):undefined;
+      if(access?.status==='expired'){sendResponse({ok:false,error:'document_auth_required'});return;}
+      await prepare();sendResponse({ok:true,timeoutSeconds,...(access?{documentAccess:access}:{})});
+    })().catch(error=>sendResponse({ok:false,error:error.message==='connection_configuration_invalid'?error.message:'connection_failed'}));return true;
   }
 });

@@ -11,7 +11,7 @@ function fixture(data={},failure={}){
  w.document.elementFromPoint=()=>w.document.querySelector('main button');w.requestAnimationFrame=fn=>{queueMicrotask(fn);return 1;};w.cancelAnimationFrame=()=>{};
  w.Storage.prototype.getItem=w.Storage.prototype.setItem=()=>{throw Error('호스트 저장소 사용 금지');};
  w.TextEncoder=TextEncoder;
- for(const name of ['protocol.js','conversations.js','dom.js','capture.js','profile.js','conversation-panel.js','input-assist.js'])w.eval(source(name));
+ for(const name of ['protocol.js','conversations.js','dom.js','profile.js','conversation-panel.js','input-assist.js'])w.eval(source(name));
  let root,workerListener,changed,contentListener,captureHidden=false;const ports=[],runtimeMessages=[],calls={get:0,set:0};
  const attach=w.Element.prototype.attachShadow;w.Element.prototype.attachShadow=function(options){const r=attach.call(this,options);if(this.hasAttribute('data-gyeote-host'))root=r;return r;};
  const session={connection:{token:'x'.repeat(40),timeoutSeconds:30,imageEnabled:true}};
@@ -106,13 +106,13 @@ test('손상 저장은 자동 삭제하지 않고 명시적 재설정 후 최초
  }finally{f.close();}
 });
 
-test('화면 모드는 조건 미전송·폼 수집 제외·캡처 중 패널 숨김을 유지한다',async()=>{
+test('화면 모드는 조건과 이미지를 전송하지 않는다',async()=>{
  const f=fixture({[key]:saved()});try{await f.ready();await f.mode('screen');
   assert.equal(f.root.querySelector('.profile-panel').hidden,true);
   assert.ok(!JSON.stringify(f.w.GyeoteDOM.collect('공개 메뉴').payload).includes('서울특별시'));
-  f.root.querySelector('.image-option').checked=true;await f.question('공개 메뉴는 어디야?');
+  assert.equal(f.root.querySelector('.image-option'),null);await f.question('공개 메뉴는 어디야?');
   const packet=f.ports.at(-1).packet;assert.equal(packet.mode,'screen');assert.ok(!('profile' in packet.payload));assert.ok(!JSON.stringify(packet.payload).includes('서울특별시'));
-  assert.equal(f.capturedHidden(),true);assert.equal(packet.payload.image,'iVBORAAAA');
+  assert.equal(f.capturedHidden(),false);assert.equal(Object.hasOwn(packet.payload,'image'),false);
  }finally{f.close();}
 });
 

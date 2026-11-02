@@ -55,8 +55,8 @@ test('문서 답변·근거 표시와 다음 이력은 정제하며 공공 연�
 
 function offscreen(fetcher){
   let onConnect,receive;const sent=[];
-  const chrome={runtime:{id:'a'.repeat(32),onConnect:{addListener(fn){onConnect=fn;}},onMessage:{addListener(){}},sendMessage:async msg=>msg.type==='gyeote:connection'?{timeoutSeconds:30}:{mode:'anonymous',accessId:'one'}}};
-  vm.runInNewContext(source('offscreen.js'),{chrome,GyeoteProtocol:protocol,AbortController,setTimeout,clearTimeout,fetch:fetcher,Uint8Array,TextDecoder});
+  const chrome={runtime:{id:'a'.repeat(32),onConnect:{addListener(fn){onConnect=fn;}},onMessage:{addListener(){}},sendMessage:async msg=>msg.type==='gyeote:connection'?{timeoutSeconds:30}:{mode:'anonymous',accessId:'one',origin:protocol.documentOrigin()}}};
+  vm.runInNewContext(source('offscreen.js'),{chrome,GyeoteProtocol:protocol,AbortController,setTimeout,clearTimeout,fetch:fetcher,Uint8Array,TextDecoder,Blob});
   const port={name:'gyeote:guide',sender:{id:chrome.runtime.id,frameId:0,url:'https://www.bokjiro.go.kr/',tab:{url:'https://www.bokjiro.go.kr/'}},postMessage(packet){sent.push(packet);},disconnect(){},onMessage:{addListener(fn){receive=fn;}},onDisconnect:{addListener(){}}};onConnect(port);
   return {sent,run:payload=>receive({requestId:'A'.repeat(20),mode:'document',documentAccess:'anonymous:anonymous:one',payload})};
 }

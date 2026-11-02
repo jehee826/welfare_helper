@@ -1,23 +1,6 @@
-const status=document.querySelector('#status');
-let screenAllowed=false,configurationReady=false;
-try{const origin=GyeoteProtocol.documentOrigin();screenAllowed=GyeoteProtocol.isLocalOrigin();configurationReady=true;document.querySelector('#document-server').textContent='문서 서버: '+origin+' · 공개 상담은 연결 파일 없이 사용할 수 있습니다.';}
+let configurationReady=false;
+try{const origin=GyeoteProtocol.documentOrigin();configurationReady=true;document.querySelector('#document-server').textContent='서버: '+origin+' · 공개 상담과 화면 안내는 관리자 로그인 없이 사용할 수 있습니다.';}
 catch{document.querySelector('#document-server').textContent='설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.';}
-document.querySelector('#screen-connection').hidden=!screenAllowed;document.querySelector('#file').disabled=!screenAllowed;
-if(!screenAllowed)status.textContent=configurationReady&&GyeoteProtocol.screenAvailable()?'공개 DOM 화면 안내는 연결 파일 없이 사용합니다. 이미지 전송은 제공하지 않습니다.':'이 패키지는 원격 화면 안내를 제공하지 않습니다.';
-document.querySelector('#file').addEventListener('change',async event=>{
-  try{
-    if(!screenAllowed)throw new Error();
-    const file=event.target.files[0];if(!file||file.size>2048)throw new Error();
-    const data=JSON.parse(await file.text());
-    if(!['imageEnabled,token,version','imageEnabled,timeoutSeconds,token,version'].includes(Object.keys(data).sort().join(','))||data.version!==1||typeof data.token!=='string'||!/^[A-Za-z0-9_-]{32,128}$/.test(data.token)||typeof data.imageEnabled!=='boolean')throw new Error();
-    const timeoutSeconds=GyeoteProtocol.timeoutSeconds(data);
-    const connection={token:data.token,imageEnabled:data.imageEnabled,...(data.timeoutSeconds===undefined?{}:{timeoutSeconds})};
-    await chrome.storage.session.set({connection});
-    status.textContent='연결 정보를 준비했습니다. 복지로 탭으로 돌아가 질문하세요. 이미지: '+(data.imageEnabled?'사용 가능':'꺼짐')+' · 화면 '+timeoutSeconds+'초 · 문서 '+GyeoteProtocol.documentTimeoutSeconds(connection)+'초';
-  }catch{status.textContent='유효한 연결 파일을 확인하지 못했습니다. 토큰을 채팅으로 보내지 마세요.';}
-  finally{event.target.value='';}
-});
-document.querySelector('#clear').addEventListener('click',async()=>{await chrome.storage.session.remove('connection');status.textContent='연결 정보를 지웠습니다.';});
 
 const adminStatus=document.querySelector('#admin-status'),adminForm=document.querySelector('#admin-form'),passwordInput=document.querySelector('#admin-password');
 if(!configurationReady){document.querySelector('#admin-login').disabled=true;document.querySelector('#admin-logout').disabled=true;}

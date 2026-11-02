@@ -3,15 +3,16 @@ from math import ceil
 from pathlib import Path
 import re
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """환경변수(.env 포함)에서 읽는 백엔드 설정."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
 
     database_url: SecretStr | None = None
     database_password: SecretStr | None = None
@@ -76,6 +77,34 @@ class Settings(BaseSettings):
     @property
     def desktop_timeout_seconds(self) -> int:
         return max(1, min(1800, ceil(self.ollama_timeout)))
+
+    @field_validator("ollama_llm", "ollama_embed")
+    @classmethod
+    def validate_model_name(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./:@-]*", value) or "//" in value:
+            raise ValueError("Ollama 모델 이름은 공백 없는 모델명·태그로 지정하세요.")
+        return value
+
+    @field_validator("ollama_base_url")
+    @classmethod
+    def validate_ollama_url(cls, value: str) -> str:
+        try:
+            parsed = urlsplit(value)
+            valid = (not re.search(r"\s", value) and parsed.scheme in {"http", "https"}
+                     and bool(parsed.hostname) and parsed.username is None and parsed.password is None
+                     and "?" not in value and "#" not in value
+                     and not parsed.netloc.endswith(":") and parsed.port != 0)
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValueError("Ollama 주소는 인증정보·쿼리·조각 없는 HTTP(S) 기본 주소여야 합니다.")
+        return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def validate_generation_budget(self):
+        if self.llm_num_predict >= self.llm_num_ctx:
+            raise ValueError("LLM_NUM_PREDICT는 LLM_NUM_CTX보다 작아야 합니다.")
+        return self
 
     @field_validator("cors_allowed_origins")
     @classmethod

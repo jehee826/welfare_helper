@@ -115,6 +115,10 @@ OLLAMA_TIMEOUT=600
 VITE_API_BASE_URL=
 ```
 
+EC2 GPU에서는 NVIDIA 드라이버·Container Toolkit을 준비하고 `docker-compose.yml`의 **GPU deploy 블록 주석을 해제**합니다. 모델 선택은 `OLLAMA_LLM`, GPU 장치 활성화는 이 별도 설정 단계로 구분합니다. CPU로 돌아갈 때는 GPU 블록을 다시 주석 처리하고 위 로컬 값으로 되돌립니다.
+
+환경값을 바꾼 뒤에도 아래의 같은 Compose 명령을 사용합니다. 컨테이너가 재생성돼야 반영되며 단순 `restart`는 새 환경값을 주입하지 않습니다. 기존 모델·DB·캐시는 삭제하지 않습니다.
+
 로컬에서는 `COMPOSE_PROFILES`를 설정하지 않습니다. `OLLAMA_EMBED=bge-m3`, `EMBED_DIM=1024`와 리랭커 리비전은 예시 그대로 유지합니다. 비밀값은 Git이나 `VITE_` 변수에 넣지 않습니다.
 
 ### 3. 백엔드와 프런트 실행
@@ -130,6 +134,8 @@ docker compose ps
 <summary>첫 실행은 모델 다운로드로 시간이 걸립니다</summary>
 
 생성·임베딩 모델과 리랭커는 자동으로 준비합니다. 첫 PDF 처리에서는 Docling 모델도 추가로 내려받습니다.
+
+설치된 모델은 재사용하며 없는 모델만 내려받습니다. 다운로드·캐시 준비가 실패하면 준비 완료로 처리하지 않습니다. 모델 변경 전 메모리·디스크와 네트워크를 확인하세요.
 
 </details>
 
@@ -162,7 +168,7 @@ npm run dev
 - `ADMIN_PASSWORD`: 문서·제도 관리를 위한 서버 공통 관리자 비밀번호.
 - `OLLAMA_LLM` / `OLLAMA_RUNTIME`: 생성 모델과 컨테이너 런타임(`runc` 또는 `nvidia`).
 - `OLLAMA_EMBED` / `EMBED_DIM`: 문서·질문 임베딩 모델과 벡터 차원(`bge-m3` / `1024`).
-- `LLM_NUM_THREAD` / `OLLAMA_TIMEOUT`: 생성 CPU 스레드 수와 모델 요청 대기 시간(초).
+- `LLM_NUM_THREAD` / `OLLAMA_TIMEOUT`: 생성 CPU 스레드 수와 서버 처리 상한(초), 확장 패키지 기본600초는 별도 설정.
 - `VITE_API_BASE_URL`: 로컬은 빈 값, 운영은 `/api`를 제외한 HTTPS API 주소이며 변경 후 프런트 재빌드 필요.
 
 전체 설정은 [.env.example](.env.example)을 참고합니다. 프런트와 Compose 모두 저장소 루트 환경파일을 사용합니다.
@@ -172,7 +178,7 @@ npm run dev
 1. **문서 관리**에서 `ADMIN_PASSWORD`로 로그인합니다.
 2. **제도 등록·관리**에서 준비된 부서를 선택해 제도를 등록하거나, 기존 제도를 사용합니다.
 3. 연결할 제도를 고르고 **PDF·DOCX·UTF-8 Markdown** 원문을 업로드합니다.
-4. 자동 분석·청크 생성·임베딩·**게시 완료**를 기다린 뒤 기본 채팅에서 질문합니다.
-5. **원문 근거 보기**를 펼쳐 답변과 검색 원문·페이지를 대조합니다.
+4. 자동 분석·청크 생성·임베딩·**게시 완료**를 기다린 뒤 문서별 검색·질의로 원문을 확인합니다.
+5. 이용자 상담은 Chrome 확장에서 질문하고 **원문 근거 보기**로 검색 원문·페이지를 대조합니다.
 
 **로컬 업로드도 연결된 Supabase에 실제 저장됩니다.** `TEST_`/`test_only` 자료는 로그인한 관리자 상담에서만 확인할 수 있습니다.

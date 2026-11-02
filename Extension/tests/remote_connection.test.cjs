@@ -69,7 +69,7 @@ test('설정 오류는 fallback 없이 통신 0회와 안전한 오류로 종료
 });
 
 test('정적 기한은 원격 기본600초·지정값을 양쪽에서 사용하고 local JSON은 호환한다',async()=>{
-  assert.equal(protocol().documentTimeoutSeconds(null),600);assert.equal(local.documentTimeoutSeconds(null),90);assert.equal(local.documentTimeoutSeconds({timeoutSeconds:120}),120);
+  assert.equal(protocol().documentTimeoutSeconds(null),600);assert.equal(local.documentTimeoutSeconds(null),600);assert.equal(local.timeoutSeconds(null),90);assert.equal(local.documentTimeoutSeconds({timeoutSeconds:120}),120);
   for(const value of [0,1801,1.5,'600',NaN])assert.throws(()=>local.validateDocumentTimeout(value));
   for(const value of [1,1800])assert.equal(local.validateDocumentTimeout(value),value);
   for(const value of ['https://127.0.0.1:8443','https://[::1]:8443'])assert.equal(local.validateDocumentOrigin(value),value);
@@ -77,7 +77,7 @@ test('정적 기한은 원격 기본600초·지정값을 양쪽에서 사용하�
   const server=worker(undefined,{},custom),prepared=await server.send({type:'gyeote:prepare',mode:'document'},server.sender(1));assert.equal(prepared.timeoutSeconds,420);
   const f=offscreen({policy:protocol(custom)});await f.run();assert.equal(JSON.parse(f.calls[0].options.body).timeout_seconds,420);
   const localPath=packageExtension({origin:'http://127.0.0.1:8000',name:'t8-local-'+crypto.randomUUID()});
-  assert.equal(protocol(name=>fs.readFileSync(path.join(localPath,name),'utf8')).documentTimeoutSeconds(null),90);
+  assert.equal(protocol(name=>fs.readFileSync(path.join(localPath,name),'utf8')).documentTimeoutSeconds(null),600);
   const stopped=offscreen();await stopped.run({deadlineAt:Date.now()-1});assert.equal(stopped.calls.length,0);assert.equal(stopped.sent[0].error,'request_stopped');
 });
 

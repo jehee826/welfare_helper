@@ -17,7 +17,7 @@
   function validateDocumentTimeout(value){if(!Number.isInteger(value)||value<1||value>1800)throw new Error('connection_configuration_invalid');return value;}
   const documentOrigin=()=>{validateDocumentTimeout(documentDeployment.timeoutSeconds);return validateDocumentOrigin(documentDeployment.origin);};
   const screenAvailable=()=>documentOrigin()===localDocumentOrigin;
-  const documentTimeoutSeconds=connection=>screenAvailable()?timeoutSeconds(connection):validateDocumentTimeout(documentDeployment.timeoutSeconds);
+  const documentTimeoutSeconds=connection=>screenAvailable()&&connection?.timeoutSeconds!==undefined?timeoutSeconds(connection):validateDocumentTimeout(documentDeployment.timeoutSeconds);
   const id=value=>typeof value==='string'&&/^[A-F0-9]{20}$/.test(value);
   const text=(value,max)=>typeof value==='string'&&value.trim()&&value.length<=max&&!/\d{4,}|@|[<>\x00-\x08]|주민등록|인증번호|인증코드|비밀번호|password|\bOTP\b/i.test(value);
   const official=value=>{try{const u=new URL(value);return u.origin==='https://www.bokjiro.go.kr'&&!u.username&&!u.password;}catch{return false;}};

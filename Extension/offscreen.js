@@ -49,7 +49,7 @@ chrome.runtime.onConnect.addListener(port=>{
         }
       }
       if(!documentMode&&(!connection?.token||connection.token.length<32))throw new Error('connection_required');
-      const budget=GyeoteProtocol.documentTimeoutSeconds(connection)*1000;
+      const budget=(documentMode?GyeoteProtocol.documentTimeoutSeconds(connection):GyeoteProtocol.timeoutSeconds(connection))*1000;
       if(packet.deadlineAt!==undefined&&(!Number.isFinite(packet.deadlineAt)||packet.deadlineAt<=0))throw new Error('invalid_reply');
       const remaining=Math.min(budget,(packet.deadlineAt??Date.now()+budget)-Date.now());
       if(remaining<=0)throw new Error('request_stopped');

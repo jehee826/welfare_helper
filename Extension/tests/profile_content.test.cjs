@@ -42,10 +42,11 @@ function fixture(data={},failure={}){
 test('기본 상담·선택적 최초 폼·수정·삭제와 UI 대역 재생성 복원을 확인한다',async()=>{
  const data={},f=fixture(data);try{
   await f.ready();assert.equal(f.root.querySelector('.mode').value,'document');
+  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,true);
+  f.root.querySelector('.profile-toggle').click();
   assert.equal(f.root.querySelector('[name=age]').value,'');assert.equal(f.root.querySelector('[name=household]').value,'');assert.equal(f.root.querySelector('[name=region]').value,'');assert.equal(f.root.querySelector('[name=disability]').value,'');
-  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,true);
   await f.save({age:'70',household:'single',region:'서울특별시'});assert.deepEqual(data[key],saved());
-  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('.profile-panel form'),null);
+  assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);assert.equal(f.root.querySelector('.profile-panel form'),null);
  }finally{f.close();}
  const g=fixture(data);try{
   await g.ready();assert.match(g.root.querySelector('.profile-panel').textContent,/70세/);
@@ -64,10 +65,10 @@ test('나중 입력은 저장 성공 후 상담을 열고 문서에만 nullable 
 });
 
 test('저장 실패 시 입력·첫 이용 상태를 유지하고 재시도 성공 후에만 폼을 닫는다',async()=>{
- const f=fixture({}, {set:true});try{await f.ready();await f.save({age:'55'});
+ const f=fixture({}, {set:true});try{await f.ready();f.root.querySelector('.profile-toggle').click();await f.save({age:'55'});
   assert.equal(f.data[key],undefined);assert.equal(f.root.querySelector('[name=age]').value,'55');assert.match(f.root.querySelector('.profile-error').textContent,/저장하거나 읽지 못했습니다/);
-  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,true);
-  f.failure.set=false;await f.save({});assert.equal(f.data[key].profile.age,55);assert.equal(f.root.querySelector('.profile-panel form'),null);
+  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,true);
+  f.failure.set=false;await f.save({});assert.equal(f.data[key].profile.age,55);assert.equal(f.root.querySelector('.profile-panel form'),null);assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
  }finally{f.close();}
 });
 

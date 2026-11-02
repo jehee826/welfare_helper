@@ -8,19 +8,20 @@
     'no-speech':'음성을 듣지 못했습니다. 직접 입력하거나 다시 눌러 주세요.',
     'language-not-supported':'한국어 음성 인식을 지원하지 않는 환경입니다. 직접 입력해 주세요.',
     aborted:'음성 입력이 중지됐습니다. 직접 입력하거나 다시 눌러 주세요.'};
-  function create(form,{state}){
-    const input=form.querySelector('input[type=text]'),suggestions=document.createElement('div'),voice=document.createElement('div');
+  function create(form,{state,controls=form}){
+    const input=form.querySelector('input[type=text]'),suggestions=document.createElement('div'),voice=document.createElement('details');
     suggestions.className='question-suggestions row';suggestions.setAttribute('role','group');suggestions.setAttribute('aria-label','추천 질문');
     voice.className='voice-input';
     const start=document.createElement('button'),cancel=document.createElement('button'),notice=document.createElement('p'),status=document.createElement('p');
     start.type=cancel.type='button';start.className='voice-start';cancel.className='voice-cancel';start.textContent='음성 입력';cancel.textContent='음성 입력 취소';cancel.hidden=true;
     start.setAttribute('aria-pressed','false');notice.className=status.className='muted';status.classList.add('voice-status');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
     notice.textContent='음성이 브라우저의 외부 인식 서비스로 전송될 수 있습니다. 민감정보는 말하지 마세요. 결과는 확인·수정 후 직접 전송하세요.';
-    voice.append(start,cancel,notice,status);input.after(suggestions,voice);
+    const summary=document.createElement('summary');summary.textContent='음성 입력';
+    voice.append(summary,notice,start,cancel);controls.append(voice);(input.closest('.compose-row')||input).after(suggestions);form.append(status);
     const ctor=window.SpeechRecognition||window.webkitSpeechRecognition;
     const supported=typeof ctor==='function';
     let recognition=null,ownerKey=null,voiceVersion=0,recommendationVersion=0,viewKey='',timer=null,disposed=false;
-    status.textContent=supported?'버튼을 누르면 최대 30초 동안 한국어를 듣습니다.':'이 브라우저는 음성 입력을 지원하지 않습니다. 입력란에 직접 입력해 주세요.';
+    notice.textContent+=' '+(supported?'버튼을 누르면 최대 30초 동안 한국어를 듣습니다.':'이 브라우저는 음성 입력을 지원하지 않습니다. 입력란에 직접 입력해 주세요.');
     function stop(message){
       voiceVersion++;const prior=recognition;recognition=null;ownerKey=null;clearTimeout(timer);timer=null;
       if(prior){prior.onresult=prior.onerror=prior.onend=null;try{prior.abort();}catch{}}

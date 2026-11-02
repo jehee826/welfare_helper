@@ -19,8 +19,9 @@
     }
     function render(){
       section.replaceChildren(node('h2',editing?'내 정보 입력':'내 정보'));
-      const notice=node('p','입력은 선택입니다. 이 브라우저에 저장하고 문서 질문과 함께 보냅니다. 입력한 조건을 상담에 참고합니다. 최종 지원 자격은 담당 기관에서 확인해 주세요.');notice.className='muted';section.append(notice);
-      const storageNotice=node('p','같은 브라우저를 공유하면 정보도 공유됩니다. 확장을 지우거나 저장소를 삭제하면 복구되지 않습니다. 아래에서 내 정보를 삭제할 수 있습니다.');storageNotice.className='muted';section.append(storageNotice);
+      const notice=node('p','입력은 선택입니다. 입력한 조건을 상담에 참고합니다. 최종 지원 자격은 담당 기관에서 확인해 주세요.');notice.className='muted';section.append(notice);
+      const storageDetails=node('details'),storageSummary=node('summary','정보 저장·전송 안내');
+      const storageNotice=node('p','이 브라우저에 저장하고 문서 질문과 함께 보냅니다. 같은 브라우저를 공유하면 정보도 공유됩니다. 확장을 지우거나 저장소를 삭제하면 복구되지 않습니다. 아래에서 내 정보를 삭제할 수 있습니다.');storageNotice.className='muted';storageDetails.append(storageSummary,storageNotice);section.append(storageDetails);
       const error=node('p');error.className='profile-error';error.setAttribute('role','alert');section.append(error);
       const reload=button('최신 정보 다시 불러오기',()=>void refresh());reload.className='profile-reload';reload.hidden=true;section.append(reload);
       if(!state){
@@ -97,7 +98,7 @@
       return latest;
     }
     const ready=Promise.resolve().then(refresh);
-    return {get state(){return state;},get allowed(){return !!state?.onboardingCompleted&&!editing&&!busy&&!disposed;},ready,changed,confirm,setVisible:visible=>section.hidden=!visible,dispose:()=>{disposed=true;serial++;},resume:()=>{disposed=false;void refresh();}};
+    return {get state(){return state;},get busy(){return busy;},get allowed(){return !!state?.onboardingCompleted&&!editing&&!busy&&!disposed;},defer:()=>!state?.onboardingCompleted?mutate('save',null):Promise.resolve(),ready,changed,confirm,setVisible:visible=>section.hidden=!visible,dispose:()=>{disposed=true;serial++;},resume:()=>{disposed=false;void refresh();}};
   }
   function incomeLabel(value){return ({unknown:'모름',under50:'50% 이하',under100:'50~100%',under150:'100~150%',over150:'150% 초과'})[value];}
   function householdLabel(value){return ({single:'혼자 살아요',couple:'부부',withChildren:'자녀 있음',singleParent:'한부모 가정',grandparent:'조부모와 손자녀',other:'기타'})[value]||'모름';}

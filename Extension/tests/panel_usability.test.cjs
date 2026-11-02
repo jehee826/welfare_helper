@@ -14,13 +14,13 @@ function dragFixture(){
 test('기본 상담은 문서 안내와 텍스트 입력을 제공하고 개발 강제 표시 경로가 없다',async()=>{
   const f=ui(worker());try{
     await f.ready();assert.match(f.root.querySelector('.panel').getAttribute('aria-label'),/복지 상담/);
-    assert.doesNotMatch(f.root.querySelector('.body > p').textContent,/화면/);assert.equal(f.root.querySelector('.screen-controls').hidden,true);
+    assert.doesNotMatch(f.root.querySelector('.mode-intro').textContent,/화면/);assert.equal(f.root.querySelector('.screen-controls').hidden,true);
     assert.equal(f.root.querySelector('[data-test],.body-test'),null);assert.doesNotMatch(f.root.textContent,/개발용 표시 검사|이미지 범위 검사/);
     assert.equal(f.root.querySelectorAll('.question-suggestions button').length,3);
-    await f.mode('screen');assert.equal(f.root.querySelector('.screen-controls').hidden,false);assert.match(f.root.querySelector('.body > p').textContent,/공개 복지로 화면/);
+    await f.mode('screen');assert.equal(f.root.querySelector('.screen-controls').hidden,false);assert.match(f.root.querySelector('.mode-intro').textContent,/공개 복지로 화면/);
     assert.equal(f.root.querySelector('.question-suggestions').hidden,true);
     const css=[...f.root.querySelectorAll('style')].map(node=>node.textContent).join('');
-    assert.match(css,/font-size:16px/);assert.match(css,/min-height:40px/);assert.match(css,/select:focus-visible/);assert.match(css,/max-height:calc\(100vh - 24px\);overflow:auto/);assert.doesNotMatch(css,/font-size:(?:11|12)px/);
+    assert.match(css,/font-size:16px/);assert.match(css,/min-height:40px/);assert.match(css,/select:focus-visible/);assert.match(css,/\.transcript\{[^}]*overflow:auto/);assert.doesNotMatch(css,/font-size:(?:11|12)px/);
   }finally{f.close();}
 });
 
@@ -38,8 +38,9 @@ test('닫기·다시 열기·접기·펼치기는 상태와 초안을 유지하�
 
 test('첫 이용 폼이 열려 있으면 다시 열 때 조작 가능한 조건 입력에 포커스한다',async()=>{
   const f=ui(worker({[profileKey]:{schemaVersion:1,revision:0,onboardingCompleted:false,profile:null}}));try{
-    await f.ready();assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,true);
-    f.root.querySelector('.close').click();f.root.querySelector('.open').click();assert.equal(f.root.activeElement,f.root.querySelector('.profile-panel input'));
+    await f.ready();assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('.profile-panel').hidden,true);
+    f.root.querySelector('.close').click();f.root.querySelector('.open').click();assert.equal(f.root.activeElement,f.root.querySelector('#gyeote-question'));
+    f.root.querySelector('.profile-toggle').click();f.root.querySelector('.close').click();f.root.querySelector('.open').click();assert.equal(f.root.activeElement,f.root.querySelector('.profile-panel input'));
   }finally{f.close();}
 });
 

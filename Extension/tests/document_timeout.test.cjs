@@ -23,10 +23,10 @@ for(const [label,connection,documentSeconds,screenSeconds] of [
   else{assert.equal(screen.timeoutSeconds,screenSeconds);assert.equal(g.sent[0].type,'result');assert.equal(g.calls[0].body.timeout_seconds,screenSeconds);}
 });
 
-test('문서600초 기본값은 패널 안내와 포트 기한에 반영된다',async()=>{
+test('문서600초 기본값은 상시 안내 없이 포트 기한에 반영된다',async()=>{
   const server=worker();delete server.session.connection;const f=ui(server);try{
     await f.ready();const start=Date.now();await f.question('합성 문서 질문');
-    assert.match(f.root.querySelector('.request-notice').textContent,/최대 600초/);
+    assert.equal(f.root.querySelector('button[type=submit]').getAttribute('aria-label'),'요청 취소');assert.equal(f.root.querySelector('.request-notice'),null);
     assert.ok(f.ports[0].packet.deadlineAt>=start+599000&&f.ports[0].packet.deadlineAt<=Date.now()+600000);
   }finally{f.close();}
 });

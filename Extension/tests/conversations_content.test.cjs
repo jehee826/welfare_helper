@@ -41,7 +41,7 @@ test('오류 수신은 프로필 확인이 응답하지 않아도 즉시 종료�
     assert.match(f.root.querySelector('.request-outcome').textContent,/문서 검색이나 답변 처리에 실패/);
     assert.equal(server.data[key],undefined);
     assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
-    assert.equal(f.root.querySelector('.cancel').hidden,true);assert.equal(port.disconnected,true);
+    assert.equal(f.root.querySelector('button[type=submit]').getAttribute('aria-label'),'질문 보내기');assert.equal(port.disconnected,true);
   }finally{f.close();}
 });
 
@@ -52,7 +52,7 @@ for(const ending of ['cancel','deadline'])test('문서 '+ending+' 결과를 질�
     w.clearTimeout=id=>id===999998?undefined:clear(id);
   });try{
     await f.ready();await f.question('합성 질문');assert.equal(f.ports.length,1);
-    if(ending==='cancel')f.root.querySelector('.cancel').click();else{assert.equal(typeof deadline,'function');deadline();}
+    if(ending==='cancel')f.root.querySelector('button[type=submit]').click();else{assert.equal(typeof deadline,'function');deadline();}
     await settle();assert.ok(f.root.querySelector('.request-outcome')?.textContent);
     assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
     assert.equal(server.data[key],undefined);assert.equal(f.ports[0].disconnected,true);
@@ -70,7 +70,7 @@ test('저장 확인 10초 초과는 미저장 답변을 보존하고 늦은 응�
     const pending=port.receive({type:'result',requestId:port.packet.requestId,body:answer});await settle();
     assert.equal(typeof deadline,'function');assert.equal(typeof resolveAppend,'function');deadline();await pending;await settle();
     assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
-    assert.equal(f.root.querySelector('.cancel').hidden,true);assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);
+    assert.equal(f.root.querySelector('button[type=submit]').getAttribute('aria-label'),'질문 보내기');assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);
     assert.match(f.root.querySelector('.unsaved-conversation').textContent,/저장 확인이 필요한 답변/);
     assert.match(f.root.querySelector('.unsaved-conversation').textContent,/대화를 다시 불러/);
     await f.mode('screen');const before=f.root.querySelector('.conversation').textContent,status=f.root.querySelector('.status').textContent;
@@ -117,7 +117,7 @@ test('성공 대화를 새 패널에서 복원하고 제한 이력을 계속 전
     await f.ready();await f.question('신청 방법은?');assert.equal(f.ports.length,1);assert.deepEqual(f.ports[0].packet.payload.history,[]);
     await f.answer(answer);assert.equal(server.data[key].conversations.length,1);assert.match(f.root.querySelector('.status').textContent,/저장했습니다/);assert.equal(f.root.querySelector('.request-outcome'),null);
     await f.question('필요 서류는?');assert.deepEqual(f.ports.at(-1).packet.payload.history,[{role:'user',content:'신청 방법은?'},{role:'assistant',content:answer.text}]);
-    f.root.querySelector('.cancel').click();
+    f.root.querySelector('button[type=submit]').click();
   }finally{f.close();}
   const g=ui(server);try{await g.ready();assert.match(g.root.querySelector('.conversation').textContent,/신청 방법은/);assert.match(g.root.querySelector('.conversation').textContent,/현재 유효성은 다시 확인하지 않았습니다/);assert.equal(server.data[key].conversations[0].messages.length,2);}finally{g.close();}
 });
@@ -171,7 +171,7 @@ test('프로필 변경은 이전 요청만 중지하고 저장 대화는 보존�
     await f.ready();await f.question('이전 조건 질문');await f.answer(answer);await f.question('곧 바뀔 조건');const old=f.ports.at(-1);
     await server.send({type:'gyeote:profile-save',expectedRevision:1,profile:{age:60}});await settle();await f.answer({kind:'answer',text:'이전 조건 답변',evidence:[]},old);
     assert.equal(server.data[key].conversations[0].messages.length,2);await f.question('새 조건 질문');assert.deepEqual(f.ports.at(-1).packet.payload.history,[]);
-    f.root.querySelector('.cancel').click();
+    f.root.querySelector('button[type=submit]').click();
   }finally{f.close();}
 });
 test('권한 전환은 공개 요청을 중지하고 관리자 답변은 영구저장하지 않는다',async()=>{

@@ -78,7 +78,7 @@ test('패널 복원 뒤 지시 대상 맥락과 summary 갱신 계약을 HTTP pa
     assert.equal(input.batch.length,6);assert.equal(packet.payload.history.length,6);assert.equal(input.profileRevision,packet.profileRevision);
     await f.answer({...answer,context_update:update(input)});assert.ok(server.data[key].conversations[0].summary);
   }finally{f.close();}
-  const g=ui(server);try{await g.ready();await g.question('그 서비스는?');assert.equal(g.ports.at(-1).packet.payload.conversation_context.text,'사용자는 합성 서비스의 신청처를 찾고 있음');g.root.querySelector('.cancel').click();}finally{g.close();}
+  const g=ui(server);try{await g.ready();await g.question('그 서비스는?');assert.equal(g.ports.at(-1).packet.payload.conversation_context.text,'사용자는 합성 서비스의 신청처를 찾고 있음');g.root.querySelector('button[type=submit]').click();}finally{g.close();}
 });
 test('미저장 요약 후보는 같은 대화 재저장 때 유지한다',async()=>{
     const server=worker(seed()),f=ui(server);try{

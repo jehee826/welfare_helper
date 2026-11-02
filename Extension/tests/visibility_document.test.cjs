@@ -24,7 +24,7 @@ test('문서 blur와 hidden 복귀는 같은 요청과 기한을 유지하고 fa
 for(const ending of ['cancel','deadline','pagehide','mode','profile','access','conversation'])test('숨긴 문서 요청도 '+ending+' 경계는 유지한다',async()=>{
  let deadline;const server=worker();if(ending==='conversation')await append(server,(await server.action('get')).state);const f=ui(server,1,w=>{const set=w.setTimeout.bind(w),clear=w.clearTimeout.bind(w);w.setTimeout=(fn,ms,...a)=>ms>10000?(deadline=fn,999998):set(fn,ms,...a);w.clearTimeout=id=>id===999998?undefined:clear(id);});try{
   await f.ready();await f.question('합성 질문');const port=f.ports.at(-1);visibility(f,true);await settle();assert.notEqual(port.disconnected,true);
-  if(ending==='cancel')f.root.querySelector('.cancel').click();
+  if(ending==='cancel')f.root.querySelector('button[type=submit]').click();
   if(ending==='deadline'){assert.equal(typeof deadline,'function');deadline();}
   if(ending==='pagehide')f.w.dispatchEvent(new f.w.Event('pagehide'));
   if(ending==='mode')await f.mode('screen');

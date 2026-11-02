@@ -227,6 +227,53 @@ def test_missing_table_is_blocked_instead_of_pointing_to_similar_prose():
     assert blockers == ["markdown_table_range_missing"] and "char_start" not in block
 
 
+@pytest.mark.parametrize('encoded', ['A&amp;B', 'A&#38;B'])
+def test_escaped_table_cells_match_without_changing_original_range(encoded):
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    markdown = f'| 이름 | 값 |\n| --- | --- |\n| {encoded} | 7장 |\n'
+    cells = [{'text':text,'start_row_offset_idx':r,'start_col_offset_idx':c}
+             for r,row in enumerate((('이름','값'),('A&B','7장'))) for c,text in enumerate(row)]
+    block = {'id':'table','label':'table','text':'표 내용','table':{'table_cells':cells}}
+    blockers = []
+    attach_markdown_ranges([block], markdown, blockers)
+    assert blockers == []
+    assert markdown[block['char_start']:block['char_end']] == block['markdown_text'] == markdown.rstrip('\n')
+    cells[-1]['text'] = '8장'
+    mismatch = {'id':'other','label':'table','text':'표 내용','table':{'table_cells':cells}}
+    blockers = []
+    attach_markdown_ranges([mismatch], markdown, blockers)
+    assert blockers == ['markdown_table_range_missing'] and 'char_start' not in mismatch
+
+
+def test_unknown_entity_partial_match_keeps_only_the_matching_characters():
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    markdown = 'x&unknown;y'
+    block = {'id':'text','label':'text','text':'know'}
+    blockers = []
+    attach_markdown_ranges([block], markdown, blockers)
+    assert blockers == []
+    assert markdown[block['char_start']:block['char_end']] == block['markdown_text'] == 'know'
+
+
+@pytest.mark.parametrize(('value','matches'), [('-1.5 kg', True), ('+1.5 kg', False), ('15 kg', False)])
+def test_table_numeric_sign_decimal_and_unit_are_preserved(value, matches):
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    markdown = f'| 항목 | 기준 |\n| --- | --- |\n| 조건 | {value} |\n'
+    cells = [{'text':text,'start_row_offset_idx':r,'start_col_offset_idx':c}
+             for r,row in enumerate((('항목','기준'),('조건','-1.5 kg'))) for c,text in enumerate(row)]
+    block = {'id':'table','label':'table','text':'표 내용','table':{'table_cells':cells}}
+    blockers = []
+    attach_markdown_ranges([block], markdown, blockers)
+    if matches:
+        assert blockers == []
+        assert markdown[block['char_start']:block['char_end']] == markdown.rstrip('\n')
+    else:
+        assert blockers == ['markdown_table_range_missing'] and 'char_start' not in block
+
+
 def test_markdown_range_keeps_numeric_signs_and_units():
     from BackEnd.documents.analysis import attach_markdown_ranges
 
@@ -236,6 +283,30 @@ def test_markdown_range_keeps_numeric_signs_and_units():
     attach_markdown_ranges([block],source,blockers)
     assert blockers == [] and "-1.5" in block["markdown_text"]
     assert source[block["char_start"]:block["char_end"]] == block["markdown_text"]
+
+
+@pytest.mark.parametrize(('opening','closing','amp'), [('&lt;','&gt;','&amp;'),('&#60;','&#x3E;','&#38;')])
+def test_html_escaped_heading_and_text_keep_original_markdown_ranges(opening, closing, amp):
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    markdown = f'## {opening}첨부서류{closing}\n\nA{amp}B 기준 -1.5 kg 이상\n\n다음 항목\n\n다음 항목\n'
+    blocks = [
+        {'id':'heading','label':'section_header','text':'<첨부서류>'},
+        {'id':'text','label':'text','text':'A&B 기준 -1.5 kg 이상'},
+        {'id':'next','label':'text','text':'다음 항목'},
+        {'id':'next-again','label':'text','text':'다음 항목'},
+    ]
+    blockers = []
+    attach_markdown_ranges(blocks, markdown, blockers)
+    assert blockers == []
+    assert f'{opening}첨부서류{closing}' in blocks[0]['markdown_text']
+    assert f'A{amp}B' in blocks[1]['markdown_text'] and '-1.5 kg' in blocks[1]['markdown_text']
+    assert all(markdown[b['char_start']:b['char_end']] == b['markdown_text'] for b in blocks)
+    assert all(a['char_end'] <= b['char_start'] for a, b in zip(blocks, blocks[1:]))
+    missing = {'id':'missing','label':'text','text':'실제 없는 문구'}
+    blockers = []
+    attach_markdown_ranges([missing], markdown, blockers)
+    assert blockers == ['markdown_block_range_missing'] and 'char_start' not in missing
 
 
 def test_legacy_status_preserves_analysis_without_enabling_manual_approval(monkeypatch):

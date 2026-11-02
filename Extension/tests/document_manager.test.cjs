@@ -76,19 +76,19 @@ test('탭 열기 실패는 안전한 오류이며 다음 시도를 막지 않는
 
 test('패널 문서 관리와 연결 설정은 별개이며 관리자 로그인 전에도 진입 버튼을 제공한다',async()=>{
   const server=worker({}),f=ui(server);try{
-    await f.ready();assert.ok(f.button('문서 관리'));
-    await f.click('문서 관리');assert.deepEqual(server.calls.openTabs,[{url}]);
+    await f.ready();assert.ok(f.button('관리자 접근'));
+    await f.click('관리자 접근');assert.deepEqual(server.calls.openTabs,[{url}]);
     assert.deepEqual(f.requests.filter(m=>m.type===request.type),[request]);assert.equal(server.calls.optionsOpened,0);
-    await f.click('연결 설정');assert.equal(server.calls.optionsOpened,1);assert.equal(server.calls.openTabs.length,1);
-    await f.mode('screen');await f.click('문서 관리');assert.equal(server.calls.openTabs.length,2);assert.equal(f.ports.length,0);assert.deepEqual(server.data,{});
+    await f.click('확장 옵션');assert.equal(server.calls.optionsOpened,1);assert.equal(server.calls.openTabs.length,1);
+    await f.mode('screen');await f.click('관리자 접근');assert.equal(server.calls.openTabs.length,2);assert.equal(f.ports.length,0);assert.deepEqual(server.data,{});
   }finally{f.close();}
 });
 
 test('패널은 열기 실패를 표시하고 초안·저장값을 보존한 채 다시 시도한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();const draft=f.root.querySelector('#gyeote-question');draft.value='작성 중인 질문';const before=plain(server.data);
-    server.failure.createTab=true;await f.click('문서 관리');assert.match(f.root.querySelector('.status').textContent,/문서 관리 페이지를 열지 못했습니다/);
-    assert.equal(f.button('문서 관리').disabled,false);assert.equal(draft.value,'작성 중인 질문');assert.deepEqual(server.data,before);assert.equal(f.ports.length,0);
-    server.failure.createTab=false;await f.click('문서 관리');assert.equal(server.calls.openTabs.length,2);assert.equal(f.button('문서 관리').disabled,false);assert.match(f.root.querySelector('.status').textContent,/문서 관리용 새 탭을 열었습니다/);
+    server.failure.createTab=true;await f.click('관리자 접근');assert.match(f.root.querySelector('.status').textContent,/문서 관리 페이지를 열지 못했습니다/);
+    assert.equal(f.button('관리자 접근').disabled,false);assert.equal(draft.value,'작성 중인 질문');assert.deepEqual(server.data,before);assert.equal(f.ports.length,0);
+    server.failure.createTab=false;await f.click('관리자 접근');assert.equal(server.calls.openTabs.length,2);assert.equal(f.button('관리자 접근').disabled,false);assert.match(f.root.querySelector('.status').textContent,/문서 관리용 새 탭을 열었습니다/);
   }finally{f.close();}
 });

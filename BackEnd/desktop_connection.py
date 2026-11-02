@@ -13,7 +13,7 @@ def connection_payload(settings):
     token = settings.desktop_extension_token.get_secret_value() if settings.desktop_extension_token else ""
     if not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", token):
         raise ValueError("desktop_extension_token_required")
-    return {"version": 1, "token": token, "imageEnabled": settings.desktop_image_enabled,
+    return {"version": 1, "token": token,
             "timeoutSeconds": settings.desktop_timeout_seconds}
 
 

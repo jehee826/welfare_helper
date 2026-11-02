@@ -62,6 +62,10 @@ test("모달이 열리면 뒤의 버튼은 요청·안내·강조 대상에서 �
  try{assert.equal((await guideStep("복지서비스 찾기",snap,[],new AbortController().signal)).target_id,closeId);}
  finally{global.fetch=original;}
 });
+test("화면 안내 전송에는 합성 이미지 필드를 포함하지 않는다",async()=>{
+ let calls=0;const original=global.fetch;global.fetch=async(_url,options)=>{calls++;const body=JSON.parse(options.body);assert.equal(Object.hasOwn(body,'image'),false);return {ok:true,body:new ReadableStream({start(c){c.enqueue(Buffer.from(JSON.stringify({step:{target_id:null,action:'설명',instruction:'공개 화면입니다.',expect_label:null},model:'test'})));c.close();}})};};
+ try{await guideStep('화면 설명',{elements:[],image:'synthetic'},[],new AbortController().signal);assert.equal(calls,1);}finally{global.fetch=original;}
+});
 test("잘린 JSON·가짜 ID·실패형식·비밀 목표는 보류",()=>{
  const elements=p.sanitizeSnapshot(raw).elements;
  const step={target_id:id,action:"안내",instruction:"로그인 버튼의 위치를 확인하세요.",expect_label:"다음"};

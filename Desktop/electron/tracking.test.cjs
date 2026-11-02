@@ -6,7 +6,6 @@ const path=require('node:path');
 const clients=require('./local-clients.cjs');
 const {watchMessage,verifiedPresence,focusUpdate}=require('./watch-status.cjs');
 const {overlayLayout,OverlayPresenter}=require('./overlay-layout.cjs');
-const {capturePacket,captureKey}=require('./screen-capture.cjs');
 const tick=()=>new Promise(setImmediate);
 const id='B'.repeat(20),area={x:0,y:0,width:1600,height:1000};
 const element={id,name:'복지서비스',role:'Hyperlink',enabled:true,offscreen:false,hit:true,rect:{x:355,y:240,width:127,height:100}};
@@ -99,14 +98,8 @@ test('콜아웃은 왼쪽 공간 우선, 가장자리·패널을 피하고 방�
  const left=overlayLayout(element.rect,area,{x:1000,y:0,width:380,height:500},'복지서비스',{x:0,y:0,width:900,height:600});assert.ok(left.card.x+left.card.width<left.ring.x);
  const edge=overlayLayout({...element.rect,x:10},area,null,'검색',area);assert.ok(edge.card.x>edge.ring.x);assert.equal(edge.direction,'왼쪽');
 });
-test('수집 정책은 공개 홈·모든 입력란 마스크·최신 창이 없으면 PNG 수집 자체를 거부',()=>{
- const snapshot={context:'123:tab:doc',signature:'first',captureEligible:true,partial:false,modalOpen:false,active:true,verifiedAt:Date.now(),windowRect:{x:0,y:0,width:900,height:700},viewport:{x:10,y:100,width:880,height:580},maskRects:[{x:20,y:200,width:150,height:40}],elements:[]};
- const packet=capturePacket(snapshot,'5');assert.deepEqual(packet.crop,[10,100,880,580]);assert.equal(packet.masks.length,1);assert.equal(packet.window,'123');
- for(const change of [{captureEligible:false},{partial:true},{modalOpen:true},{active:false},{verifiedAt:0},{maskRects:null}])assert.throws(()=>capturePacket({...snapshot,...change},'5'));
- assert.notEqual(captureKey(snapshot),captureKey({...snapshot,scrollPercent:50}));assert.notEqual(captureKey(snapshot),captureKey({...snapshot,context:'other'}));
-});
 test('Windows native helpers compile and URL tracking rejects fake hosts',{skip:process.platform!=='win32'},()=>{
- for(const [file,flag,marker] of [['watch.ps1','-TestTracking','UIA_TRACKING_POLICY_PASS'],['capture.ps1','-TestPolicy','CAPTURE_POLICY_PASS']]){
+ for(const [file,flag,marker] of [['watch.ps1','-TestTracking','UIA_TRACKING_POLICY_PASS']]){
   const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'../native',file),flag],{encoding:'utf8',windowsHide:true,timeout:20000});assert.equal(result.status,0,result.stderr);assert.match(result.stdout,new RegExp(marker));
  }
 });

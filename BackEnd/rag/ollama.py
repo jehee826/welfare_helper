@@ -7,7 +7,7 @@ from typing import Callable
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage
 
 from BackEnd.rag.embeddings import validate_embeddings
 from BackEnd.core.execution import ExecutionTimeoutError, ExecutionCancelledError
@@ -19,10 +19,6 @@ class OllamaError(RuntimeError):
 
 class ContextBudgetError(OllamaError):
     """생성 입력 또는 출력이 잘릴 위험이 있어 답변을 생성하지 않는다."""
-
-
-class VisionUnsupportedError(OllamaError):
-    """이미지를 조용히 버리는 대신 미지원 모델 조합을 거부한다."""
 
 
 class GenerationTimeoutError(OllamaError, ExecutionTimeoutError):
@@ -174,10 +170,8 @@ class OllamaClient:
                 response.raise_for_status()
                 return response.json()
 
-    async def _chat_before_deadline(self, system, user, schema, context, images, *, plain_text=False):
+    async def _chat_before_deadline(self, system, user, schema, context, *, plain_text=False):
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        if images:
-            messages[-1]["images"] = images
         payload = {"model": self.llm_model, "messages": messages, "stream": True,
                    "options": {**self.llm_options, "num_ctx": context}}
         if not plain_text:
@@ -250,7 +244,7 @@ class OllamaClient:
         try:
             if self.request_deadline is not None:
                 message = asyncio.run(self._chat_before_deadline(system, user, None,
-                    self.llm_options.get("num_ctx", 8192), None, plain_text=True))
+                    self.llm_options.get("num_ctx", 8192), plain_text=True))
             else:
                 prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
                 model = ChatOllama(model=self.llm_model, base_url=self.base_url,
@@ -270,34 +264,15 @@ class OllamaClient:
         except Exception as exc:
             raise OllamaError(f"LangChain Ollama 텍스트 응답 실패: {type(exc).__name__}") from None
 
-    def chat(self, system: str, user: str, *, schema: dict | None = None, images: list[str] | None = None) -> dict:
+    def chat(self, system: str, user: str, *, schema: dict | None = None) -> dict:
         self.last_chat_diagnostics = {}
         try:
             context = self._effective_context or self.context_limit()
             output = self.llm_options.get("num_predict", 512)
-            image_cost = 0
-            if images:
-                from BackEnd.desktop_image import image_bytes
-                if len(images) != 1:
-                    raise VisionUnsupportedError("화면 이미지는 한 장만 허용합니다.")
-                image_bytes(images[0])
-                metadata = self._post("/api/show", {"model": self.llm_model}, self.timeout)
-                if "vision" not in metadata.get("capabilities", []):
-                    raise VisionUnsupportedError("설정된 생성 모델은 이미지 입력을 지원하지 않습니다.")
-                # 1280×800 한 장에 보수적인 별도 예산을 확보하고 실제 평가 길이도 검사한다.
-                image_cost = 4096
-            if self.input_cost(system, user) + image_cost + output > context:
+            if self.input_cost(system, user) + output > context:
                 raise ContextBudgetError("필수 근거가 생성 문맥 예산을 초과했습니다.")
             if self.request_deadline is not None:
-                message = asyncio.run(self._chat_before_deadline(system, user, schema, context, images))
-            elif images:
-                model = ChatOllama(model=self.llm_model, base_url=self.base_url,
-                                   format=schema if schema is not None else "json",
-                                   client_kwargs={"timeout": self.remaining_timeout()}, **{**self.llm_options, "num_ctx": context})
-                message = model.invoke([SystemMessage(content=system), HumanMessage(content=[
-                    {"type": "text", "text": user},
-                    {"type": "image_url", "image_url": "data:image/png;base64," + images[0]},
-                ])])
+                message = asyncio.run(self._chat_before_deadline(system, user, schema, context))
             elif self._chat_chain is None or schema is not None:
                 prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
                 model = ChatOllama(
@@ -310,7 +285,7 @@ class OllamaClient:
                     self._chat_chain = chain
             else:
                 chain = self._chat_chain
-            if not images and self.request_deadline is None:
+            if self.request_deadline is None:
                 message = chain.invoke({"system": system, "user": user})
             self.remaining_timeout()
             self.last_chat_diagnostics = {key: message.response_metadata[key]
@@ -319,8 +294,6 @@ class OllamaClient:
             if message.response_metadata.get("done_reason") == "length":
                 raise ContextBudgetError("모델 출력이 잘렸습니다.")
             used = message.response_metadata.get("prompt_eval_count")
-            if images and (type(used) is not int or used <= 0):
-                raise ContextBudgetError("이미지 입력의 실제 평가 길이를 확인하지 못했습니다.")
             if (message.response_metadata.get("truncated") is True
                     or isinstance(used, int) and used >= context - output):
                 raise ContextBudgetError("모델 입력 잘림 가능성을 감지했습니다.")
@@ -328,7 +301,7 @@ class OllamaClient:
             if not isinstance(result, dict):
                 raise ValueError("응답이 JSON 객체가 아닙니다.")
             return result
-        except (ContextBudgetError, VisionUnsupportedError, GenerationTimeoutError, GenerationCancelledError):
+        except (ContextBudgetError, GenerationTimeoutError, GenerationCancelledError):
             raise
         except (httpx.TimeoutException, TimeoutError):
             raise GenerationTimeoutError("Ollama 응답 대기 시간을 넘었습니다.") from None

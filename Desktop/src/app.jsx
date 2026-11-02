@@ -7,7 +7,6 @@ const initial = { status: "idle", collapsed: false, text: "시연을 골라 플�
 function Panel() {
   const [state,setState] = useState({...initial,mode:"screen",screenMessages:[],ragMessages:[]});
   const [input,setInput] = useState("");
-  const [includeImage,setIncludeImage] = useState(false);
   useEffect(()=>{const stop=window.desktop.onState(setState);void window.desktop.command("state");return stop;},[]);
   const command=(action,payload)=>{void window.desktop.command(action,payload).catch(()=>{});};
   const demo=state.mode==="demo",rag=state.mode==="rag";
@@ -16,11 +15,10 @@ function Panel() {
     <header className="drag"><div><strong>곁에</strong><span className="tag">{demo?"개발용 고정 시연":"로컬 연결"}</span></div>
       <div className="controls"><button aria-label={state.collapsed?"펼치기":"접기"} onClick={()=>command("collapse")}>{state.collapsed?"+":"−"}</button><button aria-label="트레이로 숨기기" onClick={()=>command("hide")}>×</button></div></header>
     {!state.collapsed && <><nav className="modes" aria-label="상담 모드">{[["rag","RAG 상담"],["screen","화면 안내"],["demo","개발 시연"]].map(([value,label])=><button key={value} aria-pressed={state.mode===value} onClick={()=>{setInput("");command("mode",value);}}>{label}</button>)}</nav>
-      <p className="muted">{demo?"연습 창의 고정 시나리오입니다. 실제 인식이 아닙니다.":rag?"기존 로컬 RAG API · 화면 안내와 이력 분리":`${state.connection||"복지로 대기"} · ${includeImage?"이번 질문에 공개 영역 한 장 전송":"공개 접근성 문구만 사용, 화면 캡처 없음"}`}</p>
+      <p className="muted">{demo?"연습 창의 고정 시나리오입니다. 실제 인식이 아닙니다.":rag?"기존 로컬 RAG API · 화면 안내와 이력 분리":`${state.connection||"복지로 대기"} · 공개 접근성 문구만 사용, 화면 캡처 없음`}</p>
       <section className={"message "+state.status} aria-live="polite"><span className="status">{{idle:"대기",waiting:"준비 중",guide:"안내",error:"보류",done:"완료"}[state.status]}</span><p>{state.text}</p></section>
       {!demo && <><div className="conversation" role="log" aria-label={rag?"RAG 대화":"화면 질문 대화"}>{(messages||[]).map((m,i)=><section key={i}><small>{m.role==="user"?"나":!rag&&m.stepId!==state.currentStepId?"곁에 · 이전 화면 답변":"곁에"}</small><p>{m.text}</p>{m.evidence?.map((e,j)=><details key={j}><summary>검색 원문 · {e.pages.join(", ")}쪽</summary><p>{e.context}</p></details>)}</section>)}</div>
-      <form onSubmit={e=>{e.preventDefault();command(rag?"rag":"goal",rag?input:{question:input,includeImage,publicScreenConfirmed:includeImage});setInput("");setIncludeImage(false);}}><label htmlFor="goal">{rag?"복지 문서 질문":state.awaitingClarification?"추가질문에 대한 답변 (개인정보 제외)":"현재 화면에서 궁금한 점 (개인정보 제외)"}</label><input id="goal" maxLength={240} value={input} onChange={e=>setInput(e.target.value)} autoComplete="off"/>
-      {!rag&&state.imageEnabled&&<><label className="image-consent"><input type="checkbox" checked={includeImage} onChange={e=>setIncludeImage(e.target.checked)}/>이번 질문에 개인정보 없는 공개 복지로 화면 한 장을 연결된 서버로 전송합니다. SSH 연결 시 EC2로 전송됨을 확인합니다.</label><p className="muted">공개 홈만 지원합니다. 입력란을 가리지만 접근성에 없는 민감정보는 자동 확인할 수 없습니다. 개인정보·인증정보가 보이면 체크하지 마세요. 이미지 저장 없음.</p></>}
+      <form onSubmit={e=>{e.preventDefault();command(rag?"rag":"goal",input);setInput("");}}><label htmlFor="goal">{rag?"복지 문서 질문":state.awaitingClarification?"추가질문에 대한 답변 (개인정보 제외)":"현재 화면에서 궁금한 점 (개인정보 제외)"}</label><input id="goal" maxLength={240} value={input} onChange={e=>setInput(e.target.value)} autoComplete="off"/>
       <button className="primary" disabled={!input.trim()||state.status==="waiting"}>{rag?"질문 보내기":state.awaitingClarification?"답변 보내기":"현재 화면에 질문"}</button></form>
       {!rag && <button onClick={()=>{setInput("");command("reset");}}>대화 지우기</button>}<p className="muted">생성 모델: {state.model} · 서버 OLLAMA_LLM 공통 설정</p></>}
       {demo && <div className="actions"><button className="primary" disabled={state.status==="waiting"} onClick={()=>command("guide")}>버튼 강조 연습</button><button onClick={()=>command("error")}>오류 상태 보기</button><button onClick={()=>command("reset")}>초기화 · 강조 지우기</button></div>}

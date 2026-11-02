@@ -8,7 +8,7 @@ async function jsonRequest(url,body,signal) {
   catch(error) {if(signal.aborted)throw error;throw new Error("local_connection_failed");}
   if(!response.ok) {
     const code=typeof response.json==="function"?await response.json().then(body=>body.detail).catch(()=>null):null;
-    const known={desktop_image_disabled:"guide_image_disabled",desktop_image_model_unsupported:"guide_image_unsupported",desktop_context_budget_exceeded:"guide_context_budget",desktop_image_private_connection_required:"guide_private_connection"};
+    const known={desktop_context_budget_exceeded:"guide_context_budget",desktop_private_connection_required:"guide_private_connection"};
     throw new Error(known[code]||({404:"guide_disabled",429:"local_service_busy",503:"guide_generation_failed",422:"guide_context_budget"})[response.status]||"local_service_error");
   }
   const reader=response.body.getReader(); const chunks=[];let size=0;
@@ -16,11 +16,11 @@ async function jsonRequest(url,body,signal) {
   finally {await reader.cancel().catch(()=>{});}
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
-async function guideStep(goal,snapshot,progress,signal,clarifications=[],observation=null,onBusy=()=>{},image=null) {
+async function guideStep(goal,snapshot,progress,signal,clarifications=[],observation=null,onBusy=()=>{}) {
   const candidates=snapshot.elements.filter(e=>e.enabled&&!e.offscreen&&!e.blocked).map(({id,name,role,enabled,offscreen})=>({id,label:name,role,enabled,visible:!offscreen}));
   let result;
   for(let attempt=0;attempt<25;attempt++) {
-    try {result=await jsonRequest(configuration().rag+"/api/v1/desktop/guide",{goal,candidates,clarifications:clarifications.slice(-3),screen_context:snapshot.screenContext||[],page_labels:snapshot.pageLabels||[],scroll_percent:snapshot.scrollPercent??null,form_open:!!snapshot.formOpen,...(image?{image}:{})},signal);break;}
+    try {result=await jsonRequest(configuration().rag+"/api/v1/desktop/guide",{goal,candidates,clarifications:clarifications.slice(-3),screen_context:snapshot.screenContext||[],page_labels:snapshot.pageLabels||[],scroll_percent:snapshot.scrollPercent??null,form_open:!!snapshot.formOpen},signal);break;}
     catch(error) {
       if(error.message!=="local_service_busy")throw error;
       if(attempt===24)throw new Error("guide_busy_exhausted");

@@ -111,13 +111,17 @@
     }).filter(Boolean).sort((a,b)=>b.score-a.score);
     if(candidates.length>60)partial=true;
     // 링크 목적지와 역할은 변경 감시에만 쓰고 서버 전송 자료에는 넣지 않는다.
-    const refs=new Map(),meanings=new Map(),elements=candidates.slice(0,60).map(({node,label,role,context})=>{const element_id=id();refs.set(element_id,node);meanings.set(element_id,meaningOf(node));return {id:element_id,label,role,context,enabled:true,visible:true,in_modal:!!modal};});
+    let textSize=0;
+    // 요소 이름을 자르지 않고 우선순위대로 전체 전송 예산에 맞춘다.
+    const refs=new Map(),meanings=new Map(),elements=candidates.slice(0,60).filter(({label,context})=>{const size=label.length+context.length;if(textSize+size>4000){partial=true;return false;}textSize+=size;return true;}).map(({node,label,role,context})=>{const element_id=id();refs.set(element_id,node);meanings.set(element_id,meaningOf(node));return {id:element_id,label,role,context,enabled:true,visible:true,in_modal:!!modal};});
     const context=[],anchorNodes=[];
     for(const root of [scope,...roots.filter(r=>r instanceof ShadowRoot)]){
       for(const node of root.querySelectorAll('h1,h2,h3,p,label,legend,[role="heading"]')){
         if(!visible(node)||node.closest('button,a,input,textarea,select,[data-gyeote-host]'))continue;
         const text=textOf(node);if(!text||context.some(c=>c.text===text))continue;
         if(context.length>=8){partial=true;break;}
+        if(textSize+text.length>4000){partial=true;continue;}
+        textSize+=text.length;
         context.push({kind:node.matches('h1,h2,h3,[role="heading"]')?'heading':node.matches('label,legend')?'label':'text',text});
         anchorNodes.push({node,text});
       }

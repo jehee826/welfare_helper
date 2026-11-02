@@ -3,4 +3,4 @@
 .nested-scroll{height:340px;overflow:auto;resize:vertical;border:1px solid #ddd;border-radius:16px;padding:16px;min-height:160px}.nested-scroll .practice{margin-top:12px}.nested-space{height:500px;padding:24px;color:#666}.page-space{height:600px;padding:40px 0;color:#666}.scroll-intro{font-size:13px;color:#555}
 
 .modes{display:flex;gap:5px;margin-top:16px}.modes button{padding:9px;font-size:12px}.modes button[aria-pressed=true]{background:#161616;color:white}.conversation{max-height:200px;overflow:auto;font-size:13px;line-height:1.7}.conversation p{white-space:pre-wrap}.panel form{display:grid;gap:10px;margin:14px 0}.panel input{font:inherit;width:100%;border:1px solid #bbb;border-radius:10px;padding:10px}.panel label{font-size:13px}
-.panel .image-consent{display:flex;align-items:flex-start;gap:8px;line-height:1.6}.panel .image-consent input{width:18px;height:18px;flex:none}.conversation small{color:#666}
+.conversation small{color:#666}

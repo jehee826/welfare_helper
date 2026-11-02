@@ -23,7 +23,7 @@ test('첫6쌍의 오래된3쌍만 요약하고 이후3쌍 누적 때 연속 범�
   const ids=new Set(next.input.conversation_context.batch.map(m=>m.id));assert.ok(!state.conversations[0].messages.slice(-next.input.history.length).some(m=>ids.has(m.id)));
 });
 test('기존schema1 무요약 상담을 초기화하지 않고 worker 재생성 후 요약과 경계를 복원한다',async()=>{
-  const data=seed(),f=worker(data),state=(await f.action('get')).state;assert.equal(f.calls.set.length,0);
+  const data=seed();data[key].schemaVersion=1;const f=worker(data),state=(await f.action('get')).state;assert.equal(f.calls.set.length,1);assert.equal(state.schemaVersion,2);
   const plan=await begin(f,state),body={...answer,context_update:update(plan.input.conversation_context)};
   const saved=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'신청처',answer:body});
   const restored=await worker(data).action('get');assert.deepEqual(restored.state,saved.state);assert.equal(restored.state.conversations[0].messages.length,14);
@@ -61,10 +61,10 @@ test('프로필 변경은 과거 요약을 보존하되 후속 요청에는 전�
   await f.send({type:'gyeote:profile-save',expectedRevision:1,profile:{household:'single'}});
   const next=await begin(f,saved.state,pairId(101),2);assert.deepEqual(next.input.history,[]);assert.equal(next.input.conversation_context.text,'');assert.deepEqual(next.input.conversation_context.batch,[]);assert.ok(f.data[key].conversations[0].summary.text);
 });
-test('요약 응답도 선택·삭제·권한·소유권 변화 뒤 옛 상담을 되살리지 않는다',async()=>{
-  for(const operation of ['new','clear','auth','cancel']){
+test('요약 응답도 삭제·권한·소유권 변화 뒤 옛 대화를 되살리지 않는다',async()=>{
+  for(const operation of ['clear','auth','cancel']){
     const f=worker(seed()),state=(await f.action('get')).state,plan=await begin(f,state);
-    if(operation==='new'||operation==='clear')await f.action(operation,{expectedRevision:state.revision,generation:state.generation});
+    if(operation==='clear')await f.action(operation,{expectedRevision:state.revision,generation:state.generation});
     else if(operation==='auth'){f.session.documentAccess='admin';f.session.documentAccessId='changed';}
     else await f.send({type:'gyeote:conversation-cancel',pairId:pairId(100)});
     const before=JSON.stringify(f.data[key]);
@@ -80,18 +80,14 @@ test('패널 복원 뒤 지시 대상 맥락과 summary 갱신 계약을 HTTP pa
   }finally{f.close();}
   const g=ui(server);try{await g.ready();await g.question('그 서비스는?');assert.equal(g.ports.at(-1).packet.payload.conversation_context.text,'사용자는 합성 서비스의 신청처를 찾고 있음');g.root.querySelector('.cancel').click();}finally{g.close();}
 });
-test('미저장 요약 후보는 같은 상담 재저장 때 유지하고 다른 상담에 보관할 때 이동시키지 않는다',async()=>{
-  for(const move of [false,true]){
+test('미저장 요약 후보는 같은 대화 재저장 때 유지한다',async()=>{
     const server=worker(seed()),f=ui(server);try{
       await f.ready();await f.question('신청처는?');const input=f.ports.at(-1).packet.payload.conversation_context,ports=f.ports.length;
       server.failure.quota=true;await f.answer({...answer,context_update:update(input)});assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);server.failure.quota=false;
-      if(move){await f.click('새 상담',f.root.querySelector('.conversation-nav'));await f.click('선택한 상담에 미저장 답변 보관');}
-      else await f.click('답변 저장 다시 시도');
+      await f.click('답변 저장 다시 시도');
       assert.equal(f.ports.length,ports);const saved=server.data[key].conversations.find(c=>c.id===server.data[key].lastActiveConversationId);
-      assert.equal(!!saved.summary,!move);assert.equal(!!saved.messages.at(-1).contextUpdate,!move);
-      if(move)assert.equal(server.data[key].conversations[0].summary,undefined);
+      assert.ok(saved.summary);assert.ok(saved.messages.at(-1).contextUpdate);
     }finally{f.close();}
-  }
 });
 test('손상 요약 재읽기는 자동 삭제하지 않고 개인정보 정제는 연속 경계를 보존한다',async()=>{
   const data=seed();data[key].conversations[0].summary={text:'사용자 연락처 010-1234-5678',coveredThroughMessageId:pairId(3)+':assistant',profileRevision:1};
@@ -114,5 +110,5 @@ test('요약 갱신 성공과 서버 맥락 제외를 함께 저장하고 새 �
     await f.answer({...answer,context_update:update(input),context_usage:{omitted:true}});
     assert.ok(server.data[key].conversations[0].summary);assert.equal(server.data[key].conversations[0].messages.at(-1).contextUsage.omitted,true);assert.match(f.root.querySelector('.status').textContent,/일부 대화 맥락/);
   }finally{f.close();}
-  const g=ui(server);try{await g.ready();assert.match(g.root.querySelector('.conversation').textContent,/입력 예산에 따라 일부 대화 맥락/);assert.match(g.root.querySelector('.saved-conversations').textContent,/일부 대화 맥락/);}finally{g.close();}
+  const g=ui(server);try{await g.ready();assert.match(g.root.querySelector('.conversation').textContent,/입력 예산에 따라 일부 대화 맥락/);assert.match(g.root.querySelector('.conversation-warning').textContent,/일부 대화 맥락/);}finally{g.close();}
 });

@@ -1,5 +1,5 @@
 (() => {
-  const limits=Object.freeze({conversations:30,messages:100,bytes:4*1024*1024,evidence:10,quote:1000,url:2048,references:50});
+  const limits=Object.freeze({conversations:1,pairs:30,messages:60,bytes:4*1024*1024,evidence:10,quote:1000,url:2048,references:50});
   const fail=()=>{throw new Error('conversation_data_invalid');};
   const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
   const revision=value=>Number.isSafeInteger(value)&&value>=0;
@@ -39,7 +39,7 @@
     });
     return {values,truncated,redacted};
   }
-  const empty=(generation='initial',value=0)=>({schemaVersion:1,revision:value,generation,lastActiveConversationId:null,conversations:[]});
+  const empty=(generation='initial',value=0)=>({schemaVersion:2,revision:value,generation,lastActiveConversationId:null,conversations:[]});
   const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).byteLength;
   function summaryRecord(value,messages){
     if(value===null)return null;
@@ -50,15 +50,16 @@
     return {text:normalized.text,coveredThroughMessageId:normalized.coveredThroughMessageId,profileRevision:normalized.profileRevision};
   }
   function record(raw){
-    if(!object(raw)||raw.schemaVersion!==1||!revision(raw.revision)||!identifier(raw.generation??'initial')||!Array.isArray(raw.conversations)||raw.conversations.length>limits.conversations)fail();
+    const legacy=raw?.schemaVersion===1;
+    if(!object(raw)||![1,2].includes(raw.schemaVersion)||!revision(raw.revision)||!identifier(raw.generation??'initial')||!Array.isArray(raw.conversations)||raw.conversations.length>(legacy?30:limits.conversations))fail();
     const ids=new Set(),pairs=new Set();
     const conversations=raw.conversations.map(conversation=>{
-      if(!object(conversation)||!identifier(conversation.id)||ids.has(conversation.id)||!date(conversation.createdAt)||!date(conversation.updatedAt)||!Array.isArray(conversation.messages)||conversation.messages.length>limits.messages||conversation.messages.length%2)fail();
+      if(!object(conversation)||!identifier(conversation.id)||!legacy&&ids.has(conversation.id)||!date(conversation.createdAt)||!date(conversation.updatedAt)||!Array.isArray(conversation.messages)||conversation.messages.length>(legacy?100:limits.messages)||conversation.messages.length%2)fail();
       ids.add(conversation.id);
       const messages=conversation.messages.map((message,index)=>{
         const role=index%2?'assistant':'user';
         if(!object(message)||message.role!==role||!GyeoteProtocol.id(message.pairId)||message.id!==message.pairId+':'+role||!date(message.createdAt)||!revision(message.profileRevision)||typeof message.content!=='string'||!message.content.trim()||message.content.length>(role==='user'?300:60000))fail();
-        if(role==='user'){if(pairs.has(message.pairId))fail();pairs.add(message.pairId);}
+        if(role==='user'){if(!legacy&&pairs.has(message.pairId))fail();pairs.add(message.pairId);}
         else if(message.pairId!==conversation.messages[index-1].pairId||message.profileRevision!==conversation.messages[index-1].profileRevision)fail();
         const content=cleanText(message.content);
         if(!content.trim())fail();
@@ -67,7 +68,7 @@
           if(!['answer','fallback'].includes(message.kind))fail();
           const refs=evidence(message.evidence);
           Object.assign(value,{kind:message.kind,evidence:refs.values,evidenceTruncated:message.evidenceTruncated===true||refs.truncated,redacted:value.redacted||refs.redacted});
-          if(message.contextUpdate!==undefined){
+          if(!legacy&&message.contextUpdate!==undefined){
             const update=GyeoteProtocol.contextUpdate({...message.contextUpdate,text:cleanText(message.contextUpdate.text)});
             if(update.profileRevision!==message.profileRevision||update.coveredThroughMessageId!==null&&!conversation.messages.slice(0,index-1).some(m=>m.id===update.coveredThroughMessageId&&m.role==='assistant'&&m.profileRevision===message.profileRevision))fail();
             value.contextUpdate=update;
@@ -76,12 +77,44 @@
         }
         return value;
       });
-      return {id:conversation.id,createdAt:conversation.createdAt,updatedAt:conversation.updatedAt,title:messages[0]?.content.slice(0,60)||'새 상담',messages,...(conversation.summary===undefined?{}:{summary:summaryRecord(conversation.summary,messages)})};
+      return {id:conversation.id,createdAt:conversation.createdAt,updatedAt:conversation.updatedAt,messages,...(!legacy&&conversation.summary!==undefined?{summary:summaryRecord(conversation.summary,messages)}:{})};
     });
     if(raw.lastActiveConversationId!==null&&!ids.has(raw.lastActiveConversationId))fail();
-    const state={schemaVersion:1,revision:raw.revision,generation:raw.generation??'initial',lastActiveConversationId:raw.lastActiveConversationId,conversations};
+    if(!legacy&&raw.lastActiveConversationId!==(conversations[0]?.id??null))fail();
+    const state={schemaVersion:raw.schemaVersion,revision:raw.revision,generation:raw.generation??'initial',lastActiveConversationId:raw.lastActiveConversationId,conversations};
     if(bytes(state)>limits.bytes)fail();
     return state;
+  }
+  function migrate(state,generation){
+    const ordered=[];
+    state.conversations.forEach((conversation,room)=>{
+      for(let index=0;index<conversation.messages.length;index+=2)ordered.push({messages:conversation.messages.slice(index,index+2),room,index});
+    });
+    ordered.sort((a,b)=>Date.parse(a.messages[0].createdAt)-Date.parse(b.messages[0].createdAt)||a.room-b.room||a.index-b.index);
+    const retained=ordered.slice(-limits.pairs),used=new Set(),reserved=new Set(retained.map(item=>item.messages[0].pairId));let replacement=0;
+    const messages=retained.flatMap(item=>{
+      let pairId=item.messages[0].pairId;
+      if(used.has(pairId)){do{pairId=(++replacement).toString(16).toUpperCase().padStart(20,'0');}while(reserved.has(pairId)||used.has(pairId));}
+      used.add(pairId);
+      return item.messages.map(message=>{const value={...message,pairId,id:pairId+':'+message.role};delete value.contextUpdate;return value;});
+    });
+    const result=empty(generation,state.revision+1);
+    if(messages.length){const id='continuous';result.conversations=[{id,createdAt:messages[0].createdAt,updatedAt:messages.at(-1).createdAt,messages}];result.lastActiveConversationId=id;}
+    return record(result);
+  }
+  function retain(conversation){
+    conversation.messages=conversation.messages.slice(-limits.messages);
+    const prior=new Map();
+    for(const message of conversation.messages){
+      const boundary=message.contextUpdate?.coveredThroughMessageId;
+      if(boundary!==undefined&&boundary!==null&&prior.get(boundary)!==message.profileRevision)delete message.contextUpdate;
+      if(message.role==='assistant')prior.set(message.id,message.profileRevision);
+    }
+    if(conversation.summary&&(prior.get(conversation.summary.coveredThroughMessageId)!==conversation.summary.profileRevision||conversation.summary.profileRevision!==conversation.messages.at(-1)?.profileRevision))delete conversation.summary;
+  }
+  function retainedPair(conversation,values){
+    const candidate={messages:conversation.messages.map(message=>message.pairId===values[0].pairId?values[message.role==='user'?0:1]:{...message})};
+    retain(candidate);return candidate.messages.filter(message=>message.pairId===values[0].pairId);
   }
   function pair(pairId,question,answer,profileRevision,createdAt){
     if(!GyeoteProtocol.id(pairId)||!revision(profileRevision)||typeof question!=='string'||!question.trim()||question.length>300)throw new Error('conversation_invalid_request');
@@ -133,6 +166,6 @@
     }else if(checked.text!==submitted.text||checked.coveredThroughMessageId!==submitted.coveredThroughMessageId)throw new Error('conversation_context_conflict');
   }
   const history=(conversation,profileRevision)=>requestContext(conversation,profileRevision).history;
-  const api=Object.freeze({limits,empty,record,pair,history,requestContext,applyUpdate,bytes,sourceUrl});
+  const api=Object.freeze({limits,empty,record,migrate,retain,retainedPair,pair,history,requestContext,applyUpdate,bytes,sourceUrl});
   globalThis.GyeoteConversations=api;if(typeof module!=='undefined')module.exports=api;
 })();

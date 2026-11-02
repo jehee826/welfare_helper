@@ -14,12 +14,13 @@
     }
     async function write(state){
       if(GyeoteConversations.bytes(state)>GyeoteConversations.limits.bytes)throw new Error('conversation_bytes_limit');
+      state=GyeoteConversations.record(state);
       await storage.set({[key]:state});invalid=null;return {ok:true,state};
     }
     function nextRevision(state){if(state.revision===Number.MAX_SAFE_INTEGER)throw new Error('conversation_revision_limit');return state.revision+1;}
     async function action(message,auth,ownsRequest=()=>false,requestInput=null){
       const operation=message.type.slice('gyeote:conversations-'.length);
-      const fields={get:[],new:['expectedRevision','generation'],select:['expectedRevision','generation','conversationId'],delete:['expectedRevision','generation','conversationId'],clear:['expectedRevision','generation'],reset:['resetToken'],begin:['expectedRevision','generation','conversationId','pairId','profileRevision'],append:['expectedRevision','generation','conversationId','pairId','question','answer','profileRevision']};
+      const fields={get:[],clear:['expectedRevision','generation'],reset:['resetToken'],begin:['expectedRevision','generation','conversationId','pairId','profileRevision'],append:['expectedRevision','generation','conversationId','pairId','question','answer','profileRevision']};
       if(!Object.hasOwn(fields,operation)||Object.keys(message).sort().join(',')!==['type','accessId',...fields[operation]].sort().join(','))throw new Error('conversation_invalid_request');
       if(auth.mode!=='anonymous'||message.accessId!==auth.accessId)throw new Error('conversation_access_changed');
       const current=await read();
@@ -31,14 +32,20 @@
         return write(GyeoteConversations.empty(newId(),revision));
       }
       if(current.invalid)return {ok:false,error:'conversation_data_invalid',resetToken:current.resetToken};
-      const state=current.state;
+      let state=current.state;
       if(operation==='get'){
+        if(state.schemaVersion===1){
+          nextRevision(state);
+          const migrated=GyeoteConversations.migrate(state,newId());
+          try{return await write(migrated);}catch{return {ok:true,state:migrated,warning:'conversation_migration_unsaved'};}
+        }
         if(current.raw&&JSON.stringify(current.raw)!==JSON.stringify(state)){
           state.revision=nextRevision(state);
           try{return await write(state);}catch{return {ok:true,state,warning:'conversation_sanitization_unsaved'};}
         }
         return {ok:true,state};
       }
+      if(state.schemaVersion!==2)throw new Error('conversation_conflict');
       if(!Number.isSafeInteger(message.expectedRevision)||message.expectedRevision<0||typeof message.generation!=='string')throw new Error('conversation_invalid_request');
       let pair;
       if(operation==='append'||operation==='begin'){
@@ -51,6 +58,7 @@
         const existing=state.conversations.find(c=>c.messages.some(m=>m.pairId===message.pairId));
         if(existing){
           const prior=existing.messages.filter(m=>m.pairId===message.pairId);
+          pair=GyeoteConversations.retainedPair(existing,pair);
           const comparable=messages=>JSON.stringify(messages.map(({createdAt,...value})=>value));
           if(state.generation===message.generation&&state.lastActiveConversationId===existing.id&&(message.conversationId===null||message.conversationId===existing.id)&&comparable(prior)===comparable(pair))return {ok:true,state};
           throw new Error('conversation_conflict');
@@ -63,27 +71,18 @@
         return {ok:true,state,input:GyeoteConversations.requestContext(conversation,message.profileRevision)};
       }
       const now=new Date().toISOString();
-      if(operation==='clear'){state.conversations=[];state.lastActiveConversationId=null;}
-      else if(operation==='delete'){
-        if(!state.conversations.some(c=>c.id===message.conversationId))throw new Error('conversation_conflict');
-        state.conversations=state.conversations.filter(c=>c.id!==message.conversationId);
-        if(state.lastActiveConversationId===message.conversationId)state.lastActiveConversationId=null;
-      }else if(operation==='select'){
-        if(!state.conversations.some(c=>c.id===message.conversationId))throw new Error('conversation_conflict');
-        state.lastActiveConversationId=message.conversationId;
-      }else if(operation==='new'||operation==='append'){
-        if(operation==='append'&&state.lastActiveConversationId!==message.conversationId)throw new Error('conversation_conflict');
-        let conversation=operation==='append'&&state.conversations.find(c=>c.id===message.conversationId);
+      if(operation==='clear'){state.conversations=[];state.lastActiveConversationId=null;state.generation=newId();}
+      else if(operation==='append'){
+        if(state.lastActiveConversationId!==message.conversationId)throw new Error('conversation_conflict');
+        let conversation=state.conversations[0];
         if(!conversation){
-          if(operation==='append'&&message.conversationId!==null)throw new Error('conversation_conflict');
-          if(state.conversations.length>=GyeoteConversations.limits.conversations)throw new Error('conversation_count_limit');
-          conversation={id:newId(),createdAt:now,updatedAt:now,title:'새 상담',messages:[]};
+          if(message.conversationId!==null)throw new Error('conversation_conflict');
+          conversation={id:newId(),createdAt:now,updatedAt:now,messages:[]};
           state.conversations.push(conversation);state.lastActiveConversationId=conversation.id;
         }
         if(pair){
-          if(conversation.messages.length+2>GyeoteConversations.limits.messages)throw new Error('conversation_messages_limit');
           GyeoteConversations.applyUpdate(conversation,requestInput,pair[1].contextUpdate,message.profileRevision);
-          conversation.messages.push(...pair);conversation.updatedAt=now;conversation.title=conversation.messages[0].content.slice(0,60);
+          conversation.messages.push(...pair);conversation.updatedAt=now;GyeoteConversations.retain(conversation);
         }
       }
       state.revision=nextRevision(state);

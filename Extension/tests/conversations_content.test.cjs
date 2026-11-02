@@ -72,7 +72,7 @@ test('저장 확인 10초 초과는 미저장 답변을 보존하고 늦은 응�
     assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
     assert.equal(f.root.querySelector('.cancel').hidden,true);assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);
     assert.match(f.root.querySelector('.unsaved-conversation').textContent,/저장 확인이 필요한 답변/);
-    assert.match(f.root.querySelector('.unsaved-conversation').textContent,/목록을 다시 불러/);
+    assert.match(f.root.querySelector('.unsaved-conversation').textContent,/대화를 다시 불러/);
     await f.mode('screen');const before=f.root.querySelector('.conversation').textContent,status=f.root.querySelector('.status').textContent;
     resolveAppend({ok:true,state:{}});await settle();
     assert.equal(f.root.querySelector('.conversation').textContent,before);assert.equal(f.root.querySelector('.status').textContent,status);assert.equal(f.ports.length,1);
@@ -96,7 +96,7 @@ test('저장 확인 초과 뒤 동일 쌍의 실제 지연 저장은 통지로 �
   }finally{f.close();}
 });
 
-test('지연 저장과 새 상담 요청 경쟁에서 기록을 덮지 않는다',async()=>{
+test('지연 저장과 모드 전환 경쟁에서 기록을 덮지 않는다',async()=>{
   let deadline,release;const server=worker(),f=ui(server,1,w=>{
     const set=w.setTimeout.bind(w),clear=w.clearTimeout.bind(w);
     w.setTimeout=(fn,ms,...args)=>ms===10000?(deadline=fn,999999):set(fn,ms,...args);
@@ -105,31 +105,27 @@ test('지연 저장과 새 상담 요청 경쟁에서 기록을 덮지 않는다
     await f.ready();await f.question('기존 질문');server.failure.beforeSet=value=>key in value?new Promise(resolve=>{release=resolve;}):undefined;
     const port=f.ports.at(-1),pending=port.receive({type:'result',requestId:port.packet.requestId,body:answer});await settle();
     assert.equal(typeof release,'function');deadline();await pending;await settle();
-    f.button('새 상담',f.root.querySelector('.conversation-nav')).click();await settle();
+    await f.mode('screen');
     delete server.failure.beforeSet;release();await settle();
     const state=server.data[key];assert.equal(state.conversations.length,1);
     assert.equal(state.conversations[0].messages.length,2);
   }finally{f.close();}
 });
 
-test('성공 상담·목록·상세를 새 패널에서 복원하고 제한 이력을 계속 전송한다',async()=>{
+test('성공 대화를 새 패널에서 복원하고 제한 이력을 계속 전송한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('신청 방법은?');assert.equal(f.ports.length,1);assert.deepEqual(f.ports[0].packet.payload.history,[]);
-    await f.answer(answer);assert.equal(server.data[key].conversations.length,1);assert.equal(f.root.querySelectorAll('.saved-conversation').length,1);assert.match(f.root.querySelector('.status').textContent,/저장했습니다/);assert.equal(f.root.querySelector('.request-outcome'),null);
+    await f.answer(answer);assert.equal(server.data[key].conversations.length,1);assert.match(f.root.querySelector('.status').textContent,/저장했습니다/);assert.equal(f.root.querySelector('.request-outcome'),null);
     await f.question('필요 서류는?');assert.deepEqual(f.ports.at(-1).packet.payload.history,[{role:'user',content:'신청 방법은?'},{role:'assistant',content:answer.text}]);
     f.root.querySelector('.cancel').click();
   }finally{f.close();}
   const g=ui(server);try{await g.ready();assert.match(g.root.querySelector('.conversation').textContent,/신청 방법은/);assert.match(g.root.querySelector('.conversation').textContent,/현재 유효성은 다시 확인하지 않았습니다/);assert.equal(server.data[key].conversations[0].messages.length,2);}finally{g.close();}
 });
-test('새 상담은 기존 상담을 보존하며 선택·개별삭제·전체삭제는 확인 후 실행된다',async()=>{
+test('전체 대화 삭제는 확인 후 실행하고 프로필을 보존한다',async()=>{
   const server=worker(),f=ui(server);try{
-    await f.ready();await f.question('첫 상담');await f.answer(answer);const first=server.data[key].lastActiveConversationId;
-    await f.click('새 상담',f.root.querySelector('.conversation-nav'));assert.equal(server.data[key].conversations.length,2);assert.equal(f.root.querySelector('.conversation').children.length,0);
-    await f.click('첫 상담');assert.equal(server.data[key].lastActiveConversationId,first);assert.match(f.root.querySelector('.conversation').textContent,/합성 복지/);
-    const row=[...f.root.querySelectorAll('.saved-conversation')].find(row=>row.textContent.includes('첫 상담'));
-    await f.click('삭제',row);assert.equal(server.data[key].conversations.length,2);await f.click('취소');assert.equal(server.data[key].conversations.length,2);
-    await f.click('삭제',row);await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,1);assert.equal(server.data[key].lastActiveConversationId,null);
-    await f.click('전체 상담 삭제');assert.equal(server.data[key].conversations.length,1);await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,0);assert.deepEqual(server.data[profileKey],profile);
+    await f.ready();await f.question('첫 상담');await f.answer(answer);
+    await f.click('전체 대화 삭제');assert.equal(server.data[key].conversations.length,1);await f.click('취소');assert.equal(server.data[key].conversations.length,1);
+    await f.click('전체 대화 삭제');await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,0);assert.deepEqual(server.data[profileKey],profile);
   }finally{f.close();}
 });
 test('quota 실패 답변은 미저장으로 남고 재저장은 모델 포트를 만들지 않는다',async()=>{
@@ -139,19 +135,19 @@ test('quota 실패 답변은 미저장으로 남고 재저장은 모델 포트�
     const count=f.ports.length;server.failure.quota=false;await f.click('답변 저장 다시 시도');assert.equal(f.ports.length,count);assert.equal(server.data[key].conversations[0].messages.length,2);assert.equal(f.root.querySelector('.unsaved-conversation').hidden,true);
   }finally{f.close();}
 });
-test('미저장 답변은 정리 실패·삭제·새 상담 후에도 보존되고 명시한 대상으로만 재저장한다',async()=>{
+test('미저장 답변은 삭제 후에도 보존되지만 재삽입은 차단한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('기존 상담');await f.answer(answer);await f.question('보관할 질문');server.failure.quota=true;await f.answer({kind:'answer',text:'보관할 미저장 본문',evidence:[]});
     const ports=f.ports.length;await f.question('다음 질문 초안');assert.equal(f.ports.length,ports);assert.equal(f.root.querySelector('#gyeote-question').value,'다음 질문 초안');
-    await f.click('새 상담',f.root.querySelector('.conversation-nav'));assert.equal(server.data[key].conversations.length,1);assert.match(f.root.querySelector('.unsaved-conversation').textContent,/보관할 미저장 본문/);
-    server.failure.quota=false;await f.click('전체 상담 삭제');await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,0);assert.match(f.root.querySelector('.unsaved-conversation').textContent,/보관할 미저장 본문/);
-    await f.click('새 상담에 미저장 답변 보관');assert.equal(f.ports.length,ports);assert.equal(server.data[key].conversations.length,1);assert.equal(server.data[key].conversations[0].messages[0].content,'보관할 질문');assert.equal(server.data[key].conversations[0].messages[1].content,'보관할 미저장 본문');assert.equal(f.root.querySelector('.unsaved-conversation').hidden,true);
+    assert.match(f.root.querySelector('.unsaved-conversation').textContent,/보관할 미저장 본문/);
+    server.failure.quota=false;await f.click('전체 대화 삭제');await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,0);assert.match(f.root.querySelector('.unsaved-conversation').textContent,/보관할 미저장 본문/);
+    const retry=f.button('답변 저장 다시 시도');assert.equal(retry.disabled,true);assert.equal(f.ports.length,ports);assert.equal(server.data[key].conversations.length,0);
   }finally{f.close();}
 });
-test('전송 중 새 상담 선택 뒤 늦은 응답은 표시·저장하지 않는다',async()=>{
+test('전송 중 전체 삭제 뒤 늦은 응답은 표시·저장하지 않는다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('첫 상담');await f.answer(answer);await f.question('늦은 질문');const old=f.ports.at(-1);
-    await f.click('새 상담',f.root.querySelector('.conversation-nav'));await f.answer({kind:'answer',text:'지연된 비정상 답변',evidence:[]},old);
+    await f.click('전체 대화 삭제');await f.click('삭제 확인');await f.answer({kind:'answer',text:'지연된 비정상 답변',evidence:[]},old);
     assert.ok(old.disconnected);assert.ok(!JSON.stringify(server.data[key]).includes('지연된'));assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/지연된/);
   }finally{f.close();}
 });
@@ -159,7 +155,7 @@ test('다른 탭 삭제는 전송을 중지하며 작성 중 질문은 유지한
   const server=worker(),f=ui(server),g=ui(server,2);try{
     await settle();await f.question('첫 상담');await f.answer(answer);await settle();
     await f.question('지연될 질문');const old=f.ports.at(-1);const draft=f.root.querySelector('#gyeote-question');draft.value='작성 중 초안';
-    await g.click('전체 상담 삭제');await g.click('삭제 확인');await settle();await f.answer({kind:'answer',text:'삭제 뒤 늦은 답변',evidence:[]},old);
+    await g.click('전체 대화 삭제');await g.click('삭제 확인');await settle();await f.answer({kind:'answer',text:'삭제 뒤 늦은 답변',evidence:[]},old);
     assert.equal(server.data[key].conversations.length,0);assert.equal(draft.value,'작성 중 초안');assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/삭제 뒤/);
   }finally{f.close();g.close();}
 });
@@ -218,7 +214,7 @@ test('화면 전환은 문서요청을 취소하고 임시 화면대화가 저�
 });
 test('손상 저장소의 명시 초기화는 프로필을 보존하고 HTML 없는 제한 근거를 복원한다',async()=>{
   const server=worker({[profileKey]:profile,[key]:'broken'}),f=ui(server);try{
-    await f.ready();assert.match(f.root.querySelector('.saved-conversations').textContent,/형식을 확인하지 못했습니다/);await f.click('상담 저장소 재설정');assert.equal(server.data[key],'broken');await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,0);assert.deepEqual(server.data[profileKey],profile);
+    await f.ready();assert.match(f.root.querySelector('.conversation-settings').textContent,/형식을 확인하지 못했습니다/);await f.click('대화 저장소 재설정');assert.equal(server.data[key],'broken');await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,0);assert.deepEqual(server.data[profileKey],profile);
     await f.question('안내 질문');await f.answer({kind:'answer',text:'합성 답변',evidence:[{document_id:'doc',chunk_id:'chunk',quote:'<script>합성</script>',context:'별도 전체 원문',pages:[1],source_blocks:['block'],source_url:'javascript:alert(1)'}]});
     assert.equal(f.root.querySelector('.conversation script'),null);assert.equal(f.root.querySelector('.conversation a'),null);assert.match(f.root.querySelector('.conversation').textContent,/일부 인용·참조만 저장/);assert.ok(!JSON.stringify(server.data[key]).includes('별도 전체 원문'));
   }finally{f.close();}

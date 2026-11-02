@@ -16,7 +16,7 @@ import BackEnd.admin.session as sessions
 def peers(monkeypatch):
     clock = [1_000_000.0]
     monkeypatch.setattr(sessions.time, "time", lambda: clock[0])
-    monkeypatch.setattr(sessions, "get_settings", lambda: SimpleNamespace(admin_password=SecretStr("synthetic-only-password")))
+    monkeypatch.setattr(sessions, "get_settings", lambda: SimpleNamespace(admin_password=SecretStr("synthetic-only-password"), admin_trusted_proxy_ips=[]))
     sessions._sessions.clear()
     sessions._failures.clear()
     app = FastAPI()
@@ -72,3 +72,81 @@ def test_successful_login_resets_only_its_peer_failures_and_keeps_session_cap(pe
     assert sessions.SESSION_SECONDS == 28800 and sessions.MAX_SESSIONS == 256
     startup = (Path(__file__).resolve().parents[1] / "startup.py").read_text(encoding="utf-8")
     assert '"--no-proxy-headers"' in startup
+
+
+def test_trusted_proxy_keeps_clients_in_separate_buckets(peers, monkeypatch):
+    client, _ = peers
+    monkeypatch.setattr(sessions, 'get_settings', lambda: SimpleNamespace(
+        admin_password=SecretStr('synthetic-only-password'), admin_trusted_proxy_ips=['192.0.2.10']))
+    proxy = client('192.0.2.10')
+    for _ in range(5):
+        assert proxy.post('/api/v1/admin/login', json={'password': 'wrong'}, headers={'X-Forwarded-For': '198.51.100.1'}).status_code == 401
+    assert proxy.post('/api/v1/admin/login', json={'password': 'synthetic-only-password'}, headers={'X-Forwarded-For': '198.51.100.2'}).status_code == 200
+    assert proxy.post('/api/v1/admin/login', json={'password': 'synthetic-only-password'}, headers={'X-Forwarded-For': '198.51.100.1'}).status_code == 429
+
+
+@pytest.mark.parametrize('headers', [
+    [], [(b'x-forwarded-for', b'')], [(b'x-forwarded-for', b'not-an-ip')],
+    [(b'x-forwarded-for', b'198.51.100.1, 198.51.100.2')],
+    [(b'x-forwarded-for', b'198.51.100.1'), (b'x-forwarded-for', b'198.51.100.2')],
+    [(b'x-forwarded-for', b'1' * 46)], [(b'x-forwarded-for', b'fe80::1%eth0')],
+    [(b'x-real-ip', b'198.51.100.1'), (b'forwarded', b'for=198.51.100.2')],
+])
+def test_invalid_forwarded_headers_fall_back_to_peer(headers, monkeypatch):
+    from starlette.requests import Request
+    monkeypatch.setattr(sessions, 'get_settings', lambda: SimpleNamespace(admin_trusted_proxy_ips=['192.0.2.10']))
+    request = Request({'type': 'http', 'client': ('192.0.2.10', 123), 'headers': headers})
+    assert sessions.login_client_key(request) == '192.0.2.10'
+    assert request.client.host == '192.0.2.10'
+
+
+def test_ipv6_canonicalization_and_direct_peer_remains_unchanged(monkeypatch):
+    from starlette.requests import Request
+    monkeypatch.setattr(sessions, 'get_settings', lambda: SimpleNamespace(admin_trusted_proxy_ips=['2001:db8::1']))
+    request = Request({'type': 'http', 'client': ('2001:0db8:0:0:0:0:0:1', 123),
+                       'headers': [(b'x-forwarded-for', b'2001:0db8:0:0:0:0:0:2')]})
+    assert sessions.login_client_key(request) == '2001:db8::2'
+    assert request.client.host == '2001:0db8:0:0:0:0:0:1'
+
+
+def test_caddy_overwrites_forwarded_header_without_global_proxy_headers():
+    root = Path(__file__).resolve().parents[2]
+    caddy = (root / 'deploy/Caddyfile').read_text(encoding='utf-8')
+    startup = (root / 'BackEnd/startup.py').read_text(encoding='utf-8')
+    assert 'header_up X-Forwarded-For {remote_host}' in caddy
+    assert '--no-proxy-headers' in startup
+
+
+@pytest.mark.parametrize('value', ['*', '192.0.2.0/24', 'proxy.example.invalid', 'fe80::1%eth0'])
+def test_proxy_allowlist_rejects_non_ip_values(value):
+    from pydantic import ValidationError
+    from BackEnd.core.settings import Settings
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, admin_trusted_proxy_ips=[value])
+
+
+def test_proxy_allowlist_defaults_empty_and_canonicalizes_without_duplicates():
+    from BackEnd.core.settings import Settings
+    assert Settings(_env_file=None, _env_prefix='P3_A_TEST_').admin_trusted_proxy_ips == []
+    assert Settings(_env_file=None, admin_trusted_proxy_ips=['2001:0db8::1', '2001:db8::1']).admin_trusted_proxy_ips == ['2001:db8::1']
+
+
+@pytest.mark.parametrize('header', [b'x-forwarded-for', b'forwarded', b'x-real-ip'])
+def test_desktop_still_rejects_forwarded_headers(header, monkeypatch):
+    from fastapi import HTTPException
+    from starlette.requests import Request
+    from BackEnd import desktop_guidance as guide
+    from BackEnd.core.settings import Settings
+    settings = Settings(_env_file=None, desktop_guidance_enabled=True,
+                        desktop_extension_token='x' * 40, admin_trusted_proxy_ips=['127.0.0.1'])
+    monkeypatch.setattr(guide, 'get_settings', lambda: settings)
+    monkeypatch.setenv('BACKEND_BIND_HOST', '127.0.0.1')
+    monkeypatch.delenv('VERCEL', raising=False)
+    monkeypatch.setattr(guide, 'OllamaClient', lambda *a, **k: pytest.fail('차단 전에 모델을 호출하면 안 됩니다'))
+    request = guide.DomGuideRequest(source='dom', snapshot_id='F' * 20, question='화면 설명', candidates=[])
+    transport = Request({'type': 'http', 'client': ('127.0.0.1', 123),
+                         'headers': [(b'authorization', ('Bearer ' + 'x' * 40).encode()), (header, b'198.51.100.1')]})
+    with pytest.raises(HTTPException) as error:
+        guide.desktop_guide(request, transport)
+    assert error.value.status_code == 403
+    assert transport.client.host == '127.0.0.1'

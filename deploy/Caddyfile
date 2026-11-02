@@ -32,6 +32,8 @@ https://{$PUBLIC_API_HOST} {
 	respond @diagnostics 404
 
 	reverse_proxy backend:8000 {
+		# 로그인 제한에는 직접 접속자의 IP 하나만 전달한다.
+		header_up X-Forwarded-For {remote_host}
 		transport http {
 			dial_timeout 10s
 			response_header_timeout 1800s

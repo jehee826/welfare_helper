@@ -1,4 +1,5 @@
 from functools import lru_cache
+from ipaddress import ip_address
 from math import ceil
 from pathlib import Path
 import re
@@ -57,6 +58,7 @@ class Settings(BaseSettings):
 
     documents_enabled: bool = False
     admin_password: SecretStr | None = None
+    admin_trusted_proxy_ips: list[str] = Field(default_factory=list)
     documents_max_file_mb: int = Field(default=20, ge=1, le=50)
     documents_max_pages: int = Field(default=100, ge=1, le=300)
     documents_max_characters: int = Field(default=500000, ge=1000, le=2000000)
@@ -77,6 +79,16 @@ class Settings(BaseSettings):
     @property
     def desktop_timeout_seconds(self) -> int:
         return max(1, min(1800, ceil(self.ollama_timeout)))
+
+    @field_validator("admin_trusted_proxy_ips")
+    @classmethod
+    def validate_admin_proxy_ips(cls, values: list[str]) -> list[str]:
+        try:
+            if any("%" in value for value in values):
+                raise ValueError
+            return list(dict.fromkeys(str(ip_address(value)) for value in values))
+        except ValueError:
+            raise ValueError("관리자 로그인 신뢰 프록시는 CIDR·호스트명 없는 개별 IP 목록이어야 합니다.") from None
 
     @field_validator("ollama_llm", "ollama_embed")
     @classmethod

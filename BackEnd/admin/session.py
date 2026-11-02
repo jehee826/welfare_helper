@@ -4,6 +4,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 import hashlib
 import hmac
+from ipaddress import ip_address
 import json
 import math
 import secrets
@@ -40,6 +41,26 @@ def configured_password():
     if not password:
         raise HTTPException(503, "관리자 비밀번호 서버 설정이 필요합니다.")
     return password
+
+
+def login_client_key(request: Request) -> str:
+    """로그인 실패 제한에서만 명시한 프록시의 단일 전달 IP를 사용한다."""
+    raw_peer = request.client.host if request.client else "unknown"
+    try:
+        if "%" in raw_peer:
+            return raw_peer
+        peer = str(ip_address(raw_peer))
+    except ValueError:
+        return raw_peer
+    if peer not in get_settings().admin_trusted_proxy_ips:
+        return peer
+    forwarded = request.headers.getlist("x-forwarded-for")
+    if len(forwarded) != 1 or not 1 <= len(forwarded[0]) <= 45 or "%" in forwarded[0]:
+        return peer
+    try:
+        return str(ip_address(forwarded[0]))
+    except ValueError:
+        return peer
 
 
 def _purge_sessions(now):
@@ -106,7 +127,7 @@ async def login(request: Request):
             raise ValueError
     except (ValueError, TypeError):
         raise HTTPException(400, "비밀번호 요청 형식이 올바르지 않습니다.") from None
-    return create_session(password, request.client.host if request.client else "unknown")
+    return create_session(password, login_client_key(request))
 
 
 @router.post("/logout", status_code=204)

@@ -69,6 +69,11 @@ def test_invalid_token_and_invalid_login_body_do_not_leak_secrets(client):
     assert response.status_code == 400 and "private-password" not in response.text
     assert response.headers["cache-control"] == "no-store"
 
+@pytest.mark.parametrize("headers", [{}, {"Authorization":"Bearer invalid"}])
+def test_admin_document_and_program_endpoints_reject_missing_or_invalid_session(client, headers):
+    assert client.get('/api/v1/admin/documents/00000000-0000-0000-0000-000000000001', headers=headers).status_code == 401
+    assert client.post('/api/v1/admin/programs', headers=headers, json={}).status_code == 401
+
 def test_session_count_is_bounded(client, monkeypatch):
     monkeypatch.setattr(sessions, "MAX_SESSIONS", 1)
     login(client)

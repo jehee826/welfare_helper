@@ -10,10 +10,10 @@ const auth = vi.hoisted(() => ({ check: vi.fn(), signIn: vi.fn() }));
 vi.mock("../api/auth", async original => ({ ...await original<typeof import("../api/auth")>(), checkAdminAccess: auth.check, loginAdmin: auth.signIn }));
 
 async function login() {
-  const ctx = renderApp("/admin");
+  const ctx = renderApp("/admin/programs");
   await ctx.user.type(await screen.findByLabelText("비밀번호"), "dummy-password");
   await ctx.user.click(screen.getByRole("button", { name: "들어가기" }));
-  await screen.findByRole("tab", { name: "복지제도 관리" });
+  await screen.findByRole("heading", { name: "제도 등록·관리" });
   return ctx;
 }
 
@@ -58,7 +58,7 @@ describe("관리자 화면", () => {
   });
 
   it("서버가 비밀번호를 거부하면 들어갈 수 없다", async () => {
-    const { user } = renderApp("/admin");
+    const { user } = renderApp("/admin/programs");
     auth.signIn.mockRejectedValue(new ApiError("관리자 비밀번호가 일치하지 않습니다.", 401));
     await user.type(await screen.findByLabelText("비밀번호"), "wrong");
     await user.click(screen.getByRole("button", { name: "들어가기" }));
@@ -98,12 +98,6 @@ describe("관리자 화면", () => {
     expect(screen.queryByRole("cell", { name: /에너지바우처/ })).not.toBeInTheDocument();
   });
 
-  it("주입한 테스트 통계와 운영 미연동 안내를 구분한다", async () => {
-    const { user } = await login();
-    await user.click(screen.getByRole("tab", { name: "이용 통계" }));
-    expect(await screen.findByRole("table", { name: "테스트용 월별 문의와 연결 건수" })).toBeInTheDocument();
-    expect(screen.getByText("이용 통계는 아직 서버와 연동되지 않았습니다.")).toBeInTheDocument();
-  });
 });
 
 describe("제도 관리와 원문 문서", () => {

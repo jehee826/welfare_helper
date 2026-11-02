@@ -62,7 +62,7 @@ it("검토 승인 없이 업로드하고 게시된 원문을 검색·질의한�
   fireEvent.click(screen.getByRole("button", { name: "실행" }));
   await screen.findByText("원문에서 확인할 수 없습니다.");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/index"))).toBe(false);
-  expect(screen.getByRole("link", { name: "기본 채팅으로 이동" })).toHaveAttribute("href", "/");
+  expect(screen.queryByRole("link", { name: "기본 채팅으로 이동" })).not.toBeInTheDocument();
 });
 
 it("DB 자동 처리 설정이 없으면 새 업로드를 막고 적용 안내를 보여준다", async () => {
@@ -140,16 +140,6 @@ it("일시 조회 실패는 마지막 상태를 보존하고 재조회로 회복
   await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
   expect(screen.getByText("접수 완료 · 작업 대기")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-});
-
-it("기본 채팅은 실제 API를 사용한다", async () => {
-  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ kind: "fallback", text: "실제 상담 응답", contacts: [], suggestions: [] }) });
-  vi.stubGlobal("fetch", fetch);
-  render(<MemoryRouter initialEntries={["/"]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><App /></MemoryRouter>);
-  fireEvent.change(screen.getByLabelText("궁금한 내용"), { target: { value: "제도 지원 내용" } });
-  fireEvent.click(screen.getByRole("button", { name: "질문 보내기" }));
-  await within(screen.getByRole("log", { name: "상담 내용" })).findByText("실제 상담 응답");
-  expect(fetch).toHaveBeenCalledWith("/api/v1/chat", expect.objectContaining({ method: "POST" }));
 });
 
 it("공개 모드에서 서버가 관리자 권한을 거부하면 문서 API를 호출하지 않는다", async () => {

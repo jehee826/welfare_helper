@@ -19,7 +19,7 @@
     }
     function render(){
       section.replaceChildren(node('h2',editing?'내 정보 입력':'내 정보'));
-      const notice=node('p','입력은 선택입니다. 이 브라우저에 저장하고 문서 질문과 함께 보냅니다. 현재 답변은 아직 조건을 활용하지 않습니다.');notice.className='muted';section.append(notice);
+      const notice=node('p','입력은 선택입니다. 이 브라우저에 저장하고 문서 질문과 함께 보냅니다. 입력한 조건을 상담에 참고합니다. 최종 지원 자격은 담당 기관에서 확인해 주세요.');notice.className='muted';section.append(notice);
       const storageNotice=node('p','같은 브라우저를 공유하면 정보도 공유됩니다. 확장을 지우거나 저장소를 삭제하면 복구되지 않습니다. 아래에서 내 정보를 삭제할 수 있습니다.');storageNotice.className='muted';section.append(storageNotice);
       const error=node('p');error.className='profile-error';error.setAttribute('role','alert');section.append(error);
       const reload=button('최신 정보 다시 불러오기',()=>void refresh());reload.className='profile-reload';reload.hidden=true;section.append(reload);

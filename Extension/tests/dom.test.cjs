@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {JSDOM}=require('../../FrontEnd/node_modules/jsdom');
 const source=fs.readFileSync(path.join(__dirname,'../dom.js'),'utf8');
+test('합성 다수 후보 수집은 전체 예산을 지키고 관련 이름을 보존한다',()=>{const f=fixture('<main></main>');try{const main=f.w.document.querySelector('main'),nodes=[];for(let i=0;i<60;i++){const b=f.w.document.createElement('button');b.textContent=(i===59?'신청안내':'공개항목')+String.fromCharCode(65+i%26).repeat(70);main.append(b);b.getBoundingClientRect=()=>({left:10,right:100,top:i*10,bottom:i*10+8,width:90,height:8});nodes.push(b);}f.w.innerHeight=1000;f.w.document.elementFromPoint=(_x,y)=>nodes[Math.floor(y/10)];const snap=f.api.collect('신청안내');const body={...snap.payload,question:'신청안내'};delete body.title;const length=body.candidates.reduce((n,c)=>n+c.label.length+(c.context?.length||0),0)+body.screen_context.reduce((n,c)=>n+c.text.length,0);assert.ok(body.candidates.length<60);assert.ok(length<=4000);assert.equal(body.partial,true);assert.ok(body.candidates[0].label.startsWith('신청안내'));assert.equal(body.candidates[0].label.length,74);assert.doesNotThrow(()=>f.w.GyeoteProtocol.remoteScreenRequest(body));}finally{f.close();}});
 function startPanel(w,root){for(const name of ['conversations.js','conversation-panel.js','input-assist.js','content.js'])w.eval(fs.readFileSync(path.join(__dirname,'..',name),'utf8'));const mode=root().querySelector('.mode');mode.value='screen';mode.dispatchEvent(new w.Event('change'));}
 async function displayTarget(w,getRoot){
   let packet,receive;

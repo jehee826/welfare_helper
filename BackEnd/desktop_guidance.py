@@ -292,17 +292,51 @@ def generate_step(llm, request):
             system += " 이번 질문은 표시 없이 설명만 원하므로 targets=[]로 답하라. 제목과 공개 문맥의 기능을 구체적으로 설명하라."
     # 과거 진행/완료 추정은 새 화면 질문의 근거로 전달하지 않는다.
     payload = request.model_dump(exclude={"progress", "observation", "timeout_seconds"})
-    # DOM 이름을 선택 키로 사용해 내부 순번을 화면 번호로 오인하는 응답을 피한다.
+    if is_dom:
+        terms = [word[:2].casefold() for word in intent.split() if len(word) > 1]
+        compact = re.sub(r"\s+", "", intent).casefold()
+        choices = sorted(choices, key=lambda item: (
+            bool(item.label.strip()) and re.sub(r"\s+", "", item.label).casefold() in compact,
+            sum(term in item.label.casefold() for term in terms)), reverse=True)
+        # 같은 이름의 후보를 잘라 모호한 대상을 하나로 확정하지 않는다.
+        required = len(choices) if min_targets > 1 else sum(item.label == choices[0].label for item in choices) if choices else 0
+        if choices and min_targets == 1:
+            choices = [item for item in choices if item.label == choices[0].label] + [item for item in choices if item.label != choices[0].label]
+        payload = {"question": request.question,
+                   "candidates": [{"id": item.id, "name": item.label, "role": item.role,
+                                   **({"context": item.context} if item.context else {})} for item in choices],
+                   "screen_context": [item.model_dump() for item in sorted(request.screen_context,
+                       key=lambda item: sum(term in item.text.casefold() for term in terms), reverse=True)],
+                   "history": [item.model_dump() for item in request.history],
+                   "modal_open": request.modal_open, "partial": request.partial}
+        if request.title:
+            payload["title"] = request.title
+        context = llm.context_limit()
+        output = llm.llm_options.get("num_predict", 512)
+        # 전송 글자 수와 생성 예산은 다르다. 질문·안전지침·필수 대상은 자르지 않는다.
+        while llm.input_cost(system, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) + output > context:
+            payload["partial"] = True
+            if payload["history"]:
+                payload["history"].pop(0)
+            elif any(item.get("context") for item in payload["candidates"]):
+                next(item for item in reversed(payload["candidates"]) if item.get("context")).pop("context")
+            elif len(choices) > required:
+                label = choices[-1].label
+                choices = [item for item in choices if item.label != label]
+                payload["candidates"] = [item for item in payload["candidates"] if item["name"] != label]
+            elif len(payload["screen_context"]) > (0 if choices else 1):
+                payload["screen_context"].pop()
+            elif "title" in payload:
+                payload.pop("title")
+            else:
+                raise ContextBudgetError("필수 화면 정보가 생성 문맥 예산을 초과했습니다.")
+    # DOM은 실제 ID와 이름을 한 번씩만 전달하고 선택·응답에 같은 후보 집합을 쓴다.
     selectors = {}
     for index, item in enumerate(choices, 1):
-        key = f"{index}:{item.label}"
-        if is_dom:
-            key = item.label
-            if sum(candidate.label == item.label for candidate in choices) > 1:
-                key = f"{item.label} [{item.id}]"
+        key = item.id if is_dom else f"{index}:{item.label}"
         selectors[key] = item
-    payload["candidates"] = ([{"id":key,"name":item.label,"role":item.role,**({"context":item.context} if item.context else {})} for key,item in selectors.items()]
-                             if is_dom else [{**item.model_dump(), "id": key} for key, item in selectors.items()])
+    if not is_dom:
+        payload["candidates"] = [{**item.model_dump(), "id": key} for key, item in selectors.items()]
     schema = GuideStep.model_json_schema()
     schema["properties"]["expect_label"] = {"type": "null"}
     # 행동과 대상의 모순을 생성 문법에서도 차단한다. 각 분기에 완전한 객체 스키마를 둔다.
@@ -320,7 +354,8 @@ def generate_step(llm, request):
         schema = {"oneOf": ([{**schema,"properties":{**schema["properties"],"kind":{"enum":["설명","안내"]},"targets":{**schema["properties"]["targets"],"minItems":min_targets}}}] if selectors and not explain_only else []) + [
             {**schema,"properties":{**schema["properties"],"kind":{"enum":(["설명"] if min_targets==1 else [])+["추가질문","보류"]},"targets":{"type":"array","maxItems":0,"items":target_schema}}}
         ]}
-    result = llm.chat(system, json.dumps(payload, ensure_ascii=False), schema=schema)
+    user = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) if is_dom else json.dumps(payload, ensure_ascii=False)
+    result = llm.chat(system, user, schema=schema)
     if is_dom:
         if isinstance(result.get("targets"), list):
             result = {**result,"targets":[{**target,"target_id":selectors[target["target_id"]].id}

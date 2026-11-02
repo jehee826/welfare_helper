@@ -55,7 +55,13 @@ chrome.runtime.onConnect.addListener(port=>{
       const headers={'Content-Type':'application/json'};
       if(adminSession)headers.Authorization='Bearer '+adminSession.token;
       const response=await fetch(origin+(documentMode?'/api/v1/chat':'/api/v1/screen/guide'),{method:'POST',headers,body:JSON.stringify(payload),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
-      if(!response.ok){if(documentMode&&adminSession&&[401,403].includes(response.status))await chrome.runtime.sendMessage({type:'gyeote:admin-invalid',token:adminSession.token});const code=await response.json().then(r=>r.detail).catch(()=>null);throw new Error(documentMode&&code==='sensitive_input'?'sensitive_input':documentMode&&[401,403].includes(response.status)?'document_auth_required':documentMode&&response.status===504?'request_timeout':documentMode&&response.status===499?'request_cancelled':response.status===429&&code==='chat_rate_limited'?'chat_rate_limited':({404:'feature_disabled',413:'input_budget',422:'input_budget',429:'busy',499:'request_stopped',504:'request_stopped'})[response.status]||'generation_failed');}
+      if(!response.ok){
+        if(documentMode&&adminSession&&[401,403].includes(response.status))await chrome.runtime.sendMessage({type:'gyeote:admin-invalid',token:adminSession.token});
+        const code=await response.json().then(r=>r.detail).catch(()=>null);
+        if(!documentMode&&response.status===413)throw new Error('screen_body_size_limit');
+        if(!documentMode&&response.status===422)throw new Error(['invalid_screen_request','screen_context_budget_exceeded'].includes(code)?code:'screen_request_rejected');
+        throw new Error(documentMode&&code==='sensitive_input'?'sensitive_input':documentMode&&[401,403].includes(response.status)?'document_auth_required':documentMode&&response.status===504?'request_timeout':documentMode&&response.status===499?'request_cancelled':response.status===429&&code==='chat_rate_limited'?'chat_rate_limited':({404:'feature_disabled',413:'input_budget',422:'input_budget',429:'busy',499:'request_stopped',504:'request_stopped'})[response.status]||'generation_failed');
+      }
       const reader=response.body.getReader();let size=0,chunks=[];
       try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>(documentMode?1024*1024:65536))throw new Error('invalid_reply');chunks.push(value);}}
       finally{await reader.cancel().catch(()=>{});}
@@ -75,7 +81,7 @@ chrome.runtime.onConnect.addListener(port=>{
     }catch(error){
       const expired=adminSession&&adminSession.expiresAt<=Date.now()/1000;
       if(expired)await chrome.runtime.sendMessage({type:'gyeote:admin-invalid',token:adminSession.token}).catch(()=>{});
-      send({type:'error',requestId,error:expired?'document_auth_required':controller.signal.aborted?'request_stopped':['connection_configuration_invalid','sensitive_input','invalid_profile','invalid_context','invalid_context_update','document_auth_required','document_access_changed','feature_disabled','input_budget','busy','chat_rate_limited','generation_failed','invalid_reply','request_stopped','request_timeout','request_cancelled'].includes(error.message)?error.message:'connection_failed'});
+      send({type:'error',requestId,error:expired?'document_auth_required':controller.signal.aborted?'request_stopped':['connection_configuration_invalid','sensitive_input','invalid_profile','invalid_context','invalid_context_update','document_auth_required','document_access_changed','feature_disabled','input_budget','screen_body_size_limit','invalid_screen_request','screen_context_budget_exceeded','screen_request_rejected','busy','chat_rate_limited','generation_failed','invalid_reply','request_stopped','request_timeout','request_cancelled'].includes(error.message)?error.message:'connection_failed'});
     }
     finally{clearTimeout(timer);if(active?.controller===controller)active=null;payload=null;packet=null;adminSession=null;}
   });

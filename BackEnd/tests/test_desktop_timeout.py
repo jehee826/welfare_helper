@@ -196,12 +196,13 @@ def test_dom_text_http_contract_and_body_limit_with_fake_model(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from BackEnd.core.execution import InferenceBodyLimit
+    from BackEnd.tests.test_desktop_dom import BudgetLlm
     calls = []
     monkeypatch.setattr(guide, 'get_settings', lambda: Settings(_env_file=None, desktop_guidance_enabled=True,
         desktop_extension_token='x'*40))
     monkeypatch.setenv('BACKEND_BIND_HOST', '127.0.0.1')
     monkeypatch.delenv('VERCEL', raising=False)
-    class Client:
+    class Client(BudgetLlm):
         def chat(self, system, user, **kwargs):
             calls.append(kwargs)
             assert 'images' not in kwargs

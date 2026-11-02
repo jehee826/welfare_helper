@@ -15,14 +15,6 @@ export function writeJson(key: string, value: unknown): void {
   }
 }
 
-export function removeKey(key: string): void {
-  try {
-    localStorage.removeItem(key);
-  } catch {
-    return;
-  }
-}
-
 export const STORAGE_KEYS = {
   profile: "welfare.profile",
   history: "welfare.history",

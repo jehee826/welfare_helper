@@ -34,16 +34,6 @@ export type ChatAnswer =
   | { kind: "answer"; text: string; services: WelfareProgram[]; suggestions: string[] }
   | { kind: "fallback"; text: string; contacts: Contact[]; suggestions: string[] };
 
-export interface DocumentEvidence {
-  chunk_id: string; quote: string; context: string; document_id: string;
-  pages: number[]; source_blocks: string[]; source_url: string;
-  role?: "claim" | "required_context" | "retrieved"; required_by?: string[];
-  redacted?: boolean;
-  source_organization?: string; region_scope?: string; basis_year?: string;
-  source_updated_at?: string; valid_from?: string; valid_until?: string;
-}
-export type DocumentChatAnswer = ChatAnswer & { evidence?: DocumentEvidence[] };
-
 export interface MonthlyStat {
   month: string;
   inquiries: number;

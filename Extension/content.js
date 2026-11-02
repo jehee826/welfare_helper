@@ -244,7 +244,10 @@
         finished=true;
         try{
           if(packet.type!=='result')throw new Error(packet.error||'invalid_reply');
-          if(documentMode){await profilePanel.confirm(requestProfile);if(version!==serial||requestPort!==port)return;}
+          if(documentMode){
+            await profilePanel.confirm(requestProfile);if(version!==serial||requestPort!==port)return;
+            if(Date.now()>=startedAt+budgetSeconds*1000)throw new Error('request_stopped');
+          }
           if(documentMode){
             const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);pendingQuestion=null;setStatus('문서 답변입니다. 원문 근거를 함께 확인하세요.');appendDocumentAnswer(answer);
             if(publicRequest){
@@ -315,7 +318,13 @@
   addEventListener('pagehide',()=>{finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
   addEventListener('pageshow',event=>{if(event.persisted){profilePanel.resume();savedPanel.resume();inputAssist.resume();sizeObserver?.observe(panel);clampPanel();}});
   addEventListener('hashchange',()=>{if(mode==='screen')cancel('화면이 바뀌어 이전 표시를 지웠습니다.');else inputAssist.invalidate();snapshot=null;history=[];});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){finishDrag();cancel('탭을 떠나 이전 표시를 지웠습니다.');}else inputAssist.update();});
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden){
+      finishDrag();
+      if(mode==='screen')cancel('탭을 떠나 이전 표시를 지웠습니다.');
+      else inputAssist.cancel();
+    }else inputAssist.update();
+  });
   observer=new MutationObserver(records=>{
     if(!host.isConnected){if(typeof document!=='undefined'){finishDrag();sizeObserver?.disconnect();cancel();inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();style.remove();observer.disconnect();}return;}
     const owned=node=>node===host||node===style||node.nodeType===1&&node.matches('[data-gyeote-host],[data-gyeote-mask],[data-gyeote-style]');

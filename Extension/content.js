@@ -105,6 +105,7 @@
   addEventListener('keydown',event=>{if(event.key==='Escape'&&panel.classList.contains('is-listening')){event.preventDefault();inputAssist?.cancel();}});
   const requestNotice=document.createElement('p');requestNotice.className='request-notice';requestNotice.hidden=true;cancelButton.before(requestNotice);
   const tools=$('.panel-tools'),menuButton=$('.menu-toggle'),profileButton=$('.profile-toggle');
+  formStyle.textContent+='.head .profile-toggle[aria-expanded=true]{background:#eaf1ff;color:#174b8d;border-color:#aac6ee;box-shadow:inset 0 1px 3px #174b8d18}.head .profile-toggle:active{transform:translateY(1px);background:#dce8fc}';
   function showMenu(open){tools.hidden=!open;menuButton.setAttribute('aria-expanded',String(open));if(open)transcript.scrollTop=0;}
   menuButton.addEventListener('click',()=>{if(collapsed)$('.collapse').click();showMenu(tools.hidden);if(!tools.hidden)$('.settings').focus();});
   const modeLabel=document.createElement('label'),modeSelect=document.createElement('select');modeSelect.className='mode';modeSelect.setAttribute('aria-label','질문 모드');

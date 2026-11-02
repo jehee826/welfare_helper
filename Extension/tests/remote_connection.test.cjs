@@ -2,9 +2,11 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const {JSDOM}=require('../../FrontEnd/node_modules/jsdom');
 const {worker,ui,source,settle,key}=require('./conversation_fixture.cjs');
 const {packageExtension,runtimeFiles}=require('../package.cjs');
-const local=require('../protocol.js'),origin='https://api.example.invalid',token='a'.repeat(40),expiresAt=Math.floor(Date.now()/1000)+600;
+const installed=require('../protocol.js'),origin='https://api.example.invalid',token='a'.repeat(40),expiresAt=Math.floor(Date.now()/1000)+600;
+const sourceProtocol=source('protocol.js');
 const packagePath=packageExtension({origin,name:'t8-test-'+crypto.randomUUID()}),read=name=>fs.readFileSync(path.join(packagePath,name),'utf8');
 function protocol(readSource=read){const context={URL};vm.runInNewContext(readSource('protocol.js'),context);return context.GyeoteProtocol;}
+const localPath=packageExtension({origin:'http://127.0.0.1:8000',name:'t8-local-default-'+crypto.randomUUID()}),local=protocol(name=>fs.readFileSync(path.join(localPath,name),'utf8'));
 function offscreen({auth={mode:'anonymous',accessId:'public-1',origin},fetcher=async()=>new Response(JSON.stringify({kind:'answer',text:'가상 답변',evidence:[]})),policy=protocol()}={}){
   let connect,receive;const sent=[],messages=[],calls=[];
   const chrome={runtime:{id:'x',onConnect:{addListener(fn){connect=fn;}},onMessage:{addListener(){}},sendMessage:async message=>{messages.push(message);if(message.type==='gyeote:document-auth')return typeof auth==='function'?auth():auth;if(message.type==='gyeote:connection')return {token,timeoutSeconds:30,imageEnabled:true};return {ok:true};}}};
@@ -17,10 +19,20 @@ test('운영 allowlist 패키지는 정적 origin·정확한 host·CSP를 일치
   assert.deepEqual(fs.readdirSync(packagePath).sort(),[...runtimeFiles].sort());
   const manifest=JSON.parse(read('manifest.json'));assert.deepEqual(manifest.host_permissions,[origin+'/*']);assert.deepEqual(manifest.permissions,JSON.parse(source('manifest.json')).permissions);assert.ok(manifest.permissions.includes('activeTab'));
   for(const name of ['options.html','offscreen.html']){assert.ok(read(name).includes('connect-src '+origin+';'));assert.ok(!read(name).includes('connect-src http:'));}
-  assert.equal(protocol().documentOrigin(),origin);assert.equal(local.documentOrigin(),'http://127.0.0.1:8000');
+  assert.equal(protocol().documentOrigin(),origin);assert.equal(protocol().screenAvailable(),false);assert.equal(local.documentOrigin(),'http://127.0.0.1:8000');
   const before=read('protocol.js');assert.throws(()=>packageExtension({origin,name:path.basename(packagePath)}),/덮어쓰지/);assert.equal(read('protocol.js'),before);
   assert.throws(()=>packageExtension({origin,name:'../escape'}));assert.throws(()=>packageExtension({origin,name:'other',extra:true}));
-  assert.ok(source('protocol.js').includes("const documentDeployment=Object.freeze({origin:'http://127.0.0.1:8000',timeoutSeconds:600});"));
+  assert.equal(source('protocol.js'),sourceProtocol);
+});
+
+test('기존 설치 기본값은 HTTPS 원격 DOM이며 로컬 연결값을 원격 요청에 재사용하지 않는다',()=>{
+  const deployedOrigin='https://15.164.190.21';
+  assert.equal(installed.documentOrigin(),deployedOrigin);assert.equal(installed.isLocalOrigin(),false);assert.equal(installed.screenAvailable(),true);
+  assert.equal(installed.documentTimeoutSeconds({timeoutSeconds:120}),600);assert.equal(installed.screenTimeoutSeconds({timeoutSeconds:120}),90);
+  assert.equal(installed.documentSession({token,expiresAt,origin:'http://127.0.0.1:8000'}),false);
+  assert.deepEqual(JSON.parse(source('manifest.json')).host_permissions,[deployedOrigin+'/*']);
+  for(const name of ['options.html','offscreen.html'])assert.ok(source(name).includes('connect-src '+deployedOrigin+';'));
+  for(const name of ['options.html','offscreen.html'])assert.ok(fs.readFileSync(path.join(localPath,name),'utf8').includes('connect-src http://127.0.0.1:8000;'));
 });
 
 for(const value of ['http://api.example.invalid','https://a.invalid/path','https://a.invalid/','https://u:p@a.invalid','https://*.invalid','https://a.invalid?q=1','https://a.invalid#h','https://a.invalid;evil','https://a.invalid' + String.fromCharCode(39) + ';evil','https://bad_label.invalid','https://a.invalid:0','https://a.invalid:65536',' https://a.invalid','https://a.invalid\\other'])test('정적 origin 거절: '+value,()=>assert.throws(()=>local.validateDocumentOrigin(value),/connection_configuration_invalid/));

@@ -6,7 +6,7 @@
   "description": "현재 공개 복지로 화면을 설명하고 관련 요소를 표시합니다.",
   "permissions": ["activeTab", "storage", "offscreen"],
   "options_page": "options.html",
-  "host_permissions": ["http://127.0.0.1:8000/*"],
+  "host_permissions": ["https://15.164.190.21/*"],
   "action": {"default_title": "곁에 열기 · 이번 탭 화면 권한 허용"},
   "background": {"service_worker": "worker.js"},
   "content_scripts": [{

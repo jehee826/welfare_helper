@@ -1,6 +1,6 @@
 (() => {
-  const documentDeployment=Object.freeze({origin:'http://127.0.0.1:8000',timeoutSeconds:600});
-  const remoteScreenDeployment=false;
+  const documentDeployment=Object.freeze({origin:'https://15.164.190.21',timeoutSeconds:600});
+  const remoteScreenDeployment=true;
   const localDocumentOrigin='http://127.0.0.1:8000';
   function validateDocumentOrigin(value){
     try{

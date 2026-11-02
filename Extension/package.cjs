@@ -19,11 +19,12 @@ function packageExtension({origin,name,timeoutSeconds=600,remoteScreen=false,...
     if(!fs.lstatSync(source).isFile())throw new Error('운영 파일은 일반 파일이어야 합니다.');
     let content=fs.readFileSync(source,'utf8');
     if(name==='protocol.js'){
-      const marker="const documentDeployment=Object.freeze({origin:'http://127.0.0.1:8000',timeoutSeconds:600});";
-      if(content.split(marker).length!==2)throw new Error('정적 서버 설정 위치를 확인하지 못했습니다.');
+      const marker=/const documentDeployment=Object\.freeze\(\{[^\r\n]*\}\);/g;
+      if(content.match(marker)?.length!==1)throw new Error('정적 서버 설정 위치를 확인하지 못했습니다.');
       content=content.replace(marker,'const documentDeployment=Object.freeze('+JSON.stringify({origin,timeoutSeconds})+');');
-      if(content.split('const remoteScreenDeployment=false;').length!==2)throw new Error('원격 DOM 설정 위치를 확인하지 못했습니다.');
-      content=content.replace('const remoteScreenDeployment=false;','const remoteScreenDeployment='+remoteScreen+';');
+      const screenMarker=/const remoteScreenDeployment=(?:true|false);/g;
+      if(content.match(screenMarker)?.length!==1)throw new Error('원격 DOM 설정 위치를 확인하지 못했습니다.');
+      content=content.replace(screenMarker,'const remoteScreenDeployment='+remoteScreen+';');
     }
     if(name==='manifest.json'){
       const manifest=JSON.parse(content);manifest.host_permissions=[origin+'/*'];
@@ -32,7 +33,11 @@ function packageExtension({origin,name,timeoutSeconds=600,remoteScreen=false,...
       }
       content=JSON.stringify(manifest,null,2)+'\n';
     }
-    if(name==='options.html'||name==='offscreen.html')content=content.replace('connect-src http://127.0.0.1:8000','connect-src '+origin);
+    if(name==='options.html'||name==='offscreen.html'){
+      const connect=/connect-src [^;"\r\n]+/g;
+      if(content.match(connect)?.length!==1)throw new Error('서버 연결 정책 위치를 확인하지 못했습니다.');
+      content=content.replace(connect,'connect-src '+origin);
+    }
     return [name,content];
   });
   fs.mkdirSync(base,{recursive:true});fs.mkdirSync(output);

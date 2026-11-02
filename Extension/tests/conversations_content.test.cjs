@@ -105,7 +105,7 @@ test('지연 저장과 새 상담 요청 경쟁에서 기록을 덮지 않는다
     await f.ready();await f.question('기존 질문');server.failure.beforeSet=value=>key in value?new Promise(resolve=>{release=resolve;}):undefined;
     const port=f.ports.at(-1),pending=port.receive({type:'result',requestId:port.packet.requestId,body:answer});await settle();
     assert.equal(typeof release,'function');deadline();await pending;await settle();
-    f.button('새 상담',f.root.querySelector('.saved-conversations')).click();await settle();
+    f.button('새 상담',f.root.querySelector('.conversation-nav')).click();await settle();
     delete server.failure.beforeSet;release();await settle();
     const state=server.data[key];assert.equal(state.conversations.length,1);
     assert.equal(state.conversations[0].messages.length,2);
@@ -124,7 +124,7 @@ test('성공 상담·목록·상세를 새 패널에서 복원하고 제한 이�
 test('새 상담은 기존 상담을 보존하며 선택·개별삭제·전체삭제는 확인 후 실행된다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('첫 상담');await f.answer(answer);const first=server.data[key].lastActiveConversationId;
-    await f.click('새 상담',f.root.querySelector('.saved-conversations'));assert.equal(server.data[key].conversations.length,2);assert.equal(f.root.querySelector('.conversation').children.length,0);
+    await f.click('새 상담',f.root.querySelector('.conversation-nav'));assert.equal(server.data[key].conversations.length,2);assert.equal(f.root.querySelector('.conversation').children.length,0);
     await f.click('첫 상담');assert.equal(server.data[key].lastActiveConversationId,first);assert.match(f.root.querySelector('.conversation').textContent,/합성 복지/);
     const row=[...f.root.querySelectorAll('.saved-conversation')].find(row=>row.textContent.includes('첫 상담'));
     await f.click('삭제',row);assert.equal(server.data[key].conversations.length,2);await f.click('취소');assert.equal(server.data[key].conversations.length,2);
@@ -143,7 +143,7 @@ test('미저장 답변은 정리 실패·삭제·새 상담 후에도 보존되�
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('기존 상담');await f.answer(answer);await f.question('보관할 질문');server.failure.quota=true;await f.answer({kind:'answer',text:'보관할 미저장 본문',evidence:[]});
     const ports=f.ports.length;await f.question('다음 질문 초안');assert.equal(f.ports.length,ports);assert.equal(f.root.querySelector('#gyeote-question').value,'다음 질문 초안');
-    await f.click('새 상담',f.root.querySelector('.saved-conversations'));assert.equal(server.data[key].conversations.length,1);assert.match(f.root.querySelector('.unsaved-conversation').textContent,/보관할 미저장 본문/);
+    await f.click('새 상담',f.root.querySelector('.conversation-nav'));assert.equal(server.data[key].conversations.length,1);assert.match(f.root.querySelector('.unsaved-conversation').textContent,/보관할 미저장 본문/);
     server.failure.quota=false;await f.click('전체 상담 삭제');await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,0);assert.match(f.root.querySelector('.unsaved-conversation').textContent,/보관할 미저장 본문/);
     await f.click('새 상담에 미저장 답변 보관');assert.equal(f.ports.length,ports);assert.equal(server.data[key].conversations.length,1);assert.equal(server.data[key].conversations[0].messages[0].content,'보관할 질문');assert.equal(server.data[key].conversations[0].messages[1].content,'보관할 미저장 본문');assert.equal(f.root.querySelector('.unsaved-conversation').hidden,true);
   }finally{f.close();}
@@ -151,7 +151,7 @@ test('미저장 답변은 정리 실패·삭제·새 상담 후에도 보존되�
 test('전송 중 새 상담 선택 뒤 늦은 응답은 표시·저장하지 않는다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('첫 상담');await f.answer(answer);await f.question('늦은 질문');const old=f.ports.at(-1);
-    await f.click('새 상담',f.root.querySelector('.saved-conversations'));await f.answer({kind:'answer',text:'지연된 비정상 답변',evidence:[]},old);
+    await f.click('새 상담',f.root.querySelector('.conversation-nav'));await f.answer({kind:'answer',text:'지연된 비정상 답변',evidence:[]},old);
     assert.ok(old.disconnected);assert.ok(!JSON.stringify(server.data[key]).includes('지연된'));assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/지연된/);
   }finally{f.close();}
 });

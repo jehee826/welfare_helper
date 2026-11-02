@@ -26,7 +26,7 @@ test('추천은 초안만 만들고 명시 전송 때 현재 profile/history/sum
 });
 test('새 상담·모드 전환에서 옛 추천은 무효이고 초안은 덮지 않는다',async()=>{
   const server=worker(seed()),f=ui(server);try{
-    await f.ready();const old=suggestions(f)[0];await f.click('새 상담',f.root.querySelector('.saved-conversations'));old.click();assert.equal(f.root.querySelector('#gyeote-question').value,'');
+    await f.ready();const old=suggestions(f)[0];await f.click('새 상담',f.root.querySelector('.conversation-nav'));old.click();assert.equal(f.root.querySelector('#gyeote-question').value,'');
     const first=suggestions(f)[0];assert.match(first.textContent,/내 조건/);f.root.querySelector('#gyeote-question').value='직접 쓴 초안';first.click();assert.equal(f.root.querySelector('#gyeote-question').value,'직접 쓴 초안');
     await f.mode('screen');first.click();assert.equal(f.root.querySelector('.question-suggestions').hidden,true);assert.equal(f.root.querySelector('#gyeote-question').value,'');assert.equal(f.ports.length,0);
   }finally{f.close();}
@@ -53,7 +53,7 @@ for(const boundary of ['mode','conversation','profile','access','close','collaps
   const server=worker(),voice=speech(),f=ui(server,1,voice.setup);try{
     await f.ready();await f.click('음성 입력');const first=voice.instances[0],late={result:first.onresult,end:first.onend,error:first.onerror};
     if(boundary==='mode')await f.mode('screen');
-    if(boundary==='conversation')await f.click('새 상담',f.root.querySelector('.saved-conversations'));
+    if(boundary==='conversation')await f.click('새 상담',f.root.querySelector('.conversation-nav'));
     if(boundary==='profile')await f.click('내 정보 수정');
     if(boundary==='access')await f.notify({type:'gyeote:document-access-changed',state:{mode:'admin',status:'ready',accessId:'other'}});
     if(boundary==='close')f.root.querySelector('.close').click();

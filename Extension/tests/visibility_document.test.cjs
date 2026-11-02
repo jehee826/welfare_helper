@@ -30,7 +30,7 @@ for(const ending of ['cancel','deadline','pagehide','mode','profile','access','c
   if(ending==='mode')await f.mode('screen');
   if(ending==='profile')await server.send({type:'gyeote:profile-save',expectedRevision:1,profile:{age:60}});
   if(ending==='access')await server.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600}},{id:'x',url:'chrome-extension://x/options.html'});
-  if(ending==='conversation')await f.click('새 상담',f.root.querySelector('.saved-conversations'));
+  if(ending==='conversation')await f.click('새 상담',f.root.querySelector('.conversation-nav'));
   await settle();assert.equal(port.disconnected,true);assert.equal(server.data[key]?.conversations?.some(c=>c.messages.length>0)??false,false);
  }finally{f.close();}
 });

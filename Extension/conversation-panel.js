@@ -4,16 +4,17 @@
   errors.conversation_context_conflict='요청 당시 대화 맥락과 현재 기록이 달라 자동 저장하지 않았습니다.';
   function create(slot,{invalidate,render,profileRevision,onStateChange=()=>{},alerts=slot,onError=()=>{}}){
     const details=document.createElement('details'),summary=document.createElement('summary'),notice=document.createElement('p'),list=document.createElement('div'),actions=document.createElement('div'),confirmation=document.createElement('div'),unsaved=document.createElement('div');
-    details.className='saved-conversations';summary.textContent='이전 상담';notice.className='muted';notice.setAttribute('role','status');list.className='saved-conversation-list';actions.className='row';confirmation.hidden=true;unsaved.hidden=true;unsaved.className='unsaved-conversation';unsaved.setAttribute('role','status');
+    details.className='saved-conversations';summary.textContent='다른 상담';notice.className='muted';notice.setAttribute('role','status');list.className='saved-conversation-list';actions.className='row';confirmation.hidden=true;unsaved.hidden=true;unsaved.className='unsaved-conversation';unsaved.setAttribute('role','status');
+    const nav=document.createElement('div'),title=document.createElement('strong');nav.className='conversation-nav';nav.setAttribute('aria-label','현재 상담');title.className='conversation-title';nav.append(title);
     const warning=document.createElement('p');warning.className='conversation-warning';warning.setAttribute('role','status');
-    details.append(summary,notice,actions,list,confirmation);slot.append(details);alerts.append(warning,unsaved);slot.hidden=true;
-    let state=null,access=null,version=0,changing=false,pending=null,resetToken=null,notification=null,disposed=false,ownedPair=null,visibleNow=false;
+    details.append(summary,notice,actions,list,confirmation);slot.append(nav,details);alerts.append(warning,unsaved);slot.hidden=true;
+    let state=null,access=null,version=0,changing=false,pending=null,resetToken=null,notification=null,disposed=false,ownedPair=null,visibleNow=false,restoreOnLoad=true;
     const button=(label,action)=>{const node=document.createElement('button');node.type='button';node.textContent=label;node.addEventListener('click',action);return node;};
     const reload=button('목록 다시 불러오기',()=>{invalidate();void load(true);});
     const newButton=button('새 상담',()=>void mutate('new'));
     const clearButton=button('전체 상담 삭제',()=>confirmDelete(null));
     const resetButton=button('상담 저장소 재설정',()=>confirmDelete('reset'));
-    actions.append(newButton,clearButton,reload,resetButton);
+    nav.append(newButton);actions.append(clearButton,reload,resetButton);
     function current(){return state?.conversations.find(c=>c.id===state.lastActiveConversationId)||null;}
     function context(){
       if(!state||!access||access.mode!=='anonymous'||changing||disposed||resetToken)throw new Error('conversation_storage_failed');
@@ -27,7 +28,8 @@
     }
     function show(){
       list.replaceChildren();confirmation.hidden=true;resetButton.hidden=!resetToken;
-      summary.textContent=`이전 상담 (${state?.conversations.length||0}/30)`;
+      title.textContent=current()?.title||'새 상담';title.title=title.textContent;
+      summary.textContent=`다른 상담 (${state?.conversations.length||0}/30)`;
       newButton.disabled=changing||!state;clearButton.disabled=changing||!state?.conversations.length;
       for(const conversation of [...(state?.conversations||[])].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))){
         const row=document.createElement('div');row.className='saved-conversation row';
@@ -57,7 +59,20 @@
     async function load(display=true){
       if(!access||access.mode!=='anonymous'||disposed)return;
       const owner=++version;changing=true;show();
-      try{const response=await send('get');if(owner===version){changing=false;apply(response,display);}}
+      try{
+        const response=await send('get');
+        if(owner===version){
+          changing=false;apply(response,display);
+          if(restoreOnLoad){
+            restoreOnLoad=false;
+            // 유효한 빈 상담은 명시적으로 시작한 새 상담이므로 자동 전환하지 않는다.
+            if(state.lastActiveConversationId===null&&!response.warning){
+              const latest=[...state.conversations].filter(conversation=>conversation.messages.length).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))[0];
+              if(latest)await mutate('select',{conversationId:latest.id});
+            }
+          }
+        }
+      }
       catch(error){if(owner===version){changing=false;state=null;errorNotice(error);}}
     }
     function confirmDelete(target){
@@ -73,7 +88,7 @@
       invalidate();changing=true;notification=null;const owner=++version;show();
       try{
         const response=await send(operation,{...(operation==='reset'?{}:{expectedRevision:expected.expectedRevision,generation:expected.generation}),...fields});
-        if(owner===version){changing=false;apply(response);}
+        if(owner===version){changing=false;apply(response);if(operation==='select'||operation==='new')details.open=false;}
       }catch(error){if(owner===version){changing=false;errorNotice(error);if(error.message==='conversation_conflict')await load(true);}}
       finally{if(owner===version){changing=false;show();if(pending)showUnsaved(new Error(pending.errorCode));const message=notification;notification=null;if(message)changed(message.revision,message.generation);}}
     }
@@ -148,7 +163,7 @@
       slot.hidden=!visible||value?.mode!=='anonymous';
       if(alerts!==slot)alerts.hidden=slot.hidden;
       if(same){if(visible&&!state&&!changing)await load();else if(becameVisible&&state)render(current());return;}
-      version++;cancelRequest();access=value;state=null;pending=null;resetToken=null;changing=false;unsaved.hidden=true;warning.textContent='';notification=null;
+      version++;cancelRequest();access=value;state=null;pending=null;resetToken=null;changing=false;unsaved.hidden=true;warning.textContent='';notification=null;restoreOnLoad=true;
       if(value?.mode==='anonymous'&&visible)await load();else show();
     }
     return {context,begin,save,changed,setAccess,cancelRequest,get state(){return state;},get ready(){return !!state&&!changing&&!resetToken;},get hasUnsaved(){return !!pending;},history:revision=>GyeoteConversations.history(current(),revision),newConversation:()=>mutate('new'),dispose(){disposed=true;version++;cancelRequest();},resume(){disposed=false;void load();}};

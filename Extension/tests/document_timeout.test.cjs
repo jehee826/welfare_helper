@@ -26,7 +26,7 @@ for(const [label,connection,documentSeconds,screenSeconds] of [
 test('문서600초 기본값은 패널 안내와 포트 기한에 반영된다',async()=>{
   const server=worker();delete server.session.connection;const f=ui(server);try{
     await f.ready();const start=Date.now();await f.question('합성 문서 질문');
-    assert.match(f.root.querySelector('.status').textContent,/최대 600초/);
+    assert.match(f.root.querySelector('.request-notice').textContent,/최대 600초/);
     assert.ok(f.ports[0].packet.deadlineAt>=start+599000&&f.ports[0].packet.deadlineAt<=Date.now()+600000);
   }finally{f.close();}
 });

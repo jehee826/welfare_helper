@@ -85,7 +85,7 @@ test('미저장 요약 후보는 같은 상담 재저장 때 유지하고 다른
     const server=worker(seed()),f=ui(server);try{
       await f.ready();await f.question('신청처는?');const input=f.ports.at(-1).packet.payload.conversation_context,ports=f.ports.length;
       server.failure.quota=true;await f.answer({...answer,context_update:update(input)});assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);server.failure.quota=false;
-      if(move){await f.click('새 상담',f.root.querySelector('.saved-conversations'));await f.click('선택한 상담에 미저장 답변 보관');}
+      if(move){await f.click('새 상담',f.root.querySelector('.conversation-nav'));await f.click('선택한 상담에 미저장 답변 보관');}
       else await f.click('답변 저장 다시 시도');
       assert.equal(f.ports.length,ports);const saved=server.data[key].conversations.find(c=>c.id===server.data[key].lastActiveConversationId);
       assert.equal(!!saved.summary,!move);assert.equal(!!saved.messages.at(-1).contextUpdate,!move);

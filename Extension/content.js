@@ -20,12 +20,12 @@
   style.dataset.gyeoteStyle='';style.textContent=palette.map((p,i)=>`.${classes[i]}{outline:4px solid ${p.color}!important;outline-offset:4px!important}.${classes[i]}:focus-visible{outline-style:double!important;outline-width:6px!important}`).join('\n');document.documentElement.append(style);
   let selected=[],snapshot=null,serial=0,frame=0,collapsed=false,ownMutation=false,observer,requestPort=null,busy=false,activeReply=null,history=[],historyUrl='',pageVersion=0,capturing=false,requestTimer;
   let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
-  let screenAllowed=false,localOrigin=false,configurationReady=false,pendingQuestion=null;
+  let screenAllowed=false,localOrigin=false,configurationReady=false,pendingQuestion=null,pendingReply=null,accessVersion=0;
   try{screenAllowed=GyeoteProtocol.screenAvailable();localOrigin=GyeoteProtocol.isLocalOrigin();configurationReady=true;}catch{}
   const conversations={screen:[],document:[]};
   const rootStyles=new Map([[document,style]]);
   const observeOptions={subtree:true,childList:true,characterData:true,attributes:true,attributeOldValue:true,attributeFilter:['class','style','hidden','disabled','aria-disabled','aria-hidden','aria-modal','aria-label','aria-labelledby','title','role','href','type','id','for']};
-  function setStatus(text){status.textContent=text;}
+  function setStatus(text){const follow=pendingReply?.isConnected&&atConversationEnd();status.textContent=text;if(follow)transcript.scrollTop=transcript.scrollHeight;}
   function clear(message){
     ownMutation=true;for(const {node,index} of selected)node.classList.remove(classes[index]);selected=[];badges.replaceChildren();ownMutation=false;
     for(const [root,sheet] of rootStyles)if(root!==document){sheet.remove();rootStyles.delete(root);}
@@ -37,7 +37,13 @@
     const notice=document.createElement('p');notice.className='request-outcome muted';notice.textContent=message;
     if(pendingQuestion.isConnected)pendingQuestion.append(notice);pendingQuestion=null;
   }
-  function cancel(message){finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;questionForm.querySelector('button[type="submit"]').disabled=false;cancelButton.hidden=true;clear(message);inputAssist?.invalidate();}
+  function removePending(){pendingReply?.remove();pendingReply=null;}
+  function showPending(){
+    removePending();const follow=atConversationEnd();pendingReply=document.createElement('div');pendingReply.className='pending-reply';pendingReply.setAttribute('role','status');pendingReply.setAttribute('aria-live','polite');
+    pendingReply.innerHTML='<span class="sr-only">곁에가 답변을 준비하고 있습니다.</span><span class="thinking-dots" aria-hidden="true"><span>•</span><span>•</span><span>•</span></span>';
+    $('.conversation').append(pendingReply);if(follow)transcript.scrollTop=transcript.scrollHeight;
+  }
+  function cancel(message){removePending();finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;questionForm.querySelector('button[type="submit"]').disabled=false;cancelButton.hidden=true;requestNotice.hidden=true;clear(message);inputAssist?.invalidate();}
   function position(){
     frame=0;
     if(!selected.length)return;
@@ -84,16 +90,25 @@
     .onboarding{background:#f7f7f7;padding:12px;border-radius:14px;margin-bottom:12px;font-size:14px}.onboarding p{margin:0 0 10px}.onboarding button{font-size:14px}.conversation{white-space:pre-wrap;min-height:100px}.conversation:empty::before{content:'무엇을 도와드릴까요?';display:block;padding:50px 8px;color:#777;text-align:center;font-size:18px}.conversation article{width:fit-content;max-width:94%;padding:12px 14px;margin:0 0 14px;background:#f5f5f5;border-radius:16px 16px 16px 4px}.conversation article.user-message{margin-left:auto;background:#202020;color:#fff;border-radius:16px 16px 4px 16px}.conversation article.user-message small{color:#ddd}.conversation small{display:block;margin-bottom:4px;color:#666;font-size:13px}.conversation article p{margin:8px 0}.conversation details{font-size:13px;margin-top:8px}.conversation-warning{padding:10px;border:1px solid #bbb;border-radius:10px;font-size:13px}.conversation-alerts:empty{display:none}
     @media(max-height:600px){.head{padding:8px 12px}.transcript{padding:12px}.consultation{padding:8px 12px}.consultation form{gap:6px}.question-suggestions button{padding:6px 4px}.conversation:empty::before{padding:20px 4px}}`;
   shadow.append(formStyle);
+  formStyle.textContent+=`.head{gap:4px;padding:10px 12px}.head strong{font-size:20px;letter-spacing:-1px;min-width:36px}.head .menu-toggle,.head .collapse{width:32px;flex-shrink:0}.head .profile-toggle{padding:6px;font-size:13px;flex-shrink:0}.mode-switch{display:flex;flex-shrink:0;border:1px solid #e5e5e5;border-radius:12px;background:#f6f6f6;padding:2px}.head .mode-switch button{font-size:13px;padding:4px 6px;min-height:40px;border-radius:9px;background:transparent}.head .mode-switch button[aria-pressed=true]{background:#fff;color:#111;box-shadow:0 1px 4px #0002}.head .mode-switch button:disabled{color:#888;cursor:not-allowed}.mode-reason{font-size:13px;margin:0;padding:4px 12px;color:#666;flex-shrink:0}.conversation-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.conversation-title{flex:1;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.conversation-nav button,.saved-conversations summary{font-size:13px}.saved-conversations{margin:0 0 12px}.pending-reply{width:fit-content;padding:12px 16px;margin-bottom:14px;background:#f5f5f5;border-radius:16px 16px 16px 4px}.thinking-dots{display:flex;gap:5px;font-size:22px;line-height:1}.thinking-dots span{animation:gyeote-thinking 1.2s infinite ease-in-out}.thinking-dots span:nth-child(2){animation-delay:.15s}.thinking-dots span:nth-child(3){animation-delay:.3s}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.request-notice{margin:0;font-size:13px;color:#666;align-self:center}@keyframes gyeote-thinking{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}@media(prefers-reduced-motion:reduce){.thinking-dots span{animation:none;opacity:1}}`;
   formStyle.textContent+='.saved-conversation-list{max-height:160px;overflow:auto}.saved-conversation{padding:6px 0;border-bottom:1px solid #eee}.saved-conversation button:first-child{max-width:100%;overflow-wrap:anywhere;text-align:left}.saved-conversation small{font-size:13px;color:#666}.unsaved-conversation{padding:10px;border:1px solid #777;border-radius:9px;margin-top:10px}.unsaved-conversation>div{max-height:180px;overflow:auto;overflow-wrap:anywhere}';
   $('.consultation').innerHTML='<form><label class="question-label" for="gyeote-question">복지 상담</label><div class="compose-row"><input id="gyeote-question" type="text" maxlength="240" autocomplete="off" placeholder="개인정보 없이 질문하세요"><button type="submit">보내기</button></div><p class="send-notice"></p><div class="composer-actions"><button class="cancel" type="button" hidden>요청 취소</button></div></form>';
   const questionForm=$('.consultation form'),cancelButton=$('.cancel');
+  const requestNotice=document.createElement('p');requestNotice.className='request-notice';requestNotice.hidden=true;cancelButton.before(requestNotice);
   const tools=$('.panel-tools'),menuButton=$('.menu-toggle'),profileButton=$('.profile-toggle');
   function showMenu(open){tools.hidden=!open;menuButton.setAttribute('aria-expanded',String(open));if(open)transcript.scrollTop=0;}
-  menuButton.addEventListener('click',()=>{if(collapsed)$('.collapse').click();showMenu(tools.hidden);if(!tools.hidden)modeSelect.focus();});
+  menuButton.addEventListener('click',()=>{if(collapsed)$('.collapse').click();showMenu(tools.hidden);if(!tools.hidden)$('.settings').focus();});
   const modeLabel=document.createElement('label'),modeSelect=document.createElement('select');modeSelect.className='mode';modeSelect.setAttribute('aria-label','질문 모드');
   for(const [value,text] of [['document','복지 상담'],['screen','화면 안내']]){const option=document.createElement('option');option.value=value;option.textContent=text;option.disabled=value==='screen'&&!screenAllowed;modeSelect.append(option);}
   modeSelect.value=mode;
-  modeLabel.append(document.createTextNode('질문 모드 '),modeSelect);tools.prepend(modeLabel);
+  modeLabel.hidden=true;modeLabel.append(modeSelect);tools.prepend(modeLabel);
+  const modeSwitch=document.createElement('div');modeSwitch.className='mode-switch';modeSwitch.setAttribute('role','group');modeSwitch.setAttribute('aria-label','질문 모드');
+  for(const [value,label] of [['document','질문'],['screen','안내']]){
+    const button=document.createElement('button');button.type='button';button.dataset.mode=value;button.textContent=label;button.setAttribute('aria-pressed',String(value===mode));button.disabled=value==='screen'&&!screenAllowed;
+    button.addEventListener('click',()=>{modeSelect.value=value;modeSelect.dispatchEvent(new Event('change'));});modeSwitch.append(button);
+  }
+  profileButton.before(modeSwitch);
+  const modeReason=document.createElement('p');modeReason.className='mode-reason';modeReason.textContent='이 패키지는 화면 안내를 제공하지 않습니다.';modeReason.hidden=screenAllowed;modeReason.id='gyeote-mode-reason';if(!screenAllowed)modeSwitch.querySelector('[data-mode=screen]').setAttribute('aria-describedby',modeReason.id);$('.head').after(modeReason);
   const modeNotice=document.createElement('p');modeNotice.className='muted';modeLabel.after(modeNotice);
   const accessNotice=document.createElement('p');accessNotice.className='muted document-access';modeNotice.after(accessNotice);
   const profileSlot=$('.profile-slot');
@@ -120,10 +135,10 @@
   profilePanel.ready.then(()=>{if(!profilePanel.state){profileOpen=true;updateProfileView();}});
   $('.onboarding-edit').addEventListener('click',()=>{if(!profileOpen)profileButton.click();});
   $('.onboarding-later').addEventListener('click',()=>void profilePanel.defer());
-  const savedSlot=document.createElement('div');savedSlot.className='saved-slot';modeNotice.after(savedSlot);
+  const savedSlot=document.createElement('div');savedSlot.className='saved-slot';transcript.prepend(savedSlot);
   const conversationAlerts=document.createElement('div');conversationAlerts.className='conversation-alerts';transcript.append(conversationAlerts);
   savedPanel=GyeoteConversationPanel.create(savedSlot,{
-    invalidate:()=>{inputAssist?.invalidate();if(mode==='document'){cancel('상담이 바뀌어 이전 요청을 중지했습니다.');documentHistory=[];}},
+    invalidate:()=>{inputAssist?.invalidate();if(mode==='document'){cancel(busy||requestPending?'상담이 바뀌어 이전 요청을 중지했습니다.':undefined);documentHistory=[];}},
     alerts:conversationAlerts,
     onError:()=>showMenu(true),
     onStateChange:()=>inputAssist?.update(),
@@ -132,11 +147,13 @@
       if(mode!=='document'||currentAccess?.mode!=='anonymous')return;
       const same=transcript.dataset.conversationId===(conversation?.id||''),follow=!same||atConversationEnd(),scroll=transcript.scrollTop;
       transcript.dataset.conversationId=conversation?.id||'';
+      const pendingNodes=[pendingQuestion,pendingReply].filter(node=>node?.isConnected);
       $('.conversation').replaceChildren();
       for(const message of conversation?.messages||[]){
         if(message.role==='user')appendMessage('user',message.content,100);
         else appendDocumentAnswer({kind:message.kind,text:message.content,evidence:message.evidence,evidenceTruncated:message.evidenceTruncated,context_usage:message.contextUsage},true);
       }
+      $('.conversation').append(...pendingNodes);
       transcript.scrollTop=follow?transcript.scrollHeight:scroll;
       inputAssist?.update();
     }
@@ -148,13 +165,13 @@
     currentAccess=state;
     conversationAlerts.hidden=mode!=='document'||state?.mode!=='anonymous';
     accessNotice.textContent=state?.mode==='admin'?(state.status==='ready'?'문서 접근: 관리자 연결됨':'문서 접근: 관리자 세션 만료 · 연결 설정에서 다시 로그인하세요.'):'문서 접근: 공개 문서 (익명)';
-    $('.reset').textContent=state?.mode==='anonymous'?'새 상담':'임시 대화 지우기';
+    $('.reset').hidden=mode==='document'&&state?.mode==='anonymous';$('.reset').textContent=mode==='document'?'임시 대화 지우기':'안내 대화 지우기';
     const result=savedPanel.setAccess(state,mode==='document');inputAssist?.update();return result;
   }
   async function refreshDocumentAccess(){
-    const version=serial;
-    try{const state=await chrome.runtime.sendMessage({type:'gyeote:document-access'});if(version===serial&&mode==='document'){if(!['admin','anonymous'].includes(state?.mode))throw new Error();if(documentHistoryAccess&&documentHistoryAccess!==accessKey(state))resetDocumentHistory();showDocumentAccess(state);}}
-    catch{if(version===serial&&mode==='document'){accessNotice.textContent='문서 접근 상태 확인 필요 · 연결 설정을 확인하세요.';setStatus('문서 연결 상태를 확인하지 못했습니다. 상담 메뉴의 연결 설정을 확인하세요.');}}
+    const version=++accessVersion;
+    try{const state=await chrome.runtime.sendMessage({type:'gyeote:document-access'});if(version===accessVersion&&mode==='document'&&host.isConnected){if(!['admin','anonymous'].includes(state?.mode))throw new Error();if(documentHistoryAccess&&documentHistoryAccess!==accessKey(state))resetDocumentHistory();showDocumentAccess(state);}}
+    catch{if(version===accessVersion&&mode==='document'&&host.isConnected){accessNotice.textContent='문서 접근 상태 확인 필요 · 연결 설정을 확인하세요.';setStatus('문서 연결 상태를 확인하지 못했습니다. 상담 메뉴의 연결 설정을 확인하세요.');}}
   }
   const imageLabel=document.createElement('label'),imageOption=document.createElement('input');imageOption.type='checkbox';imageOption.className='image-option';imageLabel.append(imageOption,document.createTextNode('이번 질문에 개인정보 없는 공개 화면 한 장을 연결 서버로 전송합니다. SSH 연결 시 EC2로 전송됨을 확인합니다.'));tools.append(imageLabel);
   const imageNotice=document.createElement('p');imageNotice.className='muted';imageNotice.textContent='이 체크는 이미지 첨부 여부만 바꿉니다. 모델은 연결 서버에서 정합니다. 사용 시 확장 아이콘을 먼저 눌러 탭 권한을 허용하세요. 입력란·프레임·캔버스·영상은 가리고 나머지 공개 영역만 보냅니다. 모든 민감정보를 자동 확인할 수는 없습니다. 이미지 저장 없음.';imageLabel.after(imageNotice);
@@ -162,6 +179,8 @@
   imageOption.addEventListener('change',()=>imageReminder.hidden=!imageOption.checked);
   function updateMode(){
     const documentMode=mode==='document',input=$('#gyeote-question');
+    $('.reset').hidden=documentMode&&currentAccess?.mode==='anonymous';$('.reset').textContent=documentMode?'임시 대화 지우기':'안내 대화 지우기';
+    for(const button of modeSwitch.querySelectorAll('button'))button.setAttribute('aria-pressed',String(button.dataset.mode===mode));
     panel.setAttribute('aria-label',documentMode?'곁에 복지 상담':'곁에 화면 안내');
     imageOption.checked=false;imageOption.disabled=documentMode||!localOrigin;imageLabel.hidden=documentMode||!localOrigin;imageNotice.hidden=documentMode||!localOrigin;$('.screen-controls').hidden=documentMode;
     imageReminder.hidden=true;
@@ -181,7 +200,7 @@
   modeSelect.addEventListener('change',()=>{
     if(modeSelect.value==='screen'&&!screenAllowed){modeSelect.value=mode;setStatus('이 패키지는 원격 화면 안내를 제공하지 않습니다. 복지 상담을 이용해 주세요.');return;}
     if(!['screen','document'].includes(modeSelect.value)||modeSelect.value===mode)return;
-    cancel();snapshot=null;conversations[mode]=[...$('.conversation').children];mode=modeSelect.value;
+    cancel();accessVersion++;snapshot=null;conversations[mode]=[...$('.conversation').children];mode=modeSelect.value;
     $('.conversation').replaceChildren(...conversations[mode]);updateMode();
   });
   inputAssist=GyeoteInputAssist.create(questionForm,{controls:tools,state:()=>{
@@ -243,7 +262,7 @@
     const stoppedText=()=>budgetSeconds?`요청이 취소되거나 설정된 ${budgetSeconds}초를 넘었습니다. 서버 확인 후 직접 다시 질문하세요.`:errors.request_stopped;
     const includeImage=!documentMode&&localOrigin&&imageOption.checked;imageOption.checked=false;imageReminder.hidden=true;
     if(documentMode?(!question.trim()||question.length>300):!GyeoteProtocol.text(question,240)){setStatus(`개인정보 없이 질문을 ${documentMode?300:240}자 이내로 입력하세요.`);return;}
-    requestPending=true;inputAssist.update();
+    requestPending=true;const follow=atConversationEnd(),questionMessage=appendMessage('user',GyeoteProtocol.privacy.maskText(question,true));if(documentMode)pendingQuestion=questionMessage.article;showPending();questionForm.querySelector('button[type="submit"]').disabled=true;cancelButton.hidden=false;requestNotice.hidden=false;requestNotice.textContent='취소할 수 있어요.';setStatus('');inputAssist.update();if(follow)transcript.scrollTop=transcript.scrollHeight;
     try{
       let source=null,payload;
       if(documentMode){
@@ -252,6 +271,7 @@
         if(!['anonymous','admin'].includes(access?.mode))throw new Error('connection_failed');
         if(currentAccess&&accessKey(currentAccess)!==accessKey(access))resetDocumentHistory();
         await showDocumentAccess(access);if(version!==serial)return;requestAccess=accessKey(access);publicRequest=access.mode==='anonymous';
+        if(!pendingQuestion?.isConnected){pendingQuestion=appendMessage('user',GyeoteProtocol.privacy.maskText(question,true)).article;showPending();}
         if(publicRequest){conversationContext=savedPanel.context();requestInput=await savedPanel.begin(conversationContext,requestId,requestProfile.revision);if(version!==serial)return;}
         payload=GyeoteProtocol.documentRequest({query:question,...(publicRequest?requestInput:{history:documentHistory}),profile:requestProfile.profile});
       }
@@ -261,7 +281,7 @@
         payload={...source.payload,question,history:history.slice(-4)};
         if(!localOrigin){delete payload.title;GyeoteProtocol.remoteScreenRequest(payload);}else GyeoteProtocol.request(payload);
       }
-      const questionMessage=appendMessage('user',question);if(documentMode)pendingQuestion=questionMessage.article;busy=true;questionForm.querySelector('button[type="submit"]').disabled=true;cancelButton.hidden=false;setStatus(documentMode?'등록 문서에서 답변을 찾고 있습니다.':'현재 공개 화면을 확인해 답변하고 있습니다.');
+      busy=true;
       requestTimer=setTimeout(()=>{if(version===serial)cancel(errors.connection_failed);},10000);
       const prepared=await chrome.runtime.sendMessage({type:'gyeote:prepare',mode});if(version!==serial)return;
       if(!prepared?.ok)throw new Error(prepared?.error||'connection_failed');
@@ -269,7 +289,7 @@
         const access=accessKey(prepared.documentAccess);
         if(access!==requestAccess)throw new Error('document_access_changed');
         // 알림이 늦어져도 이전 관리자 이력을 다른 접근 상태의 요청에 싣지 않는다.
-        if(documentHistoryAccess&&documentHistoryAccess!==access){resetDocumentHistory();payload.history=[];pendingQuestion=appendMessage('user',question).article;}
+        if(documentHistoryAccess&&documentHistoryAccess!==access){resetDocumentHistory();payload.history=[];pendingQuestion=appendMessage('user',GyeoteProtocol.privacy.maskText(question,true)).article;showPending();}
         documentHistoryAccess=access;
         if(prepared.documentAccess)showDocumentAccess(prepared.documentAccess);
       }
@@ -277,7 +297,7 @@
       const remaining=budgetSeconds*1000-(Date.now()-startedAt);
       if(remaining<=0)throw new Error('request_stopped');
       clearTimeout(requestTimer);requestTimer=setTimeout(()=>{if(version===serial)cancel(stoppedText());},remaining);
-      setStatus(`${documentMode?'등록 문서에서 답변을 찾고 있습니다.':'현재 공개 화면을 확인해 답변하고 있습니다.'} 최대 ${budgetSeconds}초까지 기다립니다.${documentMode?' 취소해도 서버 계산이 즉시 멈추지는 않을 수 있습니다.':''}`);
+      const followPending=atConversationEnd();requestNotice.textContent=`최대 ${budgetSeconds}초${documentMode?' · 취소해도 서버 계산은 이어질 수 있어요.':''}`;if(followPending)transcript.scrollTop=transcript.scrollHeight;
       if(includeImage){if(!prepared.imageEnabled)throw new Error('image_disabled');setStatus('입력란과 확인 불가 영역을 가린 공개 화면 한 장을 수집해 연결 서버로 전송합니다.');const captured=await capture(source,version);payload.image=captured.image;payload.partial=payload.partial||captured.partial;}
       if(version!==serial)return;
       const port=chrome.runtime.connect({name:'gyeote:guide'});requestPort=port;let finished=false;
@@ -292,7 +312,7 @@
             if(Date.now()>=startedAt+budgetSeconds*1000)throw new Error('request_stopped');
           }
           if(documentMode){
-            const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);pendingQuestion=null;setStatus('문서 답변입니다. 원문 근거를 함께 확인하세요.');appendDocumentAnswer(answer);
+            const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);removePending();pendingQuestion=null;setStatus('문서 답변입니다. 원문 근거를 함께 확인하세요.');appendDocumentAnswer(answer);
             if(publicRequest){
               clearTimeout(requestTimer);
               const saved=await savedPanel.save(conversationContext,requestId,question,answer,requestProfile.revision,()=>version===serial&&requestPort===port&&mode==='document');
@@ -305,12 +325,13 @@
           }
           const answer=GyeoteProtocol.reply(packet.body,payload);
           if(snapshot!==source||!GyeoteDOM.current(source))throw new Error('invalid_reply');
+          removePending();
           apply(source,answer.targets,answer.answer);
           if(answer.targets.length&&!selected.length)throw new Error('invalid_reply');
           activeReply=appendMessage('assistant',status.textContent);activeReply.answer=answer.answer;
           history.push({role:'user',text:question},{role:'assistant',text:answer.answer});while(history.length>4||history.reduce((n,m)=>n+m.text.length,0)>1000)history.shift();
         }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentHistory();void refreshDocumentAccess();}const message=error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply;finishQuestion(message);clear(message);}
-        finally{if(version===serial&&requestPort===port){clearTimeout(requestTimer);busy=false;cancelButton.hidden=true;questionForm.querySelector('button[type="submit"]').disabled=false;requestPort=null;inputAssist.update();}port.disconnect();}
+        finally{if(version===serial&&requestPort===port){removePending();clearTimeout(requestTimer);busy=false;cancelButton.hidden=true;requestNotice.hidden=true;questionForm.querySelector('button[type="submit"]').disabled=false;requestPort=null;inputAssist.update();}port.disconnect();}
       });
       port.postMessage({requestId,mode,payload,...(documentMode?{documentAccess:documentHistoryAccess,profileRevision:requestProfile.revision}:{}),...(conversationContext?{conversationContext:{revision:conversationContext.expectedRevision,generation:conversationContext.generation}}:{}),deadlineAt:startedAt+budgetSeconds*1000});delete payload.image;
     }catch(error){
@@ -358,8 +379,8 @@
   const sizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>{clampPanel();schedule();}):null;
   sizeObserver?.observe(panel);
   addEventListener('scroll',()=>{if(capturing)pageVersion++;schedule();},{passive:true,capture:true});addEventListener('resize',()=>{finishDrag();clampPanel();pageVersion++;schedule();});
-  addEventListener('pagehide',()=>{finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
-  addEventListener('pageshow',event=>{if(event.persisted){profilePanel.resume();savedPanel.resume();inputAssist.resume();sizeObserver?.observe(panel);clampPanel();}});
+  addEventListener('pagehide',()=>{accessVersion++;finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
+  addEventListener('pageshow',event=>{if(event.persisted){profilePanel.resume();savedPanel.resume();inputAssist.resume();if(mode==='document')void refreshDocumentAccess();sizeObserver?.observe(panel);clampPanel();}});
   addEventListener('hashchange',()=>{if(mode==='screen')cancel('화면이 바뀌어 이전 표시를 지웠습니다.');else inputAssist.invalidate();snapshot=null;history=[];});
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden){
@@ -384,6 +405,7 @@
     if(message?.type==='gyeote:profile-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){profilePanel.changed(message.revision);sendResponse({ok:true});return;}
     if(message?.type==='gyeote:document-access-changed'){
       if(_sender.id!==chrome.runtime.id||_sender.tab)return;
+      accessVersion++;
       resetDocumentHistory();
       if(mode==='document'){cancel('문서 접근 상태가 바뀌어 이전 문서 요청과 대화를 지웠습니다.');snapshot=null;}
       showDocumentAccess(message.state);

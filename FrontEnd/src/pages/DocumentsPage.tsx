@@ -63,6 +63,8 @@ function DocumentRegistration() {
     const form = new FormData(event.currentTarget);
     const program = programs.find(p => p.service_id === form.get("service_id"));
     if (!program) return;
+    const targetId = replacementId.trim();
+    if (targetId && !validId(targetId)) { setError("올바른 문서 UUID를 입력하세요."); return; }
     const body = new FormData();
     body.set("file", form.get("file")!);
     body.set("metadata", JSON.stringify({
@@ -70,11 +72,10 @@ function DocumentRegistration() {
       source_url: String(form.get("source_url")).trim(), source_organization: String(form.get("source_organization")).trim(),
       basis_year: form.get("basis_year") || null, source_updated_at: form.get("source_updated_at") || null, test_only: program.test_only,
     }));
-    if (replacementId.trim()) body.set("document_id", replacementId.trim());
     submitting.current = true; setBusy(true); setError("");
     const signal = controller.current.signal;
     try {
-      const result = await documentRequest<{ document_id: string; job_id: string }>("", signal, { method: "POST", body });
+      const result = await documentRequest<{ document_id: string; job_id: string }>(targetId ? "/" + targetId : "", signal, { method: targetId ? "PUT" : "POST", body });
       if (!signal.aborted) { setParams({ document: result.document_id, job: result.job_id }); setOpenCount(v => v + 1); }
     } catch (e) { if (!signal.aborted) setError(documentError(e)); }
     finally { submitting.current = false; if (!signal.aborted) setBusy(false); }
@@ -147,13 +148,17 @@ function DocumentWorkspace({ documentId, requestedJob, onReplace, onJobChange }:
     async function poll() {
       try {
         const doc = await documentRequest<DocumentStatus>("/" + documentId + "?limit=1", signal);
-        const selected = requestedJob ?? doc.jobs[0]?.job_id;
-        const current = selected ? await documentRequest<Job>("/" + documentId + "/jobs/" + selected, signal) : null;
         if (signal.aborted) return;
+        const selected = requestedJob && !doc.jobs.some(j => j.job_id === requestedJob)
+          ? doc.active_job_id ?? doc.jobs[0]?.job_id : requestedJob ?? doc.jobs[0]?.job_id;
         const next = selected + ":" + doc.active_job_id + ":" + doc.analysis?.hash;
         if (next !== identity) {
           action.current?.abort(); submitting.current = false; setBusy(false); setMarkdown(""); setResult(null); setAnswer(null); identity = next;
+          setStatus(doc); setJob(null); setOnline(false);
         }
+        if (requestedJob && selected && selected !== requestedJob) { onJobChange(selected); return; }
+        const current = selected ? await documentRequest<Job>("/" + documentId + "/jobs/" + selected, signal) : null;
+        if (signal.aborted) return;
         failures = 0; setConnectionError(""); setOnline(true); setStatus(doc); setJob(current); setUpdatedAt(Date.now());
         if (current && ["queued", "parsing", "embedding", "ready", "succeeded"].includes(current.state)) timer = setTimeout(() => void poll(), 5000);
       } catch (e) {

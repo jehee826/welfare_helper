@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     documents_enabled: bool = False
     admin_password: SecretStr | None = None
     admin_trusted_proxy_ips: list[str] = Field(default_factory=list)
+    chat_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
     documents_max_file_mb: int = Field(default=20, ge=1, le=50)
     documents_max_pages: int = Field(default=100, ge=1, le=300)
     documents_max_characters: int = Field(default=500000, ge=1000, le=2000000)

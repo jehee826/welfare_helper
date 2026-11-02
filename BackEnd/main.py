@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from BackEnd.core.execution import InferenceBodyLimit, inference_request
+from BackEnd.core.chat_rate import enforce_chat_rate_limit
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -241,7 +242,7 @@ def database_health():
     return {"status": "ok", "database": "connected"}
 
 
-@app.post("/api/v1/chat")
+@app.post("/api/v1/chat", dependencies=[Depends(enforce_chat_rate_limit)])
 def chat(request: ChatRequest, http_request: Request, service: ChatService = Depends(get_chat_service),
          credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
     """게시 문서를 최소 근거 정책으로 질의한다. 검색 범위는 관리자 세션 유무에 따른다."""

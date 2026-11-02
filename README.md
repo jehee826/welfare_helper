@@ -166,7 +166,8 @@ npm run dev
 
 - `DATABASE_URL` / `DATABASE_PASSWORD`: 기존 Supabase Session pooler의 비밀번호 없는 URI와 별도 DB 비밀번호.
 - `ADMIN_PASSWORD`: 문서·제도 관리를 위한 서버 공통 관리자 비밀번호.
-- `ADMIN_TRUSTED_PROXY_IPS`: 로그인 실패 제한에서만 신뢰할 실제 연결 프록시의 개별 IP JSON 목록, 기본 `[]`.
+- `ADMIN_TRUSTED_PROXY_IPS`: 로그인·상담 제한 키에서만 신뢰할 실제 연결 프록시의 개별 IP JSON 목록, 기본 `[]`.
+- `CHAT_RATE_LIMIT_PER_MINUTE`: 상담 API의 IP별 최근60초 요청 상한, 기본30·범위1~600·단일 프로세스 기준.
 - `OLLAMA_LLM` / `OLLAMA_RUNTIME`: 생성 모델과 컨테이너 런타임(`runc` 또는 `nvidia`).
 - `OLLAMA_EMBED` / `EMBED_DIM`: 문서·질문 임베딩 모델과 벡터 차원(`bge-m3` / `1024`).
 - `LLM_NUM_THREAD` / `OLLAMA_TIMEOUT`: 생성 CPU 스레드 수와 서버 처리 상한(초), 확장 패키지 기본600초는 별도 설정.

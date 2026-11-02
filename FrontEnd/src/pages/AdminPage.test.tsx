@@ -105,6 +105,20 @@ describe("제도 관리와 원문 문서", () => {
     vi.restoreAllMocks();
   });
 
+  it("샘플 질문 빈도 제한을 알리고 확인 버튼을 복구하며 자동 재전송하지 않는다", async () => {
+    const user = userEvent.setup();
+    let rejectRequest!: (error: unknown) => void;
+    const ask = vi.fn().mockImplementation(() => new Promise((_, reject) => { rejectRequest = reject; }));
+    render(<ProgramManager api={fakeApi({ ask })} />);
+    await user.type(screen.getByLabelText("샘플 질문"), "공개 질문");
+    await user.click(screen.getByRole("button", { name: "확인" }));
+    expect(screen.getByRole("button", { name: "확인 중…" })).toBeDisabled();
+    rejectRequest(new ApiError("rate", 429, "chat_rate_limited"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("질문 요청이 많습니다");
+    expect(screen.getByRole("button", { name: "확인" })).toBeEnabled();
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+
   it("원문 문서 수를 보여주고, 문서가 있는 제도는 이름과 서비스 ID를 잠근다", async () => {
     const user = userEvent.setup();
     render(<ProgramManager api={fakeApi()} />);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ApiError } from "../../api/errors";
+import { ApiError, chatError } from "../../api/errors";
 import type { AdminProgram, ChatAnswer, Department, ProgramInput, WelfareApi } from "../../api/types";
 import { ProgramForm } from "./ProgramForm";
 
@@ -38,6 +38,7 @@ export function ProgramManager({ api }: { api: WelfareApi }) {
   const [error, setError] = useState("");
   const [sample, setSample] = useState("");
   const [sampleResult, setSampleResult] = useState<ChatAnswer | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const reload = useCallback(
     async (search: string) => {
@@ -102,12 +103,13 @@ export function ProgramManager({ api }: { api: WelfareApi }) {
 
   async function handleSample(event: FormEvent) {
     event.preventDefault();
-    if (!sample.trim()) return;
+    if (!sample.trim() || checking) return;
+    setChecking(true); setError(""); setSampleResult(null);
     try {
       setSampleResult(await api.ask(sample, null));
     } catch (e) {
-      setError(describeError(e));
-    }
+      setError(chatError(e));
+    } finally { setChecking(false); }
   }
 
   const closeForm = useCallback(() => {
@@ -201,8 +203,8 @@ export function ProgramManager({ api }: { api: WelfareApi }) {
             샘플 질문
           </label>
           <input id="sample-input" value={sample} onChange={(e) => setSample(e.target.value)} placeholder="예: 기초연금 문의처" />
-          <button type="submit" className="btn btn--primary btn--sm">
-            확인
+          <button type="submit" className="btn btn--primary btn--sm" disabled={checking}>
+            {checking ? "확인 중…" : "확인"}
           </button>
         </form>
         {sampleResult && (

@@ -9,6 +9,7 @@ export class ApiError extends Error {
 export function chatError(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.code === "sensitive_input") return SENSITIVE_INPUT_MESSAGE;
+    if (error.status === 429 && error.code === "chat_rate_limited") return "질문 요청이 많습니다. 잠시 기다린 뒤 직접 다시 질문해 주세요.";
     if (error.status === 429) return "다른 요청을 처리 중입니다. 잠시 후 직접 다시 질문해 주세요.";
     if (error.status === 504) return "요청 처리 시간을 넘었습니다. 잠시 후 다시 질문해 주세요.";
     if (error.status === 499) return "요청이 취소되었습니다. 다시 질문할 수 있습니다.";

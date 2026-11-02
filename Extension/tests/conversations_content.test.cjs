@@ -1,6 +1,16 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,ui,key,profileKey,profile,answer,settle}=require('./conversation_fixture.cjs');
 
+test('요청 빈도 제한은 질문 옆에 안전하게 표시하고 다시 보낼 수 있다',async()=>{
+ const server=worker(),f=ui(server);try{
+  await f.ready();await f.question('합성 질문');const port=f.ports.at(-1);
+  await port.receive({type:'error',requestId:port.packet.requestId,error:'chat_rate_limited'});await settle();
+  assert.match(f.root.querySelector('.request-outcome').textContent,/질문 요청이 많습니다/);
+  assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
+  assert.equal(f.ports.length,1);assert.equal(server.data[key],undefined);
+ }finally{f.close();}
+});
+
 test('맥락 불일치 저장 오류는 전용 안내와 미저장 답변을 보존한다',async()=>{
  const server=worker(),f=ui(server);try{
   await f.ready();await f.question('합성 질문');const original=f.w.chrome.runtime.sendMessage;

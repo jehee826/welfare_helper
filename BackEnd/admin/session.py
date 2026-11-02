@@ -44,7 +44,7 @@ def configured_password():
 
 
 def login_client_key(request: Request) -> str:
-    """로그인 실패 제한에서만 명시한 프록시의 단일 전달 IP를 사용한다."""
+    """제한 키에서만 명시한 프록시의 단일 전달 IP를 사용하고 실제 peer는 유지한다."""
     raw_peer = request.client.host if request.client else "unknown"
     try:
         if "%" in raw_peer:

@@ -54,6 +54,11 @@ test('문서 기한·취소·혼잡은 구분하고 자동 재전송하지 않�
  }
 });
 
+test('문서 요청 빈도 제한은 혼잡과 구분하고 재전송하지 않는다',async()=>{
+ let calls=0;const f=fixture(connection,async()=>{calls++;return new Response(JSON.stringify({detail:'chat_rate_limited'}),{status:429});},{mode:'document'});
+ await f.run();assert.equal(calls,1);assert.equal(f.sent[0].error,'chat_rate_limited');
+});
+
 test('문서 요청의 예산 필드는 선택적이며 1~1800 정수만 허용한다',()=>{
  assert.equal(protocol.documentRequest({query:'질문'}).timeout_seconds,undefined);
  assert.equal(protocol.documentRequest({query:'질문',timeout_seconds:1}).timeout_seconds,1);

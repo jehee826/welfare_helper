@@ -118,7 +118,13 @@
   }
   function applyUpdate(conversation,input,update,profileRevision){
     if(!update)return;
-    if(!input||JSON.stringify(input)!==JSON.stringify(requestContext(conversation,profileRevision)))throw new Error('conversation_context_conflict');
+    let normalized;
+    try{
+      if(!input||Object.keys(input).sort().join(',')!=='conversation_context,history'||!Array.isArray(input.history)||input.history.some(message=>!message||Object.keys(message).sort().join(',')!=='content,role'))throw new Error();
+      // 세션 왕복의 객체 키 순서만 정규화하고 대화·batch 순서는 그대로 검증한다.
+      normalized={history:input.history.map(({role,content})=>({role,content})),conversation_context:GyeoteProtocol.conversationContext(input.conversation_context)};
+    }catch{throw new Error('conversation_context_conflict');}
+    if(JSON.stringify(normalized)!==JSON.stringify(requestContext(conversation,profileRevision)))throw new Error('conversation_context_conflict');
     const checked=GyeoteProtocol.contextUpdate(update),submitted=input.conversation_context;
     if(checked.profileRevision!==profileRevision)throw new Error('conversation_context_conflict');
     if(checked.status==='updated'){

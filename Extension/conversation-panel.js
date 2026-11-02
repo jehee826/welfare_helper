@@ -1,6 +1,7 @@
 (() => {
   const errors={conversation_conflict:'다른 탭에서 상담이 바뀌었습니다. 최신 목록을 다시 불러오세요.',conversation_access_changed:'문서 접근 상태가 바뀌었습니다.',conversation_profile_changed:'내 정보가 바뀌어 답변을 저장하지 않았습니다.',conversation_request_stopped:'중지된 요청의 답변은 저장하지 않았습니다.',conversation_count_limit:'상담은 최대 30개입니다. 필요한 기록을 직접 삭제한 뒤 다시 저장하세요.',conversation_messages_limit:'상담당 100개 메시지 한도입니다. 새 상담을 시작하세요.',conversation_bytes_limit:'상담 저장 공간 4MiB 한도입니다. 필요한 기록을 직접 삭제하세요.',conversation_data_invalid:'저장된 상담의 형식을 확인하지 못했습니다. 상담 저장소만 재설정할 수 있습니다.',conversation_storage_failed:'상담 저장소에 접근하지 못했습니다. 공간과 확장 상태를 확인하세요.'};
   errors.conversation_save_timeout='10초 안에 저장 완료를 확인하지 못했습니다. 목록을 다시 불러와 저장 여부를 확인하세요.';
+  errors.conversation_context_conflict='요청 당시 대화 맥락과 현재 기록이 달라 자동 저장하지 않았습니다.';
   function create(slot,{invalidate,render,profileRevision,onStateChange=()=>{}}){
     const details=document.createElement('details'),summary=document.createElement('summary'),notice=document.createElement('p'),list=document.createElement('div'),actions=document.createElement('div'),confirmation=document.createElement('div'),unsaved=document.createElement('div');
     details.className='saved-conversations';summary.textContent='이전 상담';notice.className='muted';notice.setAttribute('role','status');list.className='saved-conversation-list';actions.className='row';confirmation.hidden=true;unsaved.hidden=true;unsaved.className='unsaved-conversation';unsaved.setAttribute('role','status');

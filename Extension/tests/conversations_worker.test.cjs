@@ -1,6 +1,58 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,key,profileKey,profile,expected,answer,append}=require('./conversation_fixture.cjs');
 require('../protocol.js');const policy=require('../conversations.js');
+test('세션 객체 키 순서만 달라져도 재생성 후 자동 저장한다',async()=>{
+  const f=worker(),state=(await f.action('get')).state,pairId='6'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+  assert.equal((await f.action('begin',fields)).ok,true);
+  const reorder=v=>Array.isArray(v)?v.map(reorder):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).reverse().map(([k,x])=>[k,reorder(x)])):v;
+  f.session['gyeote.conversation-owner:1']=reorder(f.session['gyeote.conversation-owner:1']);
+  const restarted=worker(f.data,{},f.source,undefined,f.session);
+  const fallback={kind:'fallback',text:'확인할 조건을 알려주세요.',evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}};
+  const automatic=await restarted.action('append',{...fields,question:'합성 질문',answer:fallback});assert.equal(automatic.ok,true);assert.equal(automatic.state.conversations[0].messages.length,2);
+});
+test('같은 documentId의 hash 변경 후 자동 저장한다',async()=>{
+  const f=worker(),state=(await f.action('get')).state,pairId='5'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+  const before=f.sender(1);before.documentId='123e4567-e89b-42d3-a456-426614174000';
+  assert.equal((await f.send({type:'gyeote:conversations-begin',accessId:'public-1',...fields},before)).ok,true);
+  const restarted=worker(f.data,{},f.source,undefined,f.session),after=restarted.sender(1);after.documentId=before.documentId;after.url+='\u0023section';after.tab.url=after.url;
+  const fallback={kind:'fallback',reason:'out_of_scope',text:'복지 관련 질문을 알려주세요.',services:[],contacts:[],suggestions:[],evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}};
+  const message={type:'gyeote:conversations-append',accessId:'public-1',...fields,question:'합성 질문',answer:fallback};
+  const automatic=await restarted.send(message,after);assert.equal(automatic.ok,true);assert.equal(automatic.state.conversations[0].messages.length,2);
+});
+test('documentId 없는 hash 변경과 다른 query는 자동 저장을 거절한다',async()=>{
+  for(const kind of ['no-document','query']){
+    const f=worker(),state=(await f.action('get')).state,pairId='7'.repeat(20),fields={...expected(state),pairId,profileRevision:1},before=f.sender(1);
+    if(kind==='query')before.documentId='123e4567-e89b-42d3-a456-426614174000';
+    assert.equal((await f.send({type:'gyeote:conversations-begin',accessId:'public-1',...fields},before)).ok,true);
+    const restarted=worker(f.data,{},f.source,undefined,f.session),after=restarted.sender(1);if(kind==='query')after.documentId=before.documentId;
+    after.url+=kind==='query'?'?changed=1':'#section';after.tab.url=after.url;
+    const result=await restarted.send({type:'gyeote:conversations-append',accessId:'public-1',...fields,question:'질문',answer},after);
+    assert.equal(result.ok,false,kind);assert.equal(result.error,'conversation_request_stopped');assert.equal(restarted.calls.set.length,0);
+  }
+});
+test('세션 문맥의 실제 값이나 배열 변경은 저장하지 않는다',async()=>{
+  for(const kind of ['history','batch','summary','profile']){
+    const f=worker(),state=(await f.action('get')).state,pairId='8'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+    assert.equal((await f.action('begin',fields)).ok,true);const owner=f.session['gyeote.conversation-owner:1'];
+    if(kind==='history')owner.input.history.push({role:'user',content:'변조'});
+    if(kind==='batch')owner.input.conversation_context.batch.push({id:'9'.repeat(20)+':user',role:'user',content:'변조'});
+    if(kind==='summary'){owner.input.conversation_context.text='변조';owner.input.conversation_context.coveredThroughMessageId='9'.repeat(20)+':assistant';}
+    if(kind==='profile')owner.input.conversation_context.profileRevision=2;
+    const restarted=worker(f.data,{},f.source,undefined,f.session),fallback={kind:'fallback',text:'안내',evidence:[],context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}};
+    const result=await restarted.action('append',{...fields,question:'질문',answer:fallback});assert.equal(result.ok,false,kind);assert.equal(restarted.calls.set.length,0,kind);
+  }
+});
+test('실제 대화 batch와 history 순서를 바꾸면 저장을 거절한다',async()=>{
+  for(const kind of ['batch','history']){
+    const f=worker();let state=(await f.action('get')).state;
+    for(let i=0;i<6;i++){const saved=await append(f,state,String(i+1).repeat(20),'질문 '+i,answer);assert.equal(saved.ok,true);state=saved.state;}
+    const fields={...expected(state),pairId:'9'.repeat(20),profileRevision:1};assert.equal((await f.action('begin',fields)).ok,true);
+    const owner=f.session['gyeote.conversation-owner:1'];
+    const list=kind==='batch'?owner.input.conversation_context.batch:owner.input.history;assert.ok(list.length>=2);[list[0],list[1]]=[list[1],list[0]];
+    const restarted=worker(f.data,{},f.source,undefined,f.session),reply={kind:'fallback',text:'안내',evidence:[],context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}};
+    const result=await restarted.action('append',{...fields,question:'질문',answer:reply});assert.equal(result.ok,false,kind);assert.equal(restarted.calls.set.length,0,kind);
+  }
+});
 test('worker 재생성 뒤 fallback 답변을 저장하고 새 패널에 복원한다',async()=>{
   const first=worker(),state=(await first.action('get')).state,pairId='A'.repeat(20);
   const fields={...expected(state),pairId,profileRevision:1};

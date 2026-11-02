@@ -10,7 +10,8 @@ let ownerWrites=Promise.resolve();
 const ownerKey=tabId=>'gyeote.conversation-owner:'+tabId;
 function writeOwner(action){const pending=ownerWrites.then(action);ownerWrites=pending.catch(()=>{});return pending;}
 function ownerMatches(owner,message,sender){
-  return !!owner&&!owner.cancelled&&owner.expiresAt>Date.now()&&owner.tabId===sender.tab.id&&owner.url===sender.url&&owner.documentId===(sender.documentId??null)&&['pairId','accessId','profileRevision','expectedRevision','generation','conversationId'].every(key=>owner[key]===message[key]);
+  const sameUrl=owner?.url===sender.url||!!owner?.documentId&&owner.documentId===sender.documentId&&owner.url.split('#')[0]===sender.url.split('#')[0];
+  return !!owner&&!owner.cancelled&&owner.expiresAt>Date.now()&&owner.tabId===sender.tab.id&&sameUrl&&owner.documentId===(sender.documentId??null)&&['pairId','accessId','profileRevision','expectedRevision','generation','conversationId'].every(key=>owner[key]===message[key]);
 }
 async function restoreOwner(tabId){
   const known=conversationOwners.get(tabId);

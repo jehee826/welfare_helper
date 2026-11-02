@@ -1,6 +1,17 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,ui,key,profileKey,profile,answer,settle}=require('./conversation_fixture.cjs');
 
+test('맥락 불일치 저장 오류는 전용 안내와 미저장 답변을 보존한다',async()=>{
+ const server=worker(),f=ui(server);try{
+  await f.ready();await f.question('합성 질문');const original=f.w.chrome.runtime.sendMessage;
+  f.w.chrome.runtime.sendMessage=m=>m.type==='gyeote:conversations-append'?Promise.resolve({ok:false,error:'conversation_context_conflict'}):original(m);
+  await f.answer(answer);const text=f.root.querySelector('.unsaved-conversation').textContent;
+  assert.match(text,/요청 당시 대화 맥락과 현재 기록이 달라 자동 저장하지 않았습니다/);
+  assert.doesNotMatch(text,/상담 저장소에 접근하지 못했습니다/);assert.match(text,/합성 복지 안내/);
+  assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);assert.equal(f.ports.length,1);assert.equal(server.data[key],undefined);
+ }finally{f.close();}
+});
+
 test('서버 fallback DTO는 저장 뒤 새 패널에 복원된다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('합성 질문');

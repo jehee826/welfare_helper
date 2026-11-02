@@ -3,14 +3,13 @@ const {watchChrome}=require("./chrome-watch.cjs");
 const {safeGoal,realHighlight}=require("./assistant-policy.cjs");
 const {guideStep,ragAnswer,LatestGuide}=require("./local-clients.cjs");
 const {overlayLayout}=require("./overlay-layout.cjs");
-const {capturePacket,captureScreen,captureKey}=require("./screen-capture.cjs");
 const {screen}=require("electron");
 function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow="0",publish,clearDemo,ownFocused,autoOpen=true}) {
   let mode="screen",snapshot=null,revision=0,goal="",step=null,suppressed="",manual=false,ragController=null,stopped=false;
-  let knownSiteKey="",pendingGuide=false,requestedAt=0,serial=0,expiry,pendingTimer,imageRequested=false,captureWait=null;
+  let knownSiteKey="",pendingGuide=false,requestedAt=0,serial=0,expiry,pendingTimer;
   const queue=new LatestGuide(),clarifications=[];
   const presenter=overlayPresenter;
-  let ui={mode,status:"idle",text:"Chrome에서 복지로를 열고 현재 화면에 관해 질문하세요.",connection:"대기",screenMessages:[],ragMessages:[],model:"서버 OLLAMA_LLM 공유",currentStepId:null,imageEnabled:process.env.DESKTOP_IMAGE_ENABLED==="true"};
+  let ui={mode,status:"idle",text:"Chrome에서 복지로를 열고 현재 화면에 관해 질문하세요.",connection:"대기",screenMessages:[],ragMessages:[],model:"서버 OLLAMA_LLM 공유",currentStepId:null};
   const emit=update=>{ui={...ui,...update};publish(ui);};
   const hide=()=>{if(presenter)presenter.hide();else overlay.hide();};
   const cancelPending=()=>{pendingGuide=false;clearTimeout(pendingTimer);};
@@ -46,7 +45,6 @@ function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow
     clearTimeout(expiry);
     expiry=setTimeout(()=>{snapshot=null;cancelPending();invalidate();emit({status:"idle",text:"화면 정보가 오래되어 표시를 멈췄습니다. 현재 화면으로 다시 질문하세요.",currentStepId:null});},3500);
     const old=snapshot;snapshot=next;
-    if(captureWait&&(!next||next.verifiedAt>=captureWait.after))captureWait.finish(next&&captureKey(next)===captureWait.key&&next.captureEligible&&(next.active||next.panelFocused)?null:"capture_screen_changed");
     if(presence)knownSiteKey=presence.key;
     if(next)knownSiteKey=next.context.split(":").slice(0,2).join(":");
     if(!next){
@@ -78,29 +76,13 @@ function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow
     if(!snapshot){emit({status:"error",text:"현재 화면을 확인하지 못했습니다. 다시 질문하세요."});return;}
     const source=snapshot,version=revision;
     emit({status:"waiting",text:"현재 화면을 확인해 답변하고 있습니다."});
-    const includeImage=imageRequested;
-    queue.submit(async signal=>{
-      let image=null;
-      if(includeImage){
-        const key=captureKey(source),packet=capturePacket(source,panelWindow,panel.getBounds());
-        emit({status:"waiting",text:"공개 복지로 영역 한 장을 수집합니다. 입력란을 가리고 연결된 서버로 전송합니다."});
-        image=await captureScreen(packet,signal);
-        await new Promise((resolve,reject)=>{
-          const after=Date.now();let timer;
-          const finish=error=>{clearTimeout(timer);signal.removeEventListener("abort",abort);captureWait=null;error?reject(new Error(error)):resolve();};
-          const abort=()=>finish("capture_cancelled");
-          captureWait={after,key,finish};timer=setTimeout(()=>finish("capture_recheck_timeout"),3000);
-          if(signal.aborted)abort();else{signal.addEventListener("abort",abort,{once:true});stopWatch.refresh?.();}
-        });
-      }
-      return guideStep(goal,source,[],signal,clarifications,null,()=>{
+    queue.submit(signal=>guideStep(goal,source,[],signal,clarifications,null,()=>{
         if(!stopped&&version===revision&&mode==="screen")emit({status:"waiting",text:"서버가 처리 중입니다. 전체 요청 제한은 90초입니다."});
-      },image);
-    },(error,result)=>{
+    }),(error,result)=>{
       if(stopped||version!==revision||mode!=="screen"||snapshot?.signature!==source.signature)return;
       if(error){
         const messages={guide_disabled:"화면 상담 API가 비활성입니다. 서버 설정을 확인하세요.",local_connection_failed:"로컬 API 연결이 끊겼습니다. 서버 확인 후 직접 다시 질문하세요.",guide_generation_failed:"화면 답변을 확인하지 못했습니다. 모델 준비 상태를 확인하세요.",guide_busy_exhausted:"서버가 계속 처리 중입니다. 잠시 후 직접 다시 질문하세요.",guide_timeout:"요청 제한 90초를 넘었습니다. 서버 확인 후 직접 다시 질문하세요.",guide_cancelled:"화면 질문을 취소했습니다."};
-        hide();emit({status:"error",text:error.startsWith("capture_")?"공개 화면의 안전한 수집 범위·창·탭을 확인하지 못해 이미지를 전송하지 않았습니다. 공개 홈 화면에서 다시 질문하세요.":messages[error]||({guide_image_disabled:"서버의 이미지 옵션이 꺼져 있습니다. 이미지를 빼고 다시 질문하세요.",guide_image_unsupported:"현재 모델은 이미지 입력을 지원하지 않습니다. 이미지를 무시하지 않고 요청을 중지했습니다.",guide_context_budget:"입력 예산 또는 이미지 형식을 확인하지 못했습니다. 서버 설정을 확인하세요.",guide_private_connection:"이미지는 SSH 로컬 포워딩 연결에서만 사용할 수 있습니다."})[error]||"답변 형식을 확인하지 못했습니다. 현재 화면과 서버 상태를 확인하세요."});return;
+        hide();emit({status:"error",text:messages[error]||({guide_context_budget:"입력 예산을 확인하지 못했습니다. 서버 설정을 확인하세요.",guide_private_connection:"허용된 로컬 연결을 확인하지 못했습니다."})[error]||"답변 형식을 확인하지 못했습니다. 현재 화면과 서버 상태를 확인하세요."});return;
       }
       if(result.action==="안내"&&!snapshot.elements.some(e=>e.id===result.target_id&&e.enabled&&!e.offscreen&&!e.blocked)){
         emit({status:"error",text:"대상이 현재 화면에 없어 표시를 보류했습니다. 다시 질문하세요."});return;
@@ -126,9 +108,8 @@ function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow
       mode=payload;manual=true;emit({mode,status:"idle",currentStepId:null,awaitingClarification:false,text:payload==="screen"?"현재 화면에서 궁금한 내용을 질문하세요.":payload==="rag"?"기존 로컬 RAG API를 사용합니다.":"개발용 고정 시나리오입니다. 실제 화면 상담이 아닙니다."});return;
     }
     if(action==="goal"){
+      if(payload&&typeof payload==="object"&&Object.keys(payload).some(key=>key!=="question")){emit({status:"error",text:"질문 텍스트만 전달해 주세요."});return;}
       let input;try{input=safeGoal(typeof payload==="string"?payload:payload?.question);}catch{emit({status:"error",text:"개인정보·숫자 코드 없이 질문을 짧게 입력하세요."});return;}
-      imageRequested=typeof payload==="object"&&payload?.includeImage===true;
-      if(imageRequested&&(!ui.imageEnabled||payload.publicScreenConfirmed!==true)){emit({status:"error",text:"이미지 옵션과 개인정보 없는 공개 화면 여부를 먼저 확인하세요."});return;}
       const followUp=ui.awaitingClarification&&goal;
       if(followUp){clarifications.push({question:step?.instruction||ui.screenMessages.at(-1).text,answer:input});if(clarifications.length>3)clarifications.shift();}
       else{goal=input;clarifications.length=0;}

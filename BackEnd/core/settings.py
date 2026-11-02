@@ -54,7 +54,6 @@ class Settings(BaseSettings):
 
     desktop_guidance_enabled: bool = False
     remote_dom_guidance_enabled: bool = False
-    desktop_image_enabled: bool = False
     desktop_extension_token: SecretStr | None = None
 
     documents_enabled: bool = False

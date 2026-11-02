@@ -51,8 +51,8 @@ def test_wrong_extension_token_rejected_before_model(monkeypatch):
 
 def test_connection_refresh_and_failed_replace_preserve_existing_file(tmp_path, monkeypatch):
     destination = tmp_path / 'connection.json'
-    initial = Settings(_env_file=None, desktop_extension_token='x'*40, ollama_timeout=600, desktop_image_enabled=False)
-    updated = Settings(_env_file=None, desktop_extension_token='y'*40, ollama_timeout=900, desktop_image_enabled=True)
+    initial = Settings(_env_file=None, desktop_extension_token='x'*40, ollama_timeout=600)
+    updated = Settings(_env_file=None, desktop_extension_token='y'*40, ollama_timeout=900)
     desktop_connection.write_connection(destination, initial)
     old = destination.read_bytes()
     with monkeypatch.context() as patch:
@@ -62,7 +62,7 @@ def test_connection_refresh_and_failed_replace_preserve_existing_file(tmp_path, 
     assert list(tmp_path.iterdir()) == [destination]
     desktop_connection.write_connection(destination, updated)
     data = json.loads(destination.read_text())
-    assert data == {'version': 1, 'token': 'y'*40, 'imageEnabled': True, 'timeoutSeconds': 900}
+    assert data == {'version': 1, 'token': 'y'*40, 'timeoutSeconds': 900}
 
 
 def test_metadata_and_generation_share_remaining_budget(monkeypatch):
@@ -170,70 +170,58 @@ def test_rag_text_without_deadline_keeps_langchain_path(monkeypatch):
     assert calls == [600]
 
 
-@pytest.mark.parametrize(('vision', 'evaluated', 'expected_error'), [
-    (True, True, None), (False, True, ollama.VisionUnsupportedError),
-    (True, False, ollama.ContextBudgetError),
-])
-def test_bounded_vision_sends_image_schema_and_checks_metadata(monkeypatch, vision, evaluated, expected_error):
-    from BackEnd.tests.test_desktop_guidance import png
-    image = png()
-    captured = {}
+def test_bounded_plain_text_stream_uses_no_format_or_image(monkeypatch):
+    captured = []
     class Response:
-        def __init__(self, metadata=False): self.metadata = metadata
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): pass
         def raise_for_status(self): pass
-        def json(self): return {'capabilities': ['vision'] if vision else ['completion']}
-        async def __aenter__(self): return self
-        async def __aexit__(self, *args): pass
         async def aiter_bytes(self):
-            data = {'message': {'content': '{"ok":true}'}, 'done': True, 'done_reason': 'stop'}
-            if evaluated: data['prompt_eval_count'] = 500
-            yield (json.dumps(data) + '\n').encode()
+            yield b'{"message":{"content":"plain answer"},"done":true,"eval_count":2}\n'
     class Client:
-        def __init__(self, **kwargs): pass
+        def __init__(self, **_kwargs): pass
         async def __aenter__(self): return self
-        async def __aexit__(self, *args): pass
-        async def post(self, *args, **kwargs): return Response(True)
-        def stream(self, method, url, **kwargs): captured.update(kwargs['json']); return Response()
+        async def __aexit__(self, *_): pass
+        def stream(self, *_args, **kwargs):
+            captured.append(kwargs['json'])
+            return Response()
     monkeypatch.setattr(httpx, 'AsyncClient', Client)
-    client = ollama.OllamaClient('http://localhost:11434', 'embed', 'model', request_deadline=time.monotonic()+5)
-    client._effective_context = 16384
-    schema = {'type': 'object', 'properties': {'ok': {'type': 'boolean'}}}
-    if expected_error:
-        with pytest.raises(expected_error): client.chat('규칙', '질문', schema=schema, images=[image])
-    else:
-        assert client.chat('규칙', '질문', schema=schema, images=[image]) == {'ok': True}
-        assert captured['messages'][1]['images'] == [image]
-        assert captured['format'] == schema and captured['options']['num_ctx'] == 16384
-    if not vision: assert captured == {}
+    client = ollama.OllamaClient('http://example.invalid', 'embed', 'model', request_deadline=time.monotonic()+3)
+    assert client.chat_text('규칙', '가상 질문') == 'plain answer'
+    assert captured[0]['stream'] is True and 'format' not in captured[0]
+    assert all('images' not in message for message in captured[0]['messages'])
 
 
-def test_dom_png_http_contract_with_fake_model(monkeypatch):
+def test_dom_text_http_contract_and_body_limit_with_fake_model(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from BackEnd.desktop_image import DesktopBodyLimit
-    from BackEnd.tests.test_desktop_guidance import png
-    image = png()
+    from BackEnd.core.execution import InferenceBodyLimit
+    calls = []
     monkeypatch.setattr(guide, 'get_settings', lambda: Settings(_env_file=None, desktop_guidance_enabled=True,
-        desktop_image_enabled=True, desktop_extension_token='x'*40))
+        desktop_extension_token='x'*40))
     monkeypatch.setenv('BACKEND_BIND_HOST', '127.0.0.1')
     monkeypatch.delenv('VERCEL', raising=False)
     class Client:
         def chat(self, system, user, **kwargs):
-            assert kwargs['images'] == [image]
+            calls.append(kwargs)
+            assert 'images' not in kwargs
             return {'kind': '설명', 'answer': '공개 화면입니다.', 'targets': []}
     monkeypatch.setattr(guide, 'OllamaClient', lambda *args, **kwargs: Client())
     app = FastAPI()
-    app.add_middleware(DesktopBodyLimit)
+    app.add_middleware(InferenceBodyLimit)
     app.include_router(guide.router)
     payload = {'source': 'dom', 'snapshot_id': 'F'*20, 'question': '화면 설명',
-               'screen_context': [{'kind': 'heading', 'text': '복지서비스'}], 'candidates': [], 'image': image}
+               'screen_context': [{'kind': 'heading', 'text': '복지서비스'}], 'candidates': []}
     with TestClient(app) as client:
-        response = client.post('/api/v1/desktop/guide', json=payload, headers={'Authorization': 'Bearer ' + 'x'*40})
-        assert response.status_code == 200
-        assert response.json()['reply']['snapshot_id'] == 'F'*20
-        assert response.json()['reply']['targets'] == []
+        headers = {'Authorization': 'Bearer ' + 'x'*40}
+        response = client.post('/api/v1/desktop/guide', json=payload, headers=headers)
+        assert response.status_code == 200 and response.json()['reply']['snapshot_id'] == 'F'*20
+        assert len(calls) == 1
+        for image in [None, 'iVBORw0KGgo=']:
+            rejected = client.post('/api/v1/desktop/guide', json={**payload, 'image': image}, headers=headers)
+            assert rejected.status_code == 422 and len(calls) == 1
         oversized = client.post('/api/v1/desktop/guide', content=b'x'*(2*1024*1024+65537))
-        assert oversized.status_code == 413
+        assert oversized.status_code == 413 and len(calls) == 1
 
 
 def test_http_disconnect_closes_model_stream_and_releases_gate(monkeypatch):

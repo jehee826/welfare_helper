@@ -1,24 +1,13 @@
 import json
-import base64
-import struct
-import zlib
 import pytest
 from fastapi import HTTPException
 from BackEnd import desktop_guidance as guide
 from BackEnd.core.settings import Settings
-from BackEnd.desktop_image import image_bytes
 
 ID = 'A' * 20
 
 def request(**changes):
     return guide.GuideRequest(**{'goal':'검색은 어디서 해?', 'candidates':[{'id':ID,'label':'검색','role':'Button','enabled':True,'visible':True}], **changes})
-
-def png(width=2,height=2):
-    def chunk(kind,data):
-        return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data)&0xffffffff)
-    data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',width,height,8,6,0,0,0))
-    data+=chunk(b'IDAT',zlib.compress((b'\0'+b'\xff\xff\xff\xff'*width)*height))+chunk(b'IEND',b'')
-    return base64.b64encode(data).decode()
 
 def test_natural_explanation_is_not_replaced_with_fixed_click_instruction():
     class Llm:
@@ -81,44 +70,21 @@ def test_sensitive_navigation_requires_user_intent():
     data.candidates.append(guide.Candidate(id='B'*20,label='로그인',role='Button',enabled=True,visible=True))
     guide.generate_step(Llm(),data)
 
-def test_feature_off_and_image_off_do_not_create_model(monkeypatch):
-    monkeypatch.setattr(guide,'OllamaClient',lambda *a,**k:pytest.fail('모델 접근 금지'))
-    monkeypatch.setattr(guide,'get_settings',lambda:Settings(_env_file=None,desktop_guidance_enabled=False))
-    with pytest.raises(HTTPException) as error:guide.desktop_guide(request())
-    assert error.value.status_code==404
-    monkeypatch.setattr(guide,'get_settings',lambda:Settings(_env_file=None,desktop_guidance_enabled=True,desktop_image_enabled=False))
-    with pytest.raises(HTTPException) as error:guide.desktop_guide(request(image=png()))
-    assert error.value.detail=='desktop_image_disabled'
+def test_feature_off_does_not_create_model(monkeypatch):
+    monkeypatch.setattr(guide, 'OllamaClient', lambda *a, **k: pytest.fail('모델 접근 금지'))
+    monkeypatch.setattr(guide, 'get_settings', lambda: Settings(_env_file=None, desktop_guidance_enabled=False))
+    with pytest.raises(HTTPException) as error:
+        guide.desktop_guide(request())
+    assert error.value.status_code == 404
 
-def test_image_reaches_only_multimodal_argument_not_text_prompt():
-    image=png()
-    class Llm:
-        def chat(self,system,user,*,schema,images):
-            assert images==[image] and image not in user
-            return {'target_id':None,'action':'설명','instruction':'화면을 설명합니다.','expect_label':None}
-    assert guide.generate_step(Llm(),request(image=image)).action=='설명'
 
-@pytest.mark.parametrize('value',['data:image/png;base64,AAAA','AAAA',png()[:-4],png(1281,1)])
-def test_bad_image_or_excess_resolution_is_rejected(value):
-    with pytest.raises(ValueError):image_bytes(value)
-
-def test_png_is_validated_and_not_retained_in_repr():
-    image=png()
-    assert image_bytes(image).startswith(b'\x89PNG')
-    assert image not in repr(request(image=image))
-
-def test_shared_model_and_unsupported_image_error(monkeypatch):
-    from BackEnd.rag.ollama import VisionUnsupportedError
-    monkeypatch.setattr(guide,'get_settings',lambda:Settings(_env_file=None,desktop_guidance_enabled=True,desktop_image_enabled=True,ollama_llm='shared-model'))
-    monkeypatch.setenv('BACKEND_BIND_HOST','127.0.0.1')
-    monkeypatch.delenv('VERCEL',raising=False)
-    models=[]
-    class Llm:
-        def chat(self,*args,**kwargs):raise VisionUnsupportedError('미지원')
-    def create(base,embed,model,*args,**kwargs):models.append(model);return Llm()
-    monkeypatch.setattr(guide,'OllamaClient',create)
-    with pytest.raises(HTTPException) as error:guide.desktop_guide(request(image=png()))
-    assert error.value.detail=='desktop_image_model_unsupported' and models==['shared-model']
+@pytest.mark.parametrize('value', [None, 'iVBORw0KGgo='])
+def test_image_field_is_rejected_before_model(value, monkeypatch):
+    monkeypatch.setattr(guide, 'OllamaClient', lambda *a, **k: pytest.fail('모델 접근 금지'))
+    with pytest.raises(ValueError):
+        request(image=value)
+    with pytest.raises(ValueError):
+        guide.DomGuideRequest(source='dom', snapshot_id='F'*20, question='화면 설명', candidates=[], image=value)
 
 
 def test_http_validation_never_echoes_question_or_image_and_limits_body(monkeypatch):
@@ -132,12 +98,13 @@ def test_http_validation_never_echoes_question_or_image_and_limits_body(monkeypa
     assert response.status_code==413
 
 
-def test_public_forwarded_image_request_is_rejected_before_model(monkeypatch):
+def test_public_forwarded_request_is_rejected_before_model(monkeypatch):
     from fastapi.testclient import TestClient
     from BackEnd.main import app
-    monkeypatch.setattr(guide,'get_settings',lambda:Settings(_env_file=None,desktop_guidance_enabled=True,desktop_image_enabled=True))
+    monkeypatch.setattr(guide,'get_settings',lambda:Settings(_env_file=None,desktop_guidance_enabled=True,desktop_extension_token='x'*40))
     monkeypatch.setenv('BACKEND_BIND_HOST','127.0.0.1')
     monkeypatch.delenv('VERCEL',raising=False)
     monkeypatch.setattr(guide,'OllamaClient',lambda *a,**k:pytest.fail('공개 프록시 모델 접근 금지'))
-    response=TestClient(app).post('/api/v1/desktop/guide',json=request(image=png()).model_dump(),headers={'X-Forwarded-For':'203.0.113.5'})
+    payload={'source':'dom','snapshot_id':'F'*20,'question':'화면 설명','candidates':[]}
+    response=TestClient(app).post('/api/v1/desktop/guide',json=payload,headers={'Authorization':'Bearer '+'x'*40,'X-Forwarded-For':'203.0.113.5'})
     assert response.status_code==403

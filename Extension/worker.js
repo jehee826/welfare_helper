@@ -6,8 +6,27 @@ let authChanges=Promise.resolve();
 const profileKey='gyeote.profile';
 let localChanges=Promise.resolve(),invalidProfile=null,conversationStore;
 const conversationOwners=new Map();
+let ownerWrites=Promise.resolve();
+const ownerKey=tabId=>'gyeote.conversation-owner:'+tabId;
+function writeOwner(action){const pending=ownerWrites.then(action);ownerWrites=pending.catch(()=>{});return pending;}
+function ownerMatches(owner,message,sender){
+  return !!owner&&!owner.cancelled&&owner.expiresAt>Date.now()&&owner.tabId===sender.tab.id&&owner.url===sender.url&&owner.documentId===(sender.documentId??null)&&['pairId','accessId','profileRevision','expectedRevision','generation','conversationId'].every(key=>owner[key]===message[key]);
+}
+async function restoreOwner(tabId){
+  const known=conversationOwners.get(tabId);
+  if(known&&!known.cancelled)return known;
+  await ownerWrites;
+  const stored=(await chrome.storage.session.get(ownerKey(tabId)))[ownerKey(tabId)],current=conversationOwners.get(tabId);
+  if(current!==known)return current?.cancelled?null:current;
+  if(!stored||stored.expiresAt<=Date.now()||known?.cancelled&&stored.pairId===known.pairId)return null;
+  conversationOwners.set(tabId,stored);return stored;
+}
+chrome.tabs.onRemoved?.addListener(tabId=>{
+  conversationOwners.set(tabId,{cancelled:true});
+  void writeOwner(()=>chrome.storage.session.remove(ownerKey(tabId))).catch(()=>{});
+});
 let profileReady;
-try{profileReady=Promise.resolve(chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}));}
+try{profileReady=Promise.all([chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'}),chrome.storage.session.setAccessLevel?.({accessLevel:'TRUSTED_CONTEXTS'})]);}
 catch{profileReady=Promise.reject(new Error('profile_storage_failed'));}
 profileReady.catch(()=>{});
 function changeLocal(action){const pending=localChanges.then(()=>profileReady).then(action);localChanges=pending.catch(()=>{});return pending;}
@@ -124,20 +143,27 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   }
   if(message?.type==='gyeote:conversation-cancel'){
     if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||Object.keys(message).sort().join(',')!=='pairId,type')return;
-    if(conversationOwners.get(sender.tab.id)?.pairId===message.pairId)conversationOwners.delete(sender.tab.id);
-    sendResponse({ok:true});return;
+    const current=conversationOwners.get(sender.tab.id);
+    if(!current||current.pairId===message.pairId)conversationOwners.set(sender.tab.id,{pairId:message.pairId,cancelled:true});
+    writeOwner(async()=>{const key=ownerKey(sender.tab.id),stored=(await chrome.storage.session.get(key))[key];if(stored?.pairId===message.pairId)await chrome.storage.session.set({[key]:null});}).then(()=>sendResponse({ok:true})).catch(()=>sendResponse({ok:false,error:'conversation_storage_failed'}));return true;
   }
   if(typeof message?.type==='string'&&message.type.startsWith('gyeote:conversations-')){
     if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
-    if(message.type==='gyeote:conversations-begin'&&GyeoteProtocol.id(message.pairId))conversationOwners.set(sender.tab.id,{pairId:message.pairId,input:null});
-    const owner=conversationOwners.get(sender.tab.id);
+    if(message.type==='gyeote:conversations-begin'&&GyeoteProtocol.id(message.pairId))conversationOwners.set(sender.tab.id,{...Object.fromEntries(['pairId','accessId','profileRevision','expectedRevision','generation','conversationId'].map(key=>[key,message[key]])),tabId:sender.tab.id,url:sender.url,documentId:sender.documentId??null,expiresAt:Date.now()+1830000,input:null});
+    const initialOwner=conversationOwners.get(sender.tab.id);
     // local 변경과 인증 전환을 함께 직렬화해 프로필/권한 확인과 쓰기 사이의 경쟁을 막는다.
     changeLocal(()=>changeAuth(async()=>{
       conversationStore??=GyeoteConversationStore.create({storage:chrome.storage.local,profile:storedProfile,newId:()=>crypto.randomUUID()});
-      const result=await conversationStore.action(message,await readAuth(),()=>!!owner&&owner.pairId===message.pairId&&conversationOwners.get(sender.tab.id)===owner,owner?.input);
+      const owner=message.type==='gyeote:conversations-append'?await restoreOwner(sender.tab.id):initialOwner;
+      const owns=()=>ownerMatches(owner,message,sender)&&conversationOwners.get(sender.tab.id)===owner&&(message.type==='gyeote:conversations-begin'||owner.committed===true);
+      const result=await conversationStore.action(message,await readAuth(),owns,owner?.input);
       if(message.type==='gyeote:conversations-begin'&&result.ok){
-        if(conversationOwners.get(sender.tab.id)!==owner)throw new Error('conversation_request_stopped');
+        if(!owns())throw new Error('conversation_request_stopped');
         owner.input=result.input;
+        // worker 유휴 종료를 넘어도 원래 요청의 문맥과 소유권을 세션에 보존한다.
+        await writeOwner(async()=>{if(!owns())throw new Error('conversation_request_stopped');await chrome.storage.session.set({[ownerKey(sender.tab.id)]:{...owner,committed:true}});});
+        if(!owns())throw new Error('conversation_request_stopped');
+        owner.committed=true;
       }
       return result;
     })).then(sendResponse).catch(error=>sendResponse({ok:false,error:/^conversation_(invalid_request|data_invalid|conflict|context_conflict|access_changed|profile_changed|request_stopped|count_limit|messages_limit|bytes_limit|revision_limit)$/.test(error.message)?error.message:'conversation_storage_failed'}));

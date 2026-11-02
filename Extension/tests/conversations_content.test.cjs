@@ -1,6 +1,16 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,ui,key,profileKey,profile,answer,settle}=require('./conversation_fixture.cjs');
 
+test('서버 fallback DTO는 저장 뒤 새 패널에 복원된다',async()=>{
+  const server=worker(),f=ui(server);try{
+    await f.ready();await f.question('합성 질문');
+    await f.answer({kind:'fallback',reason:'out_of_scope',text:'복지 관련 질문을 알려주세요.',services:[],contacts:[],suggestions:[],evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}});
+    assert.equal(server.data[key].conversations[0].messages.length,2);
+    assert.match(f.root.querySelector('.status').textContent,/저장했습니다/);
+  }finally{f.close();}
+  const restored=ui(server);try{await restored.ready();assert.match(restored.root.querySelector('.conversation').textContent,/복지 관련 질문을 알려주세요/);}finally{restored.close();}
+});
+
 test('오류 수신은 프로필 확인이 응답하지 않아도 즉시 종료한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('합성 질문');const port=f.ports.at(-1),original=f.w.chrome.runtime.sendMessage;

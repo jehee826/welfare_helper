@@ -1,6 +1,77 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,key,profileKey,profile,expected,answer,append}=require('./conversation_fixture.cjs');
 require('../protocol.js');const policy=require('../conversations.js');
+test('worker 재생성 뒤 fallback 답변을 저장하고 새 패널에 복원한다',async()=>{
+  const first=worker(),state=(await first.action('get')).state,pairId='A'.repeat(20);
+  const fields={...expected(state),pairId,profileRevision:1};
+  const sender=first.sender(1);sender.documentId='123e4567-e89b-42d3-a456-426614174000';
+  const begun=await first.send({type:'gyeote:conversations-begin',accessId:'public-1',...fields},sender);assert.equal(begun.ok,true);
+  const restarted=worker(first.data,{},first.source,undefined,first.session);
+  const fallback={kind:'fallback',reason:'out_of_scope',text:'복지 관련 질문을 알려주세요.',services:[],contacts:[],suggestions:[],evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}};
+  const saved=await restarted.send({type:'gyeote:conversations-append',accessId:'public-1',...fields,question:'합성 질문',answer:fallback},sender);
+  assert.equal(saved.ok,true);const {ui}=require('./conversation_fixture.cjs'),panel=ui(restarted);
+  try{await panel.ready();assert.match(panel.root.querySelector('.conversation').textContent,/복지 관련 질문을 알려주세요/);}finally{panel.close();}
+});
+test('취소 후 worker 재생성은 이전 append를 거절한다',async()=>{
+  const first=worker(),state=(await first.action('get')).state,pairId='B'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+  assert.equal((await first.action('begin',fields)).ok,true);await first.send({type:'gyeote:conversation-cancel',pairId});
+  const restarted=worker(first.data,{},first.source,undefined,first.session);assert.equal((await restarted.action('append',{...fields,question:'질문',answer})).ok,false);
+});
+test('세션 소유권 저장 실패는 begin을 거절한다',async()=>{
+  const f=worker(),state=(await f.action('get')).state;f.failure.sessionSet=true;
+  const fields={...expected(state),pairId:'C'.repeat(20),profileRevision:1};
+  const result=await f.action('begin',fields);assert.equal(result.ok,false);
+  delete f.failure.sessionSet;assert.equal((await f.action('append',{...fields,question:'질문',answer})).ok,false);
+});
+test('세션 저장 대기 중 취소는 재생성 후에도 append를 막는다',async()=>{
+  let release;const f=worker(),state=(await f.action('get')).state,pairId='E'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+  f.failure.beforeSessionSet=v=>Object.keys(v).some(k=>k.startsWith('gyeote.conversation-owner:'))?new Promise(resolve=>{release=resolve;}):undefined;
+  const begin=f.action('begin',fields);for(let i=0;i<30&&!release;i++)await new Promise(setImmediate);assert.equal(typeof release,'function');
+  const cancel=f.send({type:'gyeote:conversation-cancel',pairId});delete f.failure.beforeSessionSet;release();
+  assert.equal((await begin).ok,false);assert.equal((await cancel).ok,true);
+  const restarted=worker(f.data,{},f.source,undefined,f.session);assert.equal((await restarted.action('append',{...fields,question:'질문',answer})).ok,false);
+});
+test('세션 복원 대기 중 취소는 늦은 append를 막는다',async()=>{
+  const first=worker(),state=(await first.action('get')).state,pairId='2'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+  assert.equal((await first.action('begin',fields)).ok,true);let release;
+  const restarted=worker(first.data,{beforeSessionGet:keys=>typeof keys==='string'&&keys.startsWith('gyeote.conversation-owner:')?new Promise(resolve=>{release=resolve;}):undefined},first.source,undefined,first.session);
+  const pending=restarted.action('append',{...fields,question:'질문',answer});for(let i=0;i<30&&!release;i++)await new Promise(setImmediate);assert.equal(typeof release,'function');
+  const cancelled=restarted.send({type:'gyeote:conversation-cancel',pairId});delete restarted.failure.beforeSessionGet;release();
+  assert.equal((await pending).ok,false);assert.equal((await cancelled).ok,true);assert.equal(first.data[key],undefined);
+});
+test('탭 제거는 세션 소유권을 정리한다',async()=>{
+  const f=worker(),state=(await f.action('get')).state,pairId='3'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+  assert.equal((await f.action('begin',fields)).ok,true);f.removeTab(1);await new Promise(setImmediate);
+  assert.equal(f.session['gyeote.conversation-owner:1'],undefined);
+});
+test('세션 복원 대기 중 탭 제거는 늦은 append를 막는다',async()=>{
+  const first=worker(),state=(await first.action('get')).state,pairId='4'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+  assert.equal((await first.action('begin',fields)).ok,true);let release;
+  const restarted=worker(first.data,{beforeSessionGet:keys=>typeof keys==='string'&&keys.startsWith('gyeote.conversation-owner:')?new Promise(resolve=>{release=resolve;}):undefined},first.source,undefined,first.session);
+  const pending=restarted.action('append',{...fields,question:'질문',answer});for(let i=0;i<30&&!release;i++)await new Promise(setImmediate);assert.equal(typeof release,'function');
+  restarted.removeTab(1);delete restarted.failure.beforeSessionGet;release();assert.equal((await pending).ok,false);await new Promise(setImmediate);assert.equal(first.data[key],undefined);
+});
+test('만료·다른 문서·탭 소유권은 재생성 뒤 append를 거절한다',async()=>{
+  for(const kind of ['expired','document','tab']){
+    const first=worker(),state=(await first.action('get')).state,pairId='D'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+    assert.equal((await first.action('begin',fields)).ok,true);if(kind==='expired')first.session['gyeote.conversation-owner:1'].expiresAt=0;
+    const restarted=worker(first.data,{},first.source,undefined,first.session),sender=restarted.sender(kind==='tab'?2:1);if(kind==='document')sender.documentId='other';
+    const result=await restarted.send({type:'gyeote:conversations-append',accessId:'public-1',...fields,question:'질문',answer},sender);assert.equal(result.ok,false,kind);
+  }
+});
+test('새 요청과 접근·프로필·revision 변경 뒤 이전 소유권은 거절한다',async()=>{
+  for(const kind of ['new-pair','access','profile','revision','url']){
+    const f=worker(),state=(await f.action('get')).state,pairId='F'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
+    assert.equal((await f.action('begin',fields)).ok,true);
+    if(kind==='new-pair')assert.equal((await f.action('begin',{...fields,pairId:'1'.repeat(20)})).ok,true);
+    if(kind==='access')f.session.documentAccessId='changed';
+    if(kind==='profile')f.data[profileKey]={...profile,revision:2};
+    if(kind==='revision')assert.equal((await f.action('new',{expectedRevision:state.revision,generation:state.generation})).ok,true);
+    const restarted=worker(f.data,{},f.source,undefined,f.session),sender=restarted.sender(1);
+    if(kind==='url'){sender.url='https://www.bokjiro.go.kr/other';sender.tab.url=sender.url;}
+    const result=await restarted.send({type:'gyeote:conversations-append',accessId:'public-1',...fields,question:'질문',answer},sender);assert.equal(result.ok,false,kind);assert.equal(result.error,{'new-pair':'conversation_request_stopped',access:'conversation_access_changed',profile:'conversation_profile_changed',revision:'conversation_conflict',url:'conversation_request_stopped'}[kind]);assert.equal(restarted.calls.set.length,0,kind);
+  }
+});
 test('원문 지역·수정일은 상담 복원에도 보존하고 개인정보 형식은 정제한다',async()=>{
   const f=worker(),state=(await f.action('get')).state;
   const reply={...answer,evidence:[{document_id:'00000000-0000-0000-0000-000000000001',chunk_id:'source:1',quote:'지원 조건',context:'지원 조건',pages:[1],source_blocks:['b1'],source_url:'https://example.invalid',region_scope:'서울특별시',source_updated_at:'2026-07-04',source_organization:'공식기관 <script>명령</script> 010-1234-5678'}]};

@@ -155,9 +155,4 @@ describe("httpApi 관리자 제도", () => {
     await expect(api().listDepartments()).rejects.toMatchObject({ status: 422, code: "invalid_request" });
   });
 
-  it("미연동 통계는 목업 수치나 네트워크 호출 없이 명시적으로 거절한다", async () => {
-    const fetchMock = stubFetch();
-    await expect(api().getMonthlyStats()).rejects.toMatchObject({ status: 503, code: "stats_unavailable" });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });

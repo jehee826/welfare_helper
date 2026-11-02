@@ -19,26 +19,9 @@ export interface WelfareProgram {
   howToApply: string;
 }
 
-export type IncomeBracket = "under50" | "under100" | "under150" | "over150" | "unknown";
-export type Household = "single" | "couple" | "withChildren" | "singleParent" | "grandparent" | "other";
-
-export interface UserProfile {
-  age: number;
-  income: IncomeBracket;
-  household: Household;
-  region: string;
-  disability: boolean;
-}
-
 export type ChatAnswer =
   | { kind: "answer"; text: string; services: WelfareProgram[]; suggestions: string[] }
   | { kind: "fallback"; text: string; contacts: Contact[]; suggestions: string[] };
-
-export interface MonthlyStat {
-  month: string;
-  inquiries: number;
-  connections: number;
-}
 
 export interface Department {
   id: number;
@@ -81,12 +64,10 @@ export interface ProgramPage {
 }
 
 export interface WelfareApi {
-  ask(query: string, profile: UserProfile | null, signal?: AbortSignal): Promise<ChatAnswer>;
-  initialSuggestions(profile: UserProfile | null): string[];
+  ask(query: string, profile: null, signal?: AbortSignal): Promise<ChatAnswer>;
   listPrograms(query?: string): Promise<ProgramPage>;
   listDepartments(): Promise<Department[]>;
   createProgram(input: ProgramInput): Promise<AdminProgram>;
   updateProgram(program: AdminProgram, changes: Partial<ProgramInput>): Promise<AdminProgram>;
   deleteProgram(programId: number): Promise<void>;
-  getMonthlyStats(): Promise<MonthlyStat[]>;
 }

@@ -89,11 +89,6 @@ export function createHttpApi(options: { baseUrl?: string } = {}): WelfareApi {
   }
 
   return {
-    initialSuggestions: () => [],
-    async getMonthlyStats() {
-      throw new ApiError("이용 통계는 아직 연동되지 않았습니다.", 503, "stats_unavailable");
-    },
-
     async ask(query, _profile, signal) {
       if (sensitiveInput(query)) throw new ApiError(SENSITIVE_INPUT_MESSAGE, 422, "sensitive_input");
       requireApiBaseUrl(baseUrl);

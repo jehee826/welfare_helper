@@ -94,6 +94,15 @@
   formStyle.textContent+='.unsaved-conversation{padding:10px;border:1px solid #777;border-radius:9px;margin-top:10px}.unsaved-conversation>div{max-height:180px;overflow:auto;overflow-wrap:anywhere}';
   $('.consultation').innerHTML='<form><label class="question-label" for="gyeote-question">복지 상담</label><div class="compose-row"><input id="gyeote-question" type="text" maxlength="240" autocomplete="off" placeholder="개인정보 없이 질문하세요"><button type="submit" aria-label="질문 보내기" title="질문 보내기"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 3-7 18-4-7-7-4Z"/><path d="m10 14 11-11"/></svg></button></div><p class="send-notice"></p><div class="composer-actions"><button class="cancel" type="button" hidden>요청 취소</button></div></form>';
   const questionForm=$('.consultation form'),cancelButton=$('.cancel');
+  const listeningOverlay=document.createElement('section');listeningOverlay.className='listening-overlay';listeningOverlay.hidden=true;listeningOverlay.setAttribute('role','dialog');listeningOverlay.setAttribute('aria-label','음성 입력');listeningOverlay.innerHTML='<strong role="status" aria-live="polite">듣고 있습니다...</strong>';panel.append(listeningOverlay);
+  formStyle.textContent+=`.compose-row .voice-start{width:40px;height:42px;display:grid;place-items:center;flex-shrink:0;padding:0;border:0;background:transparent;color:#555}.voice-start[aria-pressed=true]{color:#175cde}.listening-overlay{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#ffffff88;border-radius:inherit}.listening-overlay strong{font-size:22px}.listening-overlay p{font-size:13px;line-height:1.6;margin:0;max-width:270px}.listening-overlay .voice-cancel{background:#171717;color:#fff}.panel.is-listening>.head,.panel.is-listening>.body,.panel.is-listening>.mode-reason{filter:blur(2px);opacity:.55}.panel.is-listening{animation:gyeote-listening-glow 2s ease-in-out infinite;box-shadow:0 0 0 2px #7ab7ff,0 0 28px #176cff66}@keyframes gyeote-listening-glow{0%,100%{box-shadow:0 0 0 2px #7ab7ff,-7px 0 28px #176cff77,7px 0 18px #7acbff44}50%{box-shadow:0 0 0 2px #7ab7ff,7px 0 28px #176cff77,-7px 0 18px #7acbff44}}@media(prefers-reduced-motion:reduce){.panel.is-listening{animation:none}}`;
+  function showListening(listening){
+    const changed=panel.classList.contains('is-listening')!==listening;panel.classList.toggle('is-listening',listening);listeningOverlay.hidden=!listening;
+    $('.head').inert=listening;$('.body').inert=listening;
+    if(changed&&listening)listeningOverlay.querySelector('.voice-cancel')?.focus();
+    if(changed&&!listening&&!panel.hidden&&!collapsed&&!document.hidden)focusPanel();
+  }
+  addEventListener('keydown',event=>{if(event.key==='Escape'&&panel.classList.contains('is-listening')){event.preventDefault();inputAssist?.cancel();}});
   const requestNotice=document.createElement('p');requestNotice.className='request-notice';requestNotice.hidden=true;cancelButton.before(requestNotice);
   const tools=$('.panel-tools'),menuButton=$('.menu-toggle'),profileButton=$('.profile-toggle');
   function showMenu(open){tools.hidden=!open;menuButton.setAttribute('aria-expanded',String(open));if(open)transcript.scrollTop=0;}
@@ -206,7 +215,7 @@
     cancel();accessVersion++;snapshot=null;conversations[mode]=[...$('.conversation').children];mode=modeSelect.value;
     $('.conversation').replaceChildren(...conversations[mode]);updateMode();
   });
-  inputAssist=GyeoteInputAssist.create(questionForm,{controls:tools,state:()=>{
+  inputAssist=GyeoteInputAssist.create(questionForm,{controls:tools,overlay:listeningOverlay,onListening:showListening,state:()=>{
     const saved=savedPanel.state,conversation=saved?.conversations.find(c=>c.id===saved.lastActiveConversationId);
     const anonymous=currentAccess?.mode==='anonymous';
     return {mode,key:[mode,serial,accessKey(currentAccess),profilePanel.state?.revision,saved?.generation,saved?.revision,saved?.lastActiveConversationId].join('|'),

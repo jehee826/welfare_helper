@@ -36,7 +36,7 @@ function ui(server,id=1,setup=()=>{}){
   setup(w);
   const scriptSource=server.source||source;
   for(const name of JSON.parse(scriptSource('manifest.json')).content_scripts[0].js)w.eval(scriptSource(name));
-  const button=(text,scope=root)=>[...scope.querySelectorAll('button')].find(node=>node.textContent===text);
+  const button=(text,scope=root)=>[...scope.querySelectorAll('button')].find(node=>node.textContent===text||node.getAttribute('aria-label')===text);
   return {w,root,ports,requests,ready:settle,button,
     click:async(text,scope=root)=>{const node=button(text,scope);if(!node)throw Error('버튼 없음: '+text);node.click();await settle();},
     question:async text=>{root.querySelector('#gyeote-question').value=text;root.querySelector('.consultation form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();},

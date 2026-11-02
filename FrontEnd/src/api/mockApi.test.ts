@@ -1,34 +1,15 @@
 import { createMockApi } from "./mockApi";
 import seedPrograms from "./programs.json";
-import type { UserProfile, WelfareProgram } from "./types";
-
-const senior: UserProfile = {
-  age: 70,
-  income: "under50",
-  household: "single",
-  region: "서울특별시",
-  disability: false,
-};
+import type { WelfareProgram } from "./types";
 
 describe("mockApi.ask", () => {
   it("관련 서비스가 있으면 answer와 서비스 카드를 돌려준다", async () => {
     const api = createMockApi({ latencyMs: 0 });
-    const result = await api.ask("어르신 연금", senior);
+    const result = await api.ask("어르신 연금", null);
     expect(result.kind).toBe("answer");
     if (result.kind !== "answer") return;
     expect(result.services.map((s) => s.name)).toContain("기초연금");
     expect(result.suggestions.length).toBeGreaterThan(0);
-  });
-
-  it("조건과 맞지 않는 대상 제도는 질문에 그 대상이 없으면 빼고, 직접 물으면 안내한다", async () => {
-    const api = createMockApi({ latencyMs: 0 });
-    const general = await api.ask("어르신 연금", senior);
-    if (general.kind !== "answer") throw new Error("answer 기대");
-    expect(general.services.map((s) => s.name)).not.toContain("장애인연금");
-
-    const explicit = await api.ask("장애인 연금", senior);
-    if (explicit.kind !== "answer") throw new Error("answer 기대");
-    expect(explicit.services.map((s) => s.name)).toContain("장애인연금");
   });
 
   it("근거가 없는 질문에는 추측하지 않고 연락처를 안내한다 (FR-4)", async () => {
@@ -58,7 +39,7 @@ describe("mockApi.ask", () => {
 });
 
 describe("mockApi 관리", () => {
-  it("관리자가 추가한 제도가 이용자 검색에 반영된다 (FR-6)", async () => {
+  it("관리자가 추가한 제도가 시험 질의에 반영된다", async () => {
     const api = createMockApi({ latencyMs: 0 });
     const departments = await api.listDepartments();
     await api.createProgram({
@@ -77,7 +58,7 @@ describe("mockApi 관리", () => {
     expect(result.services[0].name).toBe("행복복지관 반찬나눔");
   });
 
-  it("수정한 요약이 목록과 이용자 안내에 반영된다", async () => {
+  it("수정한 요약이 목록과 시험 질의에 반영된다", async () => {
     const api = createMockApi({ latencyMs: 0 });
     const [first] = (await api.listPrograms("에너지바우처")).items;
     await api.updateProgram(first, { summary: "겨울철 난방비를 지원합니다." });
@@ -105,9 +86,4 @@ describe("mockApi 관리", () => {
     expect(names).not.toContain("에너지바우처");
   });
 
-  it("조건에 맞는 첫 추천 질문을 만든다", () => {
-    const api = createMockApi({ latencyMs: 0 });
-    expect(api.initialSuggestions(senior).join(" ")).toContain("어르신");
-    expect(api.initialSuggestions(null).length).toBeGreaterThan(0);
-  });
 });

@@ -125,3 +125,34 @@ def test_same_tag_digest_is_obtained_from_model_metadata(client, monkeypatch):
 
     monkeypatch.setattr(httpx, "get", get)
     assert client.model_digest() == "test-digest"
+
+
+def test_vision_message_and_schema_reach_shared_langchain_model(client, monkeypatch):
+    from BackEnd.tests.test_desktop_guidance import png
+    image=png()
+    client._effective_context=16384
+    monkeypatch.setattr(client,'_post',lambda *a:{'capabilities':['completion','vision']})
+    captured={}
+    schema={'type':'object','properties':{'ok':{'type':'boolean'}}}
+    def invoke(model,messages,**kwargs):
+        captured.update(model=model.model,format=model.format,messages=messages)
+        # 설치된 어댑터가 URL로 오인하지 않고 base64 images 배열로 직렬화하는지도 확인한다.
+        serialized=model._convert_messages_to_ollama_messages(messages)
+        assert serialized[1]['images']==[image]
+        return AIMessage(content='{"ok":true}',response_metadata={'prompt_eval_count':2000,'done_reason':'stop'})
+    monkeypatch.setattr(ChatOllama,'invoke',invoke)
+    assert client.chat('규칙','질문',schema=schema,images=[image])=={'ok':True}
+    assert captured['model']==client.llm_model and captured['format']==schema
+    assert captured['messages'][1].content[0]['text']=='질문'
+
+
+def test_image_is_not_silently_ignored_and_has_separate_context_budget(client, monkeypatch):
+    from BackEnd.tests.test_desktop_guidance import png
+    from BackEnd.rag.ollama import VisionUnsupportedError, ContextBudgetError
+    image=png()
+    monkeypatch.setattr(ChatOllama,'invoke',lambda *a,**k:pytest.fail('거부된 입력은 추론하지 않는다.'))
+    monkeypatch.setattr(client,'_post',lambda *a:{'capabilities':['completion']})
+    with pytest.raises(VisionUnsupportedError):client.chat('규칙','질문',images=[image])
+    monkeypatch.setattr(client,'_post',lambda *a:{'capabilities':['completion','vision']})
+    client._effective_context=4096
+    with pytest.raises(ContextBudgetError):client.chat('규칙','질문',images=[image])

@@ -33,8 +33,40 @@ postgres_data/
 .vercel
 .env*
 
-# 로컬 설계·수동 평가 문서
-/docs/design/
+# 설계는 기본 로컬 보관, 기존 공유 설계만 명시적으로 추적
+/docs/design/*
+!/docs/design/rag-accuracy-design.md
+!/docs/design/welfare-rag-pipeline-design.md
+!/docs/design/welfare-rag-features.md
+!/docs/design/implementation-gap-analysis.md
+!/docs/design/specs/
+/docs/design/specs/*
+!/docs/design/specs/2026-10-21-welfare-mockup-design.md
+!/docs/design/specs/2026-10-21-welfare-rag-mvp-design.md
+!/docs/design/database/
+/docs/design/database/*
+!/docs/design/database/복지챗봇.erd
+!/docs/design/database/복지챗봇-mockup.erd
+
+# 실행 계획은 로컬 보관, 기존 공유 개선 로드맵만 추적
+/docs/plan/*
+!/docs/plan/roadmap-p0-solutions.md
+
+# 개인 수동 평가·결과·개발일지·인계
+/docs/tests/
+/docs/log/
+
+# Word 원본은 로컬 보존
+*.[dD][oO][cC]
+*.[dD][oO][cC][xX]
 
 # ec2 키페어 제외
 welfare_helper__key.pem
+/.local/extension-connection.json
+/.local/.gyeote-connection-*
+/.local/extension-packages/
+/.local/t5_*.py
+/.local/t5-*.json
+/.local/t5-*.jsonl
+/.local/t5-*.zip
+/.local/t10c-*/

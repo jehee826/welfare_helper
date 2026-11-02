@@ -1,0 +1,3 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {JSDOM}=require('../../FrontEnd/node_modules/jsdom'),protocol=require('../protocol.js');
+test('옵션은 연결 파일 UI 없이 관리자 인증만 제공한다',()=>{const dom=new JSDOM(fs.readFileSync(path.join(__dirname,'../options.html'),'utf8'),{runScripts:'outside-only'}),w=dom.window;try{w.GyeoteProtocol=protocol;w.chrome={runtime:{sendMessage:async()=>({mode:'anonymous',status:'anonymous'})}};w.eval(fs.readFileSync(path.join(__dirname,'../options.js'),'utf8'));assert.equal(w.document.querySelector('#file'),null);assert.equal(w.document.querySelector('#screen-connection'),null);assert.ok(w.document.querySelector('#admin-form'));}finally{w.close();}});

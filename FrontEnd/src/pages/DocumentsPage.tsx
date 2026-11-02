@@ -1,20 +1,18 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Header } from "../components/Header";
 import { DocumentProgress } from "../components/admin/DocumentProgress";
 import { DocumentApiError, documentError, documentRequest, jsonPost } from "../api/documentApi";
-import { AdminGate } from "../components/admin/AdminGate";
 import type { DocumentStatus, Job, Program, QueryResult, SearchResult } from "../api/documentApi";
 import "./documents.css";
 
 const validId = (value: string) => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
 
 export function DocumentsPage() {
-  return <div className="page"><Header /><main className="admin documents">
+  return <section className="documents stack-lg">
     <h1>문서 관리</h1>
     <p>원문을 올리면 자동 분석·청크 분할·임베딩·게시까지 처리합니다. 분류·검토 승인은 필요하지 않습니다.</p>
-    <AdminGate><DocumentRegistration /></AdminGate>
-  </main></div>;
+    <DocumentRegistration />
+  </section>;
 }
 
 function DocumentRegistration() {
@@ -65,6 +63,8 @@ function DocumentRegistration() {
     const form = new FormData(event.currentTarget);
     const program = programs.find(p => p.service_id === form.get("service_id"));
     if (!program) return;
+    const targetId = replacementId.trim();
+    if (targetId && !validId(targetId)) { setError("올바른 문서 UUID를 입력하세요."); return; }
     const body = new FormData();
     body.set("file", form.get("file")!);
     body.set("metadata", JSON.stringify({
@@ -72,11 +72,10 @@ function DocumentRegistration() {
       source_url: String(form.get("source_url")).trim(), source_organization: String(form.get("source_organization")).trim(),
       basis_year: form.get("basis_year") || null, source_updated_at: form.get("source_updated_at") || null, test_only: program.test_only,
     }));
-    if (replacementId.trim()) body.set("document_id", replacementId.trim());
     submitting.current = true; setBusy(true); setError("");
     const signal = controller.current.signal;
     try {
-      const result = await documentRequest<{ document_id: string; job_id: string }>("", signal, { method: "POST", body });
+      const result = await documentRequest<{ document_id: string; job_id: string }>(targetId ? "/" + targetId : "", signal, { method: targetId ? "PUT" : "POST", body });
       if (!signal.aborted) { setParams({ document: result.document_id, job: result.job_id }); setOpenCount(v => v + 1); }
     } catch (e) { if (!signal.aborted) setError(documentError(e)); }
     finally { submitting.current = false; if (!signal.aborted) setBusy(false); }
@@ -149,13 +148,17 @@ function DocumentWorkspace({ documentId, requestedJob, onReplace, onJobChange }:
     async function poll() {
       try {
         const doc = await documentRequest<DocumentStatus>("/" + documentId + "?limit=1", signal);
-        const selected = requestedJob ?? doc.jobs[0]?.job_id;
-        const current = selected ? await documentRequest<Job>("/" + documentId + "/jobs/" + selected, signal) : null;
         if (signal.aborted) return;
+        const selected = requestedJob && !doc.jobs.some(j => j.job_id === requestedJob)
+          ? doc.active_job_id ?? doc.jobs[0]?.job_id : requestedJob ?? doc.jobs[0]?.job_id;
         const next = selected + ":" + doc.active_job_id + ":" + doc.analysis?.hash;
         if (next !== identity) {
           action.current?.abort(); submitting.current = false; setBusy(false); setMarkdown(""); setResult(null); setAnswer(null); identity = next;
+          setStatus(doc); setJob(null); setOnline(false);
         }
+        if (requestedJob && selected && selected !== requestedJob) { onJobChange(selected); return; }
+        const current = selected ? await documentRequest<Job>("/" + documentId + "/jobs/" + selected, signal) : null;
+        if (signal.aborted) return;
         failures = 0; setConnectionError(""); setOnline(true); setStatus(doc); setJob(current); setUpdatedAt(Date.now());
         if (current && ["queued", "parsing", "embedding", "ready", "succeeded"].includes(current.state)) timer = setTimeout(() => void poll(), 5000);
       } catch (e) {
@@ -219,14 +222,18 @@ function DocumentWorkspace({ documentId, requestedJob, onReplace, onJobChange }:
       <button className="btn btn--soft" disabled={busy || !online || status.analysis.job_id !== job?.job_id} onClick={() => void perform("markdown")}>원문 불러오기</button><pre className="document-text">{markdown}</pre>
     </details>}
     <h2>게시 문서 검색·질의</h2>
-    {ready && <p><Link to="/">기본 채팅으로 이동</Link>해 등록된 원문에 대해 질문할 수 있습니다. 아래에서는 이 문서 안에서만 검색합니다.</p>}
+    {ready && <p>이 문서의 원문 검색·질의로 게시 결과를 확인하세요. 이용자 상담은 복지로 Chrome 확장에서 제공합니다.</p>}
     {!ready && <p>선택 작업의 게시 완료와 현재 게시본 일치가 확인되면 검색할 수 있습니다.</p>}
     <form className="document-form" onSubmit={e => { e.preventDefault(); const form = new FormData(e.currentTarget); void perform(form.get("operation") === "query" ? "query" : "search", String(form.get("query")).trim()); }}>
       <label className="field">질문<input name="query" maxLength={300} required disabled={!ready || busy} /></label>
       <label className="field">확인 방식<select name="operation" disabled={!ready || busy}><option value="search">청크 검색</option><option value="query">문서 RAG 질의</option></select></label>
       <button className="btn btn--primary" disabled={!ready || busy}>{busy ? "처리 중" : "실행"}</button>
     </form>
-    {result && <section aria-label="검색 결과"><p>검색 청크 {result.chunks.length}개. 유사도는 정답 확률·정확도가 아닙니다.</p>{result.chunks.map(c => <article className="document-block" key={c.chunk_id}><p>{c.chunk_id} · {c.section} · 유사도 {c.similarity.toFixed(4)}</p><pre className="document-text">{c.text}</pre><p>쪽: {c.pages.join(", ")} · 원문 블록: {c.source_blocks.join(", ")} · 위치: {c.start}–{c.end}</p></article>)}</section>}
+    {result && <section aria-label="검색 결과"><p>검색 청크 {result.chunks.length}개. 유사도는 정답 확률·정확도가 아닙니다.</p>{result.chunks.map(c => <article className="document-block" key={c.chunk_id}>
+      <p>{c.chunk_id} · {c.section} · 유사도 {c.similarity.toFixed(4)}</p>
+      {c.redacted && <p className="muted small">개인정보 형식을 가린 자료입니다. 원문 그대로의 인용이 아닙니다. 위치는 가리기 전 원문 기준입니다.</p>}
+      <pre className="document-text">{c.text}</pre><p>쪽: {c.pages.join(", ")} · 원문 블록: {c.source_blocks.join(", ")} · 위치: {c.start}–{c.end}</p>
+    </article>)}</section>}
     {answer && <section aria-label="질의 결과"><p>{answer.response.kind}</p><pre className="document-text">{answer.response.text}</pre><p>보류 사유: {answer.response.reason ?? "없음"}</p><details open><summary>근거·진단</summary><pre className="document-text">{JSON.stringify({ services: answer.response.services, diagnostics: answer.diagnostics }, null, 2)}</pre></details></section>}
   </section>;
 }

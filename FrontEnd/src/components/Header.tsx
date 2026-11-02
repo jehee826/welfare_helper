@@ -1,10 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, NavLink } from "react-router-dom";
 import { STORAGE_KEYS, readJson, writeJson } from "../lib/storage";
 import { useAuth } from "../auth/AuthProvider";
 import { logoutAdmin } from "../api/auth";
 
-export function Header({ children }: { children?: ReactNode }) {
+export function Header() {
   const { session } = useAuth();
   const [logoutError, setLogoutError] = useState("");
   async function logout() {
@@ -22,17 +22,17 @@ export function Header({ children }: { children?: ReactNode }) {
 
   return (
     <header className="header">
-      <Link to="/" className="brand" aria-label="곁에 처음 화면">
-        곁에<span className="brand__sub">복지 길잡이</span>
+      <Link to="/admin/documents" className="brand" aria-label="곁에 관리자 처음 화면">
+        곁에<span className="brand__sub">관리자</span>
       </Link>
       <nav className="header__nav" aria-label="주 메뉴">
-        <Link className="btn btn--soft btn--sm" to="/admin/documents">문서 관리</Link>
+        <NavLink className="btn btn--soft btn--sm" to="/admin/documents">문서 관리</NavLink>
+        <NavLink className="btn btn--soft btn--sm" to="/admin/programs">제도 관리</NavLink>
         {session && <button type="button" className="btn btn--soft btn--sm" onClick={() => void logout()}>로그아웃</button>}
         {logoutError && <span role="alert">{logoutError}</span>}
         <button type="button" className="btn btn--soft btn--sm" aria-pressed={large} onClick={() => setLarge((v) => !v)}>
           {large ? "글자 보통" : "글자 크게"}
         </button>
-        {children}
       </nav>
     </header>
   );

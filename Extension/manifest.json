@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "곁에 · 복지로 화면 상담",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "description": "현재 공개 복지로 화면을 설명하고 관련 요소를 표시합니다.",
+  "permissions": ["activeTab", "storage", "offscreen"],
+  "options_page": "options.html",
+  "host_permissions": ["https://15.164.190.21/*"],
+  "action": {"default_title": "곁에 열기 · 이번 탭 화면 권한 허용"},
+  "background": {"service_worker": "worker.js"},
+  "content_scripts": [{
+    "matches": ["https://www.bokjiro.go.kr/*"],
+    "js": ["protocol.js", "conversations.js", "dom.js", "profile.js", "conversation-panel.js", "input-assist.js", "content.js"],
+    "run_at": "document_idle",
+    "all_frames": false
+  }]
+}

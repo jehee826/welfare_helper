@@ -1,42 +1,109 @@
-"""게시된 문서의 검색 원문을 모델에 전달하는 기본 RAG 질의 경로."""
+"""채팅·진단·문서별 질의가 공유하는 문서 근거 RAG. 상담 맥락과 원문 근거를 분리한다."""
 
 import math
 import time
+from pydantic import ValidationError
 
 from BackEnd.documents.contracts import DocumentError
+from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
+from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
+from BackEnd.documents.context import prepare_context, fit_answer, ANSWER_SYSTEM
+from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
+
+MAX_CACHED_CHUNKS = 2000
+MAX_CACHED_INDEX_CHARACTERS = 2_000_000
 
 
-def answer_document(repo, service, query: str):
+def _document_keyword_index(repo, service, snapshot, digest):
+    checkpoint()
+    key = (snapshot.stamp, repo.document_scope, getattr(repo, "include_local_documents", False),
+           getattr(repo, "embed_model", None), getattr(repo, "embed_dim", None), digest, id(service.analyzer))
+    cached = getattr(service, "_document_bm25", None)
+    if cached is not None and cached[0] == key:
+        return cached[1], None
+    # API의 공통 inference gate 안에서 사용한다. 별도 대기 lock과 질문/답변 캐시는 두지 않는다.
+    service._document_bm25 = None
+    names = {chunk.service_id: chunk.document_name for chunk in snapshot.chunks}
+    characters = sum(len(names[c.service_id]) + len(c.section) + len(c.heading_context) + len(c.text) + 3
+                     for c in snapshot.chunks)
+    index = BM25Index(snapshot.chunks, names, service.analyzer)
+    checkpoint()
+    keep = len(snapshot.chunks) <= MAX_CACHED_CHUNKS and characters <= MAX_CACHED_INDEX_CHARACTERS
+    return index, (key, index) if keep else None
+
+
+@diagnose_qa
+def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None):
+    qa_stage("snapshot")
+    checkpoint()
+    budget = current_budget()
+    llm = service.llm.for_request(budget.deadline, budget.cancelled.is_set) if budget else service.llm
     started = time.monotonic()
     trace = {"mode": "document_rag", "scope_document_id": repo.document_scope,
              "retrieval": [], "rerank": [], "timings_ms": {}}
     snapshot = repo.snapshot()
+    checkpoint()
     if repo.document_scope and any(chunk.document_id != str(repo.document_scope) for chunk in snapshot.chunks):
+        service._document_bm25 = None
         raise DocumentError("document_scope_mismatch")
     trace["snapshot"] = snapshot.stamp
     trace["versions"] = sorted({chunk.version for chunk in snapshot.chunks})
     if not snapshot.chunks:
+        service._document_bm25 = None
         trace["reason"] = "no_document_evidence"
         trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
         return {"kind": "fallback", "text": "등록된 문서에서 검색할 원문을 찾지 못했습니다.",
                 "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": []}, trace
 
+    qa_stage("context")
+    try:
+        capacity = llm.context_limit()
+        output = getattr(llm, "llm_options", {}).get("num_predict", 512)
+        checkpoint()
+        if type(capacity) is not int or type(output) is not int or output <= 0 or capacity <= output:
+            raise ValueError("문맥 예산을 확인하지 못했습니다.")
+    except (ExecutionTimeoutError, ExecutionCancelledError):
+        raise
+    except Exception:
+        raise DocumentError("document_input_budget") from None
+    search_query, conversation, context_update, context_trace = prepare_context(
+        llm, query, profile, history, conversation_context, capacity, output)
+    trace["context"] = context_trace
+    trace["context"]["profile_used"] = bool(conversation["profile"])
+    trace["context"]["history_used"] = bool(conversation["history"])
+    trace["context"]["summary_used"] = bool(conversation["summary"])
+    trace["context"]["summary_status"] = context_update["status"] if context_update else "none"
+    trace["context"]["generation_context_policy"] = "resolved_intent_only"
+    if conversation["needs_clarification"]:
+        trace["reason"] = "conversation_clarification_required"
+        trace["timings_ms"]["total"] = round((time.monotonic()-started)*1000, 2)
+        return {"kind":"fallback", "text":"이어서 확인할 서비스 이름과 현재 조건을 구체적으로 알려주세요.",
+                "reason":"conversation_clarification_required", "services":[], "contacts":[], "suggestions":[], "evidence":[],
+                "context_usage":{"omitted":context_trace["context_omitted"]},
+                **({"context_update":context_update} if context_update is not None else {})}, trace
+    qa_stage("retrieval")
     retrieval_started = time.monotonic()
     try:
-        digest = service.llm.model_digest()
+        digest = llm.model_digest()
+        checkpoint()
         allowed = {chunk.chunk_id for chunk in snapshot.chunks if chunk.embed_digest == digest}
         if not allowed:
             raise DocumentError("embedding_digest_changed")
-        vector = service.llm.embed([query])[0]
+        vector = llm.embed([search_query])[0]
+        checkpoint()
         dense = repo.dense_search(vector, service.dense_k, sorted(allowed), snapshot=snapshot)
+        checkpoint()
+    except (ExecutionTimeoutError, ExecutionCancelledError):
+        raise
     except DocumentError:
         raise
     except Exception:
         raise DocumentError("document_embedding_failed") from None
-    names = {chunk.service_id: chunk.document_name for chunk in snapshot.chunks}
-    index = BM25Index(snapshot.chunks, names, service.analyzer)
-    keyword = index.search(query, service.keyword_k, allowed)
+    index, pending_index = _document_keyword_index(repo, service, snapshot, digest)
+    checkpoint()
+    keyword = index.search(search_query, service.keyword_k, allowed)
+    checkpoint()
     fused = reciprocal_ranks([dense, [chunk for chunk, _ in keyword]])
     candidates = [chunk for chunk, _ in fused[:service.top_n]]
     trace["retrieval"] = [{"intent_id": "document",
@@ -48,14 +115,20 @@ def answer_document(repo, service, query: str):
         trace["reason"] = "no_document_evidence"
         trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
         return {"kind": "fallback", "text": "등록된 문서에서 질문에 사용할 원문을 찾지 못했습니다.",
-                "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": []}, trace
+                "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": [],
+                "context_usage": {"omitted": context_trace["context_omitted"]},
+                **({"context_update": context_update} if context_update is not None else {})}, trace
 
+    qa_stage("rerank")
     rerank_started = time.monotonic()
     passages = [f"문서: {c.document_name}\n{c.heading_context}\n{c.text}" for c in candidates]
     try:
-        scores = service.reranker.score(query, passages)
+        scores = service.reranker.score(search_query, passages)
+        checkpoint()
         if len(scores) != len(candidates) or any(not math.isfinite(score) for score in scores):
             raise ValueError("리랭커 응답 형식이 올바르지 않습니다.")
+    except (ExecutionTimeoutError, ExecutionCancelledError):
+        raise
     except Exception:
         raise DocumentError("document_reranker_failed") from None
     ordered = sorted(zip(candidates, scores), key=lambda row: -row[1])
@@ -63,30 +136,107 @@ def answer_document(repo, service, query: str):
     trace["rerank"] = [{"chunk_id": c.chunk_id, "score": score, "selected": i < service.core_k}
                        for i, (c, score) in enumerate(ordered)]
     trace["timings_ms"]["rerank"] = round((time.monotonic() - rerank_started) * 1000, 2)
+    selected = complete_sources(snapshot, selected, query+' '+conversation['search_intent'])
+    trace['evidence_policy'] = 'related_parents_and_conditions_within_document_version'
+    documents = [{"id": c.chunk_id, "name": c.document_name, "pages": list(c.page_refs),
+                  "heading": c.heading_context, "text": c.text, 'document_id':c.document_id,
+                  'version':c.version, 'service_id':c.service_id, 'source_url':c.source_url,
+                  'source_updated_at':c.source_updated_at, 'basis_year':c.basis_year,
+                  **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
+    for index, document in enumerate(documents,1):
+        document['reference_id'] = f'C{index}'
+    qa_stage("generation")
+    prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output)
+    trace["context"]["context_omitted"] |= omitted
+    trace["budget"] = {"context_limit": capacity, "reserved_output": output,
+                       "estimated_input": llm.input_cost(ANSWER_SYSTEM, prompt) if prompt else None,
+                       "evidence_omitted": len(documents)-len(included)}
+    if not prompt:
+        trace["reason"] = "document_input_budget"
+        trace["timings_ms"]["total"] = round((time.monotonic()-started)*1000, 2)
+        return {"kind": "fallback", "text": "질문과 최소 원문 근거가 모델 입력 예산을 넘어 답변을 보류했습니다.",
+                "reason": "document_input_budget", "services": [], "contacts": [], "suggestions": [], "evidence": [],
+                "context_usage": {"omitted": context_trace["context_omitted"]},
+                **({"context_update": context_update} if context_update is not None else {})}, trace
+    included_ids = {document["id"] for document in included}
+    references = {document['reference_id']:document['id'] for document in included}
+    trace['source_references'] = references
+    selected = [chunk for chunk in selected if chunk.chunk_id in included_ids]
+    trace["context"]["generation_history_messages"] = len(fitted["history"])
+    trace["context"]["generation_summary_used"] = bool(fitted["summary"])
+    prepared_history = context_trace["preparation"] == "used" and bool(
+        context_trace.get("preparation_history_messages", 0) + context_trace["batch_messages"])
+    fallback_questions = context_trace["preparation"] not in {"used", "skipped"} and any(
+        message["role"] == "user" for message in conversation["history"])
+    trace["context"]["history_used"] = bool(fitted["history"]) or prepared_history or fallback_questions
+    trace["context"]["summary_used"] = context_trace["preparation_summary_used"] or bool(fitted["summary"])
     evidence = [{"chunk_id": c.chunk_id, "document_id": c.document_id, "role": "retrieved", "quote": "",
                  "text": c.text, "context": c.text, "pages": list(c.page_refs), "source_blocks": list(c.source_blocks),
-                 "heading_context": c.heading_context, "source_url": c.source_url} for c in selected]
-    context = "\n\n".join(f"[자료 {i + 1}] {c.document_name}\n쪽: {','.join(map(str, c.page_refs))}\n{c.heading_context}\n{c.text}"
-                            for i, c in enumerate(selected))
+                 "heading_context": c.heading_context, "source_url": c.source_url,
+                 'source_updated_at':c.source_updated_at, 'basis_year':c.basis_year,
+                 **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
     generation_started = time.monotonic()
     try:
-        text = service.llm.chat_text(
-            "제공된 문서 근거로 질문에 답하세요. 자료에 없는 내용은 없다고 말하세요.",
-            f"문서 근거:\n{context}\n\n질문: {query}")
-        if not isinstance(text, str) or not text.strip():
+        checkpoint()
+        schema = WelfareAnswer.model_json_schema()
+        schema['$defs']['Citation']['properties']['id']['enum'] = list(references)
+        raw_answer = llm.chat(ANSWER_SYSTEM, prompt, schema=schema)
+        checkpoint()
+        if not isinstance(raw_answer, dict) or not raw_answer:
             raise ValueError("빈 모델 응답입니다.")
+    except (ExecutionTimeoutError, ExecutionCancelledError):
+        raise
     except Exception:
         raise DocumentError("document_generation_failed") from None
     trace["timings_ms"]["generation"] = round((time.monotonic() - generation_started) * 1000, 2)
-    trace["generation_metadata"] = service.llm.last_chat_diagnostics
+    trace["generation_metadata"] = dict(llm.last_chat_diagnostics)
+    qa_stage("validation")
     if repo.snapshot().stamp != snapshot.stamp:
+        service._document_bm25 = None
         raise DocumentError("document_changed_during_search")
+    checkpoint()
     try:
-        current_digest = service.llm.model_digest()
+        current_digest = llm.model_digest()
+        checkpoint()
+    except (ExecutionTimeoutError, ExecutionCancelledError):
+        raise
     except Exception:
         raise DocumentError("document_embedding_failed") from None
     if current_digest != digest:
+        service._document_bm25 = None
         raise DocumentError("embedding_digest_changed")
-    trace["reason"] = "answer"
+    try:
+        answer = validate_answer(raw_answer, included)
+        trace['answer_validation'] = 'accepted'
+    except ValidationError:
+        answer = None
+        trace['answer_validation'] = 'invalid_schema'
+    except (ValueError, TypeError) as exc:
+        answer = None
+        code = str(exc)
+        trace['answer_validation'] = code if code in {
+            'empty_answer','unsupported_citations','unsupported_clarification_quantity',
+            'missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_contact','invalid_source_references'
+        } else 'invalid_answer'
+    trace['citation_validation'] = 'exact_source_span_and_literal_values_only'
+    # 새 인덱스는 요청의 마지막 원문/digest 확인과 취소 점검이 끝난 뒤에만 게시한다.
+    checkpoint()
+    if pending_index is not None:
+        service._document_bm25 = pending_index
+    status = answer.status if answer else 'invalid_evidence_answer'
+    trace["reason"] = status
     trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-    return {"kind": "answer", "text": text.strip(), "services": [], "suggestions": [], "evidence": evidence}, trace
+    if status != 'answer':
+        messages = {'out_of_scope':'복지서비스의 대상·지원 내용·신청 방법을 안내하고 있습니다. 복지 관련 질문을 알려주세요.',
+                    'no_evidence':'복지서비스의 대상·지원 내용·신청 방법을 안내하고 있습니다. 이번 자료에서 관련 근거를 확인하지 못했습니다. 복지서비스명이나 확인할 조건을 알려주세요.',
+                    'invalid_evidence_answer':'답변과 원문 근거의 대응을 확인하지 못해 답변을 보류했습니다. 담당 기관의 공식 안내를 확인해 주세요.'}
+        return {'kind':'fallback', 'reason':status, 'text':messages.get(status, answer.text if answer else messages['invalid_evidence_answer']),
+                'services':[], 'contacts':[], 'suggestions':[], 'evidence':[],
+                'context_usage':{'omitted':context_trace['context_omitted']},
+                **({'context_update':context_update} if context_update is not None else {})}, trace
+    quotes = {references[citation.id]:citation.quote for citation in answer.citations}
+    for item in evidence:
+        item['quote'] = quotes.get(item['chunk_id'], '')
+    return {"kind": "answer", "text": answer.text.strip(), "services": [], "suggestions": [], "evidence": evidence,
+            "context_usage": {"omitted": context_trace["context_omitted"]},
+            **({"context_update": context_update} if context_update is not None else {})}, trace

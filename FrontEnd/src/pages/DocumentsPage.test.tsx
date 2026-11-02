@@ -62,7 +62,7 @@ it("검토 승인 없이 업로드하고 게시된 원문을 검색·질의한�
   fireEvent.click(screen.getByRole("button", { name: "실행" }));
   await screen.findByText("원문에서 확인할 수 없습니다.");
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/index"))).toBe(false);
-  expect(screen.getByRole("link", { name: "기본 채팅으로 이동" })).toHaveAttribute("href", "/");
+  expect(screen.queryByRole("link", { name: "기본 채팅으로 이동" })).not.toBeInTheDocument();
 });
 
 it("DB 자동 처리 설정이 없으면 새 업로드를 막고 적용 안내를 보여준다", async () => {
@@ -74,6 +74,28 @@ it("DB 자동 처리 설정이 없으면 새 업로드를 막고 적용 안내�
   expect(screen.getByRole("button", { name: "업로드·자동 처리" })).toBeDisabled();
   fireEvent.submit(screen.getByRole("button", { name: "업로드·자동 처리" }).closest("form")!);
   expect(fetch.mock.calls.some(([url]) => url.endsWith("/documents"))).toBe(false);
+});
+
+it.each([false, true])("검색 결과의 가림 표시=%s와 원문 위치·참조를 함께 보존한다", async redacted => {
+  const chunkId = "chunk-9913991234567", blockId = "block-9913991234567";
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/processing")) return json({ ready: true });
+    if (url.includes("/programs?")) return json({ items: [], next_offset: null });
+    if (url.includes("/jobs/")) return json(makeJob("succeeded"));
+    if (url.endsWith("/search")) return json({ chunks: [{ chunk_id: chunkId, text: redacted ? "[개인정보 가림]" : "안전한 본문", section: "content", similarity: .8,
+      pages: [1], source_blocks: [blockId], start: 10, end: 27, ...(redacted ? { redacted: true } : {}) }] });
+    return json(makeDoc(makeJob("succeeded")));
+  }));
+  mount("/admin/documents?document=" + id);
+  await waitFor(() => expect(screen.getByRole("button", { name: "실행" })).toBeEnabled());
+  fireEvent.change(screen.getByLabelText("질문"), { target: { value: "2026년 문서 내용" } });
+  fireEvent.click(screen.getByRole("button", { name: "실행" }));
+  const results = await screen.findByRole("region", { name: "검색 결과" });
+  expect(within(results).getByText(redacted ? "[개인정보 가림]" : "안전한 본문")).toBeInTheDocument();
+  expect(results).toHaveTextContent(chunkId);
+  expect(results).toHaveTextContent(`원문 블록: ${blockId} · 위치: 10–27`);
+  expect(within(results).queryByText(/원문 그대로의 인용이 아닙니다/)).toBe(redacted ? within(results).getByText(/원문 그대로의 인용이 아닙니다/) : null);
+  if (redacted) expect(results).toHaveTextContent("위치는 가리기 전 원문 기준입니다.");
 });
 
 it.each(["awaiting_review", "failed"])("기존 %s 문서는 몰래 재처리하지 않고 같은 ID 재첨부를 제공한다", async state => {
@@ -118,16 +140,6 @@ it("일시 조회 실패는 마지막 상태를 보존하고 재조회로 회복
   await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
   expect(screen.getByText("접수 완료 · 작업 대기")).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-});
-
-it("기본 채팅은 실제 API를 사용한다", async () => {
-  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ kind: "fallback", text: "실제 상담 응답", contacts: [], suggestions: [] }) });
-  vi.stubGlobal("fetch", fetch);
-  render(<MemoryRouter initialEntries={["/"]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><App /></MemoryRouter>);
-  fireEvent.change(screen.getByLabelText("궁금한 내용"), { target: { value: "제도 지원 내용" } });
-  fireEvent.click(screen.getByRole("button", { name: "질문 보내기" }));
-  await within(screen.getByRole("log", { name: "상담 내용" })).findByText("실제 상담 응답");
-  expect(fetch).toHaveBeenCalledWith("/api/v1/chat", expect.objectContaining({ method: "POST" }));
 });
 
 it("공개 모드에서 서버가 관리자 권한을 거부하면 문서 API를 호출하지 않는다", async () => {

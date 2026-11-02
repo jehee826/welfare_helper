@@ -3,6 +3,7 @@
 .git/
 .env
 .env.*
+.local/
 welfare_helper__key.pem
 *.pem
 *.key
@@ -12,12 +13,12 @@ postgres_data/
 ollama_data/
 **/node_modules/
 FrontEnd/dist/
+Desktop/
 .agents/
 .codex/
 .claude/
 AGENTS.md
 CLAUDE.md
-작업인계.md
 docs/
 .pytest_cache/
 **/__pycache__/

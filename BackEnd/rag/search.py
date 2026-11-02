@@ -7,6 +7,7 @@ from collections import Counter
 from threading import Lock
 
 from BackEnd.rag.evidence import EvidenceChunk
+from BackEnd.core.execution import checkpoint
 
 
 class KoreanAnalyzer:
@@ -28,8 +29,11 @@ class KoreanAnalyzer:
 class BM25Index:
     def __init__(self, chunks: list[EvidenceChunk], names: dict[str, str], analyzer):
         self.chunks, self.analyzer = chunks, analyzer
-        self.documents = [Counter(analyzer(
-            names[c.service_id] + " " + c.section + " " + c.heading_context + " " + c.text)) for c in chunks]
+        self.documents = []
+        for c in chunks:
+            checkpoint()
+            self.documents.append(Counter(analyzer(names[c.service_id] + " " + c.section + " " + c.heading_context + " " + c.text)))
+            checkpoint()
         self.lengths = [sum(document.values()) for document in self.documents]
         self.average = sum(self.lengths) / max(1, len(chunks)) or 1
         self.frequency = Counter(term for document in self.documents for term in document)
@@ -38,6 +42,7 @@ class BM25Index:
         terms = set(self.analyzer(query))
         ranked = []
         for chunk, document, length in zip(self.chunks, self.documents, self.lengths):
+            checkpoint()
             if chunk.chunk_id not in allowed:
                 continue
             score = 0.0

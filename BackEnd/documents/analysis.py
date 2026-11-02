@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.metadata
+from html import unescape
 import logging
 import json
 from pathlib import Path
@@ -57,23 +58,30 @@ def attach_markdown_ranges(blocks, markdown, blockers):
                 re.fullmatch(r"[ \t|:-]+", value.strip()) and "-" in value for value in lines
             ):
                 end = cursor - (len(lines[-1]) - len(lines[-1].rstrip("\r\n")))
-                table_ranges.append((start, end))
+                content = "".join(value for value in lines if not (
+                    re.fullmatch(r"[ \t|:-]+", value.strip()) and "-" in value
+                ))
+                content = unescape(re.sub(r"(?<!\\)\|", "", content)).replace(r"\|", "|")
+                table_ranges.append((start, end, "".join(c for c in content if not c.isspace())))
             start, lines = None, []
         cursor += len(line)
-    projected, positions = [], []
-    for index, character in enumerate(markdown):
-        if not character.isspace() and character not in "*_`|":
-            projected.append(character)
-            positions.append(index)
+    projected, positions, ends = [], [], []
+    # 비교할 문자만 HTML entity를 복원하고 저장된 Markdown의 원래 범위를 유지한다.
+    for match in re.finditer(r"&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]+);|.", markdown, re.DOTALL):
+        decoded = unescape(match.group())
+        for offset, character in enumerate(decoded):
+            if not character.isspace() and character not in "*_`|":
+                projected.append(character)
+                positions.append(match.start() if decoded != match.group() else match.start() + offset)
+                ends.append(match.end() if decoded != match.group() else match.start() + offset + 1)
     projected = "".join(projected)
     cursor = 0
     for block in blocks:
         if block["label"] == "table":
             cells = (block.get("table") or {}).get("table_cells", [])
             cells = sorted(cells, key=lambda c:(c["start_row_offset_idx"], c["start_col_offset_idx"]))
-            signature = "".join(c for cell in cells for c in cell.get("text", "") if c.isalnum())
-            matches = [(a,b) for a,b in table_ranges if a >= cursor
-                       and "".join(c for c in markdown[a:b] if c.isalnum()) == signature]
+            signature = "".join(c for cell in cells for c in cell.get("text", "") if not c.isspace())
+            matches = [(a,b) for a,b, value in table_ranges if a >= cursor and value == signature]
             if not signature or not matches:
                 blockers.append("markdown_table_range_missing")
                 continue
@@ -89,7 +97,7 @@ def attach_markdown_ranges(blocks, markdown, blockers):
                 blockers.append("markdown_block_range_missing")
                 continue
             start = positions[position]
-            end = positions[position + len(needle) - 1] + 1
+            end = ends[position + len(needle) - 1]
             line_start = markdown.rfind("\n", 0, start) + 1
             line_end = markdown.find("\n", end)
             if not markdown[line_start:start].strip(" #*>|_`-\t") and line_start >= cursor:

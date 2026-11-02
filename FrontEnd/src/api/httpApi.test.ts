@@ -1,5 +1,4 @@
 import { ApiError, createHttpApi } from "./httpApi";
-import { createMockApi } from "./mockApi";
 import type { AdminProgram } from "./types";
 
 const rawProgram = {
@@ -49,7 +48,7 @@ function stubFetch(...responses: Response[]) {
   return fetchMock;
 }
 
-const api = () => createHttpApi({ fallback: createMockApi({ latencyMs: 0 }) });
+const api = () => createHttpApi();
 
 describe("httpApi 채팅", () => {
   afterEach(() => {
@@ -68,9 +67,9 @@ describe("httpApi 채팅", () => {
     expect(JSON.parse(init.body)).toEqual({ query: "연금" });
   });
 
-  it("서버 오류면 서버가 준 안내 문구로 예외를 던진다", async () => {
-    stubFetch(json({ detail: "보건복지상담센터 129로 문의해 주세요." }, 503));
-    await expect(api().ask("연금", null)).rejects.toThrow("129");
+  it("채팅 서버 오류는 내부 문구를 노출하지 않는다", async () => {
+    stubFetch(json({ detail: "가상 내부 예외 SECRET" }, 503));
+    await expect(api().ask("연금", null)).rejects.toMatchObject({ message: "상담 응답을 받지 못했어요.", status: 503, code: "" });
   });
 });
 
@@ -156,9 +155,4 @@ describe("httpApi 관리자 제도", () => {
     await expect(api().listDepartments()).rejects.toMatchObject({ status: 422, code: "invalid_request" });
   });
 
-  it("이용 통계는 아직 목업 데이터를 쓴다", async () => {
-    const fetchMock = stubFetch();
-    expect((await api().getMonthlyStats()).length).toBeGreaterThan(0);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
 });

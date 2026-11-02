@@ -3,8 +3,11 @@
 import math
 from pathlib import Path
 from threading import Lock
+from collections import OrderedDict
+import os
 
 from BackEnd.rag.chunking import split_ranges
+from BackEnd.core.execution import checkpoint, ExecutionTimeoutError, ExecutionCancelledError
 
 
 class RerankerError(RuntimeError):
@@ -39,6 +42,7 @@ class LocalReranker:
         return self.score_with_diagnostics(query, passages)[0]
 
     def count_tokens(self, text: str) -> int:
+        checkpoint()
         with self._lock:
             if self._count_tokenizer is None:
                 from tokenizers import Tokenizer
@@ -48,6 +52,7 @@ class LocalReranker:
             return len(self._count_tokenizer.encode(text, add_special_tokens=False).ids)
 
     def score_with_diagnostics(self, query: str, passages: list[str]) -> tuple[list[float], list[dict]]:
+        checkpoint()
         if not passages:
             return [], []
         query_tokens = self.count_tokens(query)
@@ -56,6 +61,7 @@ class LocalReranker:
         # 첫 요청의 중복 모델 로딩과 동시 추론에 따른 메모리 급증을 막는다.
         with self._lock:
             try:
+                checkpoint()
                 if self._session is None:
                     files = self.model_files()
                     import onnxruntime as ort
@@ -73,10 +79,12 @@ class LocalReranker:
                         providers=["CPUExecutionProvider"],
                     )
                     self._tokenizer, self._session = tokenizer, session
+                checkpoint()
 
                 scores, diagnostics = [], []
                 import numpy as np
                 for passage in passages:
+                    checkpoint()
                     special = len(self._tokenizer.encode(query, "").ids) - query_tokens
                     budget = min(400, self.max_length - query_tokens - special - 16)
                     header, body = "", passage
@@ -86,7 +94,9 @@ class LocalReranker:
                         while body.startswith("[제목") and "\n" in body:
                             heading, _, body = body.partition("\n")
                             header += heading + "\n"
-                    count = lambda text: len(self._tokenizer.encode(text, add_special_tokens=False).ids)
+                    def count(text):
+                        checkpoint()
+                        return len(self._tokenizer.encode(text, add_special_tokens=False).ids)
                     try:
                         windows = split_ranges(body, header, count, target=len(body), max_chars=max(1, len(body)),
                                                max_tokens=budget, overlap=False)
@@ -94,6 +104,7 @@ class LocalReranker:
                         raise RerankerInputError("원문을 빠짐없이 입력 창으로 나누지 못했습니다.") from None
                     window_scores, lengths = [], []
                     for window in windows:
+                        checkpoint()
                         encoded = self._tokenizer.encode(query, header + body[window.start:window.end])
                         if len(encoded.ids) > self.max_length - 16:
                             raise RerankerInputError("리랭커 쌍 입력 한도를 넘었습니다.")
@@ -103,6 +114,7 @@ class LocalReranker:
                         inputs = {arg.name: np.asarray([values[arg.name]], dtype=np.int64)
                                   for arg in self._session.get_inputs()}
                         logits = self._session.run(None, inputs)[0].reshape(-1)
+                        checkpoint()
                         if len(logits) != 1 or not math.isfinite(float(logits[0])):
                             raise ValueError("리랭커 점수가 유효하지 않습니다.")
                         value = float(logits[0])
@@ -111,10 +123,25 @@ class LocalReranker:
                     scores.append(max(window_scores))
                     diagnostics.append({"windows": len(windows), "pair_tokens": lengths, "truncated": False})
                 return scores, diagnostics
-            except RerankerInputError:
+            except (ExecutionTimeoutError, ExecutionCancelledError, RerankerInputError):
                 raise
             except Exception as exc:
                 raise RerankerError(f"로컬 리랭커 사용 실패: {type(exc).__name__}") from None
+
+
+_cache = OrderedDict()
+_cache_lock = Lock()
+
+
+def cached_reranker(model: str, revision: str, cache_dir: str, max_length: int, threads: int):
+    key = (model, revision, os.path.normcase(str(Path(cache_dir).resolve())), max_length, threads)
+    with _cache_lock:
+        if key not in _cache:
+            _cache[key] = LocalReranker(*key)
+            if len(_cache) > 4:
+                _cache.popitem(last=False)
+        _cache.move_to_end(key)
+        return _cache[key]
 
 
 def download_model() -> None:

@@ -5,6 +5,8 @@ from array import array
 from datetime import datetime
 
 from psycopg2.extras import RealDictCursor
+from BackEnd.core.db import RequestCursor
+from BackEnd.core.execution import checkpoint
 
 from BackEnd.documents.contracts import DocumentError, automatic_source_fingerprint, stable_hash, validate_review
 from BackEnd.rag.evidence import read_chunk, validate_version
@@ -32,6 +34,7 @@ def validate_document_vectors(doc, job, rows):
     by_block = {b['id']:b for b in analysis['blocks']}
     chunks, vectors = [], {}
     for index, row in enumerate(rows):
+        checkpoint()
         metadata = row['evidence_metadata'].get('chunk', {})
         chunk = read_chunk(metadata.get('chunk_id',''), doc['service_id'], json.dumps(metadata,ensure_ascii=False), doc['source_url'])
         if (row['chunk_index'] != index or str(row['document_id']) != str(doc['document_id'])
@@ -115,6 +118,7 @@ def active_document_chunks(cur, model, scope=None, *, include_local_documents=Fa
                  "NOT d.test_only AND NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'")
     params = (scope,) if scope else ()
     with cur.connection.cursor(cursor_factory=RealDictCursor) as rows_cur:
+        rows_cur = RequestCursor(rows_cur)
         rows_cur.execute("SELECT d.document_id,d.document_name,d.source_url,d.source_organization,d.source_updated_at,d.basis_year,d.test_only,"
                          "d.valid_from,d.valid_until,d.region_scope,d.file_sha256,d.file_format,"
                          "d.markdown,d.analysis_json,d.reviewed_by,d.reviewed_at,d.local_ingestion,d.updated_at,"
@@ -127,7 +131,7 @@ def active_document_chunks(cur, model, scope=None, *, include_local_documents=Fa
         if len(documents) > 50000:
             raise DocumentError('document_catalog_size_limit')
         if not documents:
-            return [], {}, {}, []
+            return [], {}, {}, [], {}
         rows_cur.execute('SELECT v.*,v.embedding::text AS vector_text FROM public.welfare_document_vectors v '
                          'JOIN public.rag_documents d ON d.document_id=v.document_id AND d.active_job_id=v.job_id '
                          'JOIN public.rag_document_jobs j ON j.job_id=v.job_id AND j.document_id=v.document_id '
@@ -155,5 +159,8 @@ def active_document_chunks(cur, model, scope=None, *, include_local_documents=Fa
     # 한 제도의 현재 문서 중 손상된 근거가 있으면 나머지만으로 완전한 조건이라고 답하지 않는다.
     rejected={c.chunk_id for c in chunks if c.service_id in unavailable}
     identities = [(str(d['document_id']),str(d['job_id']),str(d['updated_at'])) for d in documents]
+    metadata = {str(doc['document_id']): {key: str(doc.get(key) or '') for key in
+                ('source_organization', 'region_scope', 'basis_year', 'source_updated_at', 'valid_from', 'valid_until')}
+                for doc in documents if doc['service_id'] not in unavailable}
     return ([c for c in chunks if c.chunk_id not in rejected],
-            {k:v for k,v in vectors.items() if k not in rejected}, unavailable, identities)
+            {k:v for k,v in vectors.items() if k not in rejected}, unavailable, identities, metadata)

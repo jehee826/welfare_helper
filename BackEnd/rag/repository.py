@@ -7,6 +7,8 @@ import math
 from typing import Callable, Sequence
 
 from BackEnd.ingest.csv_loader import ServiceRecord
+from BackEnd.core.db import RequestCursor
+from BackEnd.core.execution import checkpoint
 from BackEnd.rag.embeddings import validate_embeddings
 from BackEnd.rag.evidence import EvidenceChunk, EvidenceConsistencyError, fingerprint
 
@@ -22,6 +24,7 @@ class CatalogSnapshot:
     unavailable_services: dict[str, str] = field(default_factory=dict)
     service_stamps: dict[str, str] = field(default_factory=dict)
     embeddings: dict[str, Sequence[float]] | None = None
+    document_metadata: dict[str, dict] = field(default_factory=dict)
 
 
 def vector_literal(values: list[float]) -> str:
@@ -42,7 +45,7 @@ class PgServiceRepository:
 
     @staticmethod
     def _unsupported_ingestion():
-        raise ValueError('이전 CSV·직접 상세 벡터 적재와 자동 DDL은 지원하지 않습니다. 문서 API에서 분석·검토·게시하세요.')
+        raise ValueError('이전 CSV·직접 상세 벡터 적재와 자동 DDL은 지원하지 않습니다. 관리자 문서 API 업로드 후 자동 분석·청크·임베딩·게시를 사용하세요.')
 
     def init_schema(self):
         self._unsupported_ingestion()
@@ -63,9 +66,11 @@ class PgServiceRepository:
         return self.snapshot().services
 
     def snapshot(self) -> CatalogSnapshot:
+        checkpoint()
         with closing(self._connect()) as conn:
             conn.set_session(isolation_level='REPEATABLE READ', readonly=True)
             with conn, conn.cursor() as cur:
+                cur = RequestCursor(cur)
                 condition = 'EXISTS(SELECT 1 FROM public.rag_documents d WHERE d.program_id=p.program_id AND d.document_id=%s)' \
                     if self.document_scope else 'TRUE' if self.include_local_documents else "NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'"
                 params = (self.document_scope,MAX_CATALOG_ROWS+1) if self.document_scope else (MAX_CATALOG_ROWS+1,)
@@ -83,9 +88,10 @@ class PgServiceRepository:
                 # 문서 API 접수 여부와 검색 자료의 사용 여부는 별개다. 벡터 저장소는 항상 하나다.
                 from BackEnd.documents.retrieval import active_document_chunks
 
-                chunks, vectors, unavailable, identities = active_document_chunks(
+                chunks, vectors, unavailable, identities, document_metadata = active_document_chunks(
                     cur, self.embed_model, self.document_scope, include_local_documents=self.include_local_documents)
         versions={}
+        checkpoint()
         for child in chunks:
             versions.setdefault(child.service_id,set()).add(child.version)
         service_stamps={r.service_id:fingerprint(json.dumps(asdict(r),ensure_ascii=False,sort_keys=True)) for r in services}
@@ -95,7 +101,7 @@ class PgServiceRepository:
                           + '\n'.join(c.storage() for c in chunks)
                           + json.dumps(unavailable,sort_keys=True)
                           + json.dumps(identities))
-        return CatalogSnapshot(services,chunks,stamp,versions,unavailable,service_stamps,vectors)
+        return CatalogSnapshot(services,chunks,stamp,versions,unavailable,service_stamps,vectors,document_metadata)
 
     def chunks_for_services(self, ids):
         return [c for c in self.snapshot().chunks if c.service_id in ids]
@@ -120,6 +126,7 @@ class PgServiceRepository:
             return []
         ranked=[]
         for child in chosen:
+            checkpoint()
             vector=(snapshot.embeddings or {}).get(child.chunk_id)
             if vector is None:
                 raise EvidenceConsistencyError('같은 스냅샷의 벡터가 없습니다.')

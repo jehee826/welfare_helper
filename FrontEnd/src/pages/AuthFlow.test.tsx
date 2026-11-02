@@ -1,20 +1,20 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { saveAdminSession } from "../auth/session";
 import { App } from "../App";
-import { STORAGE_KEYS } from "../lib/storage";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const documentId = "00000000-0000-0000-0000-000000000001";
 const jobId = "00000000-0000-0000-0000-000000000002";
 const oldHistory = [{ id: "public", at: "2026-01-01T00:00:00Z", question: "기존 공개 질문", summary: "공개 안내", answerText: "공개 응답", fallback: false }];
+const historyKey = "welfare.history";
 function mount(path = "/admin/documents") {
   return render(<MemoryRouter initialEntries={[path]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><App /></MemoryRouter>);
 }
 beforeEach(() => vi.stubEnv("DEV", false));
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-it("공개 로그인부터 업로드·게시 상태·기본 채팅과 로그아웃까지 같은 관리자 토큰을 사용한다", async () => {
+it("관리자 로그인부터 업로드·게시 상태와 로그아웃까지 같은 토큰을 사용한다", async () => {
   let phase = "parsing";
   const job = () => ({ job_id: jobId, state: phase, error_code: null, processing_mode: "automatic" });
   const doc = () => ({ document_id: documentId, name: "등록 문서", service_id: "WLF_PUBLIC", source_url: "https://example.invalid/source", source_organization: "기관", basis_year: null, source_updated_at: null, test_only: false, active_job_id: phase === "succeeded" ? jobId : null, jobs: [job()] });
@@ -35,7 +35,7 @@ it("공개 로그인부터 업로드·게시 상태·기본 채팅과 로그아�
     return json(doc());
   });
   vi.stubGlobal("fetch", fetch);
-  localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(oldHistory));
+  localStorage.setItem(historyKey, JSON.stringify(oldHistory));
   mount();
   expect(screen.getByRole("link", { name: "문서 관리" })).toBeInTheDocument();
   fireEvent.change(await screen.findByLabelText("비밀번호"), { target: { value: "dummy-password" } });
@@ -53,18 +53,11 @@ it("공개 로그인부터 업로드·게시 상태·기본 채팅과 로그아�
   phase = "succeeded";
   fireEvent.click(screen.getByRole("button", { name: "상태 새로 확인" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "실행" })).toBeEnabled());
-  fireEvent.click(screen.getByRole("link", { name: "기본 채팅으로 이동" }));
-  fireEvent.change(screen.getByLabelText("궁금한 내용"), { target: { value: "관리자 자료 질문" } });
-  fireEvent.click(screen.getByRole("button", { name: "질문 보내기" }));
-  const log = screen.getByRole("log", { name: "상담 내용" });
-  await within(log).findByText("관리자 자료의 응답");
-  fireEvent.click(within(log).getByText("원문 근거 보기 (1건)"));
-  expect(within(log).getByText(/쪽: 1/)).toBeInTheDocument();
-  expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.history)!)).toEqual(oldHistory);
+  expect(JSON.parse(localStorage.getItem(historyKey)!)).toEqual(oldHistory);
   fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
-  await waitFor(() => expect(screen.queryByText("관리자 자료의 응답")).not.toBeInTheDocument());
-  expect(screen.getByText("기존 공개 질문")).toBeInTheDocument();
-  expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.history)!)).toEqual(oldHistory);
+  await screen.findByLabelText("비밀번호");
+  expect(screen.queryByRole("button", { name: "업로드·자동 처리" })).not.toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem(historyKey)!)).toEqual(oldHistory);
 });
 
 it("서버가 세션을 거부하면 문서 기능을 열지 못한다", async () => {
@@ -77,15 +70,16 @@ it("서버가 세션을 거부하면 문서 기능을 열지 못한다", async (
   expect(fetch.mock.calls.length).toBeLessThanOrEqual(2);
 });
 
-it("세션이 바뀌면 이전 관리자 응답을 새 세션 화면이나 공개 이력에 남기지 않는다", async () => {
-  saveAdminSession({ access_token: "admin-token", session_id: "first", expires_at: Date.now() / 1000 + 3600 });
-  vi.stubGlobal("fetch", vi.fn(async () => json({ kind: "answer", text: "이전 계정 원문", services: [], suggestions: [] })));
-  localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(oldHistory));
-  mount("/");
-  fireEvent.change(await screen.findByLabelText("궁금한 내용"), { target: { value: "관리자 질문" } });
-  fireEvent.click(screen.getByRole("button", { name: "질문 보내기" }));
-  await within(screen.getByRole("log", { name: "상담 내용" })).findByText("이전 계정 원문");
-  act(() => saveAdminSession({ access_token: "another-token", session_id: "second", expires_at: Date.now() / 1000 + 3600 }));
-  expect(screen.queryByText("이전 계정 원문")).not.toBeInTheDocument();
-  expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.history)!)).toEqual(oldHistory);
+it("문서 관리 직접 진입의 비밀번호 실패는 입력을 비우고 업로드를 열지 않는다", async () => {
+  const fetch = vi.fn(async (_url: string) => json({}, 401));
+  vi.stubGlobal("fetch", fetch);
+  localStorage.setItem(historyKey, JSON.stringify(oldHistory));
+  mount();
+  fireEvent.change(await screen.findByLabelText("비밀번호"), { target: { value: "synthetic-wrong-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "들어가기" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("관리자 비밀번호가 일치하지 않습니다.");
+  expect(screen.getByLabelText("비밀번호")).toHaveValue("");
+  expect(screen.queryByRole("button", { name: "업로드·자동 처리" })).not.toBeInTheDocument();
+  expect(fetch.mock.calls.every(([url]) => String(url).endsWith("/login") || String(url).endsWith("/session"))).toBe(true);
+  expect(JSON.parse(localStorage.getItem(historyKey)!)).toEqual(oldHistory);
 });

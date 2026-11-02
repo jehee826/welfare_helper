@@ -23,7 +23,17 @@ https://{$PUBLIC_API_HOST} {
 		max_size 52MiB
 	}
 
+	# Desktop 화면 상담은 SSH 로컬 포워딩 전용이며 공개 프록시로 전달하지 않는다.
+	@desktop path /api/v1/desktop /api/v1/desktop/*
+	respond @desktop 404
+
+	# 공개 상태 확인은 /health만 제공하고 내부 진단·API 문서는 노출하지 않는다.
+	@diagnostics path /health/* /docs /docs/* /redoc /redoc/* /openapi.json /debug /debug/*
+	respond @diagnostics 404
+
 	reverse_proxy backend:8000 {
+		# 로그인 제한에는 직접 접속자의 IP 하나만 전달한다.
+		header_up X-Forwarded-For {remote_host}
 		transport http {
 			dial_timeout 10s
 			response_header_timeout 1800s

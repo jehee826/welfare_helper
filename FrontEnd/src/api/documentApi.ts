@@ -1,6 +1,7 @@
 import { apiBaseUrl, requireApiBaseUrl } from "./config";
 import { ApiError } from "./errors";
 import { authenticatedFetch } from "./auth";
+import { sensitiveInput, redactDocument, SENSITIVE_INPUT_MESSAGE } from "../lib/privacy";
 
 export const documentApiRoot = `${apiBaseUrl}/api/v1/admin/documents`;
 export interface Program { service_id: string; program_name: string; test_only: boolean }
@@ -20,12 +21,15 @@ export interface DocumentStatus {
   basis_year: number | null; source_updated_at: string | null; test_only: boolean;
   active_job_id: string | null; jobs: Job[]; analysis?: Analysis;
 }
-export interface SearchResult { chunks: { chunk_id: string; text: string; section: string; similarity: number; pages: number[]; source_blocks: string[]; start: number; end: number }[] }
+export interface SearchResult { chunks: { chunk_id: string; text: string; section: string; similarity: number; pages: number[]; source_blocks: string[]; start: number; end: number; redacted?: boolean }[] }
 export interface QueryResult { response: { text: string; kind: string; reason?: string; services?: unknown[] }; diagnostics: unknown }
 
 export class DocumentApiError extends Error {
   constructor(readonly status: number, readonly code: string) {
-    super(code === "document_generation_failed"
+    super(status === 429 ? "다른 요청을 처리 중입니다. 잠시 후 직접 다시 시도해 주세요."
+      : status === 504 ? "요청 처리 시간을 넘었습니다. 잠시 후 다시 시도해 주세요."
+      : status === 499 ? "요청이 취소되었습니다. 다시 시도할 수 있습니다."
+      : code === "document_generation_failed"
       ? "문서 답변 모델 실행에 실패했습니다. 모델 상태를 확인한 뒤 다시 질문해 주세요."
       : code === "document_embedding_failed"
         ? "질문 임베딩에 실패했습니다. 임베딩 모델 상태를 확인한 뒤 다시 질문해 주세요."
@@ -44,6 +48,11 @@ export class DocumentApiError extends Error {
 }
 
 export async function documentRequest<T>(path: string, signal: AbortSignal, options: RequestInit = {}): Promise<T> {
+  const documentQuery = /\/(?:query|search)$/.test(path);
+  if (documentQuery && typeof options.body === "string") {
+    const body = JSON.parse(options.body) as { query?: unknown };
+    if (typeof body.query === "string" && sensitiveInput(body.query)) throw new ApiError(SENSITIVE_INPUT_MESSAGE, 422, "sensitive_input");
+  }
   requireApiBaseUrl();
   const response = await authenticatedFetch(documentApiRoot + path, { ...options, signal });
   if (!response.ok) {
@@ -52,7 +61,8 @@ export async function documentRequest<T>(path: string, signal: AbortSignal, opti
     const code = typeof body.detail === "string" && /^[a-z][a-z0-9_]{0,100}$/.test(body.detail) ? body.detail : `http_${response.status}`;
     throw new DocumentApiError(response.status, code);
   }
-  return (response.headers.get("content-type")?.includes("text/plain") ? await response.text() : await response.json()) as T;
+  const result = (response.headers.get("content-type")?.includes("text/plain") ? await response.text() : await response.json()) as T;
+  return documentQuery ? redactDocument(result) : result;
 }
 
 export function jsonPost(body: unknown): RequestInit {
@@ -60,6 +70,7 @@ export function jsonPost(body: unknown): RequestInit {
 }
 
 export function documentError(error: unknown) {
+  if (error instanceof ApiError && error.code === "sensitive_input") return SENSITIVE_INPUT_MESSAGE;
   if (error instanceof ApiError && ["backend_not_configured", "session_expired"].includes(error.code)) return error.message;
   if (error instanceof ApiError && [401, 403].includes(error.status)) return "관리자 로그인 세션을 확인해 주세요.";
   return error instanceof DocumentApiError ? `${error.message} (${error.code})` : "서버에 연결하지 못했습니다. 백엔드와 Vite 프록시를 확인한 뒤 다시 시도하세요.";

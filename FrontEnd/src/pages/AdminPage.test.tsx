@@ -10,10 +10,10 @@ const auth = vi.hoisted(() => ({ check: vi.fn(), signIn: vi.fn() }));
 vi.mock("../api/auth", async original => ({ ...await original<typeof import("../api/auth")>(), checkAdminAccess: auth.check, loginAdmin: auth.signIn }));
 
 async function login() {
-  const ctx = renderApp("/admin");
+  const ctx = renderApp("/admin/programs");
   await ctx.user.type(await screen.findByLabelText("비밀번호"), "dummy-password");
   await ctx.user.click(screen.getByRole("button", { name: "들어가기" }));
-  await screen.findByRole("tab", { name: "복지제도 관리" });
+  await screen.findByRole("heading", { name: "제도 등록·관리" });
   return ctx;
 }
 
@@ -58,7 +58,7 @@ describe("관리자 화면", () => {
   });
 
   it("서버가 비밀번호를 거부하면 들어갈 수 없다", async () => {
-    const { user } = renderApp("/admin");
+    const { user } = renderApp("/admin/programs");
     auth.signIn.mockRejectedValue(new ApiError("관리자 비밀번호가 일치하지 않습니다.", 401));
     await user.type(await screen.findByLabelText("비밀번호"), "wrong");
     await user.click(screen.getByRole("button", { name: "들어가기" }));
@@ -98,16 +98,25 @@ describe("관리자 화면", () => {
     expect(screen.queryByRole("cell", { name: /에너지바우처/ })).not.toBeInTheDocument();
   });
 
-  it("이용 통계 탭에서 월별 문의와 연결 건수를 본다", async () => {
-    const { user } = await login();
-    await user.click(screen.getByRole("tab", { name: "이용 통계" }));
-    expect(await screen.findByRole("table", { name: "월별 문의와 상담원 연결 건수" })).toBeInTheDocument();
-  });
 });
 
 describe("제도 관리와 원문 문서", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("샘플 질문 빈도 제한을 알리고 확인 버튼을 복구하며 자동 재전송하지 않는다", async () => {
+    const user = userEvent.setup();
+    let rejectRequest!: (error: unknown) => void;
+    const ask = vi.fn().mockImplementation(() => new Promise((_, reject) => { rejectRequest = reject; }));
+    render(<ProgramManager api={fakeApi({ ask })} />);
+    await user.type(screen.getByLabelText("샘플 질문"), "공개 질문");
+    await user.click(screen.getByRole("button", { name: "확인" }));
+    expect(screen.getByRole("button", { name: "확인 중…" })).toBeDisabled();
+    rejectRequest(new ApiError("rate", 429, "chat_rate_limited"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("질문 요청이 많습니다");
+    expect(screen.getByRole("button", { name: "확인" })).toBeEnabled();
+    expect(ask).toHaveBeenCalledTimes(1);
   });
 
   it("원문 문서 수를 보여주고, 문서가 있는 제도는 이름과 서비스 ID를 잠근다", async () => {

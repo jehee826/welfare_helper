@@ -6,7 +6,8 @@ from uuid import uuid4
 
 from psycopg2.extras import Json, RealDictCursor, execute_values
 
-from BackEnd.core.db import connect
+from BackEnd.core.db import connect, RequestCursor
+from BackEnd.core.execution import current_budget
 from BackEnd.core.settings import get_settings
 from BackEnd.documents.contracts import DocumentError, PARSER_VERSION, stable_hash
 from BackEnd.rag.embeddings import validate_embeddings
@@ -22,8 +23,11 @@ class DocumentStore:
 
     @contextmanager
     def cursor(self):
-        with closing(self.connect()) as conn, conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            yield cur
+        with closing(self.connect()) as conn:
+            # 풀 연결의 기본 읽기 전용 상태에 등록·게시 트랜잭션을 맡기지 않는다.
+            conn.set_session(readonly=False)
+            with conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+                yield RequestCursor(cur) if current_budget() is not None else cur
 
     @staticmethod
     def _admin(cur, actor, local=False):

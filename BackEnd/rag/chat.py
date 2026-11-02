@@ -168,7 +168,7 @@ def ordered_sentences(text: str) -> list[str]:
 
 
 class ChatService:
-    """대화 해석, 후보 검색, 리랭킹, 근거 충분성 및 원문 인용 검증을 순서대로 처리한다."""
+    """문서 QA의 실행 의존성을 담는다. 아래의 이전 answer 계열은 현재 채팅·진단 경로에서 사용하지 않는다."""
 
     def __init__(self, repo: ServiceRepository, llm: LanguageModel, min_similarity: float, top_n: int,
                  *, reranker: Reranker | None = None, min_rerank_score: float = 0.5,
@@ -179,6 +179,7 @@ class ChatService:
         self.analyzer = analyzer or KoreanAnalyzer()
         self.dense_k, self.keyword_k, self.core_k = dense_k, keyword_k, core_k
         self._bm25 = None
+        self._document_bm25 = None
         self._index_stamp = ""
         self._index_lock = Lock()
 

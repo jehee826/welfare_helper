@@ -52,7 +52,7 @@ def main():
         "test_api.py", "test_settings.py", "test_chat_rate_limit.py", "test_request_execution.py",
         "test_documents.py", "test_document_automatic_pipeline.py", "test_document_replacement_boundaries.py",
         "test_document_privacy.py", "test_chat_http_recovery.py",
-        "test_remote_screen.py", "test_remote_screen_tcp.py",
+        "test_remote_screen.py", "test_remote_screen_tcp.py", "test_qa_diagnostics.py",
     ]
     raise SystemExit(pytest.main(["-q", *["BackEnd/tests/" + name for name in files]]))
 

@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
+from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import prepare_context, fit_answer, ANSWER_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
@@ -32,7 +33,9 @@ def _document_keyword_index(repo, service, snapshot, digest):
     return index, (key, index) if keep else None
 
 
+@diagnose_qa
 def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None):
+    qa_stage("snapshot")
     checkpoint()
     budget = current_budget()
     llm = service.llm.for_request(budget.deadline, budget.cancelled.is_set) if budget else service.llm
@@ -53,6 +56,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         return {"kind": "fallback", "text": "등록된 문서에서 검색할 원문을 찾지 못했습니다.",
                 "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": []}, trace
 
+    qa_stage("context")
     try:
         capacity = llm.context_limit()
         output = getattr(llm, "llm_options", {}).get("num_predict", 512)
@@ -78,6 +82,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                 "reason":"conversation_clarification_required", "services":[], "contacts":[], "suggestions":[], "evidence":[],
                 "context_usage":{"omitted":context_trace["context_omitted"]},
                 **({"context_update":context_update} if context_update is not None else {})}, trace
+    qa_stage("retrieval")
     retrieval_started = time.monotonic()
     try:
         digest = llm.model_digest()
@@ -114,6 +119,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                 "context_usage": {"omitted": context_trace["context_omitted"]},
                 **({"context_update": context_update} if context_update is not None else {})}, trace
 
+    qa_stage("rerank")
     rerank_started = time.monotonic()
     passages = [f"문서: {c.document_name}\n{c.heading_context}\n{c.text}" for c in candidates]
     try:
@@ -139,6 +145,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                   **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
     for index, document in enumerate(documents,1):
         document['reference_id'] = f'C{index}'
+    qa_stage("generation")
     prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output)
     trace["context"]["context_omitted"] |= omitted
     trace["budget"] = {"context_limit": capacity, "reserved_output": output,
@@ -183,6 +190,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         raise DocumentError("document_generation_failed") from None
     trace["timings_ms"]["generation"] = round((time.monotonic() - generation_started) * 1000, 2)
     trace["generation_metadata"] = dict(llm.last_chat_diagnostics)
+    qa_stage("validation")
     if repo.snapshot().stamp != snapshot.stamp:
         service._document_bm25 = None
         raise DocumentError("document_changed_during_search")

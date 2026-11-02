@@ -20,7 +20,7 @@
   style.dataset.gyeoteStyle='';style.textContent=palette.map((p,i)=>`.${classes[i]}{outline:4px solid ${p.color}!important;outline-offset:4px!important}.${classes[i]}:focus-visible{outline-style:double!important;outline-width:6px!important}`).join('\n');document.documentElement.append(style);
   let selected=[],snapshot=null,serial=0,frame=0,collapsed=false,ownMutation=false,observer,requestPort=null,busy=false,activeReply=null,history=[],historyUrl='',pageVersion=0,capturing=false,requestTimer;
   let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
-  let screenAllowed=false,configurationReady=false;
+  let screenAllowed=false,configurationReady=false,pendingQuestion=null;
   try{screenAllowed=GyeoteProtocol.screenAvailable();configurationReady=true;}catch{}
   const conversations={screen:[],document:[]};
   const rootStyles=new Map([[document,style]]);
@@ -32,7 +32,12 @@
     if(activeReply){activeReply.label.textContent='곁에 · 이전 답변';activeReply.text.textContent=activeReply.answer;activeReply=null;}
     if(message)setStatus(message);
   }
-  function cancel(message){serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;questionForm.querySelector('button[type="submit"]').disabled=false;cancelButton.hidden=true;clear(message);inputAssist?.invalidate();}
+  function finishQuestion(message){
+    if(!pendingQuestion)return;
+    const notice=document.createElement('p');notice.className='request-outcome muted';notice.textContent=message;
+    if(pendingQuestion.isConnected)pendingQuestion.append(notice);pendingQuestion=null;
+  }
+  function cancel(message){finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;questionForm.querySelector('button[type="submit"]').disabled=false;cancelButton.hidden=true;clear(message);inputAssist?.invalidate();}
   function position(){
     frame=0;
     if(!selected.length)return;
@@ -213,7 +218,7 @@
         if(historyUrl!==source.url){history=[];historyUrl=source.url;}
         payload={...source.payload,question,history:history.slice(-4)};GyeoteProtocol.request(payload);
       }
-      appendMessage('user',question);busy=true;questionForm.querySelector('button[type="submit"]').disabled=true;cancelButton.hidden=false;setStatus(documentMode?'등록 문서에서 답변을 찾고 있습니다.':'현재 공개 화면을 확인해 답변하고 있습니다.');
+      const questionMessage=appendMessage('user',question);if(documentMode)pendingQuestion=questionMessage.article;busy=true;questionForm.querySelector('button[type="submit"]').disabled=true;cancelButton.hidden=false;setStatus(documentMode?'등록 문서에서 답변을 찾고 있습니다.':'현재 공개 화면을 확인해 답변하고 있습니다.');
       requestTimer=setTimeout(()=>{if(version===serial)cancel(errors.connection_failed);},10000);
       const prepared=await chrome.runtime.sendMessage({type:'gyeote:prepare',mode});if(version!==serial)return;
       if(!prepared?.ok)throw new Error(prepared?.error||'connection_failed');
@@ -221,7 +226,7 @@
         const access=accessKey(prepared.documentAccess);
         if(access!==requestAccess)throw new Error('document_access_changed');
         // 알림이 늦어져도 이전 관리자 이력을 다른 접근 상태의 요청에 싣지 않는다.
-        if(documentHistoryAccess&&documentHistoryAccess!==access){resetDocumentHistory();payload.history=[];appendMessage('user',question);}
+        if(documentHistoryAccess&&documentHistoryAccess!==access){resetDocumentHistory();payload.history=[];pendingQuestion=appendMessage('user',question).article;}
         documentHistoryAccess=access;
         if(prepared.documentAccess)showDocumentAccess(prepared.documentAccess);
       }
@@ -238,14 +243,14 @@
         if(version!==serial||requestPort!==port||finished||packet.requestId!==requestId)return;
         finished=true;
         try{
-          if(documentMode){await profilePanel.confirm(requestProfile);if(version!==serial||requestPort!==port)return;}
           if(packet.type!=='result')throw new Error(packet.error||'invalid_reply');
+          if(documentMode){await profilePanel.confirm(requestProfile);if(version!==serial||requestPort!==port)return;}
           if(documentMode){
-            const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);setStatus('문서 답변입니다. 원문 근거를 함께 확인하세요.');appendDocumentAnswer(answer);
+            const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);pendingQuestion=null;setStatus('문서 답변입니다. 원문 근거를 함께 확인하세요.');appendDocumentAnswer(answer);
             if(publicRequest){
               clearTimeout(requestTimer);
               const saved=await savedPanel.save(conversationContext,requestId,question,answer,requestProfile.revision,()=>version===serial&&requestPort===port&&mode==='document');
-              if(version===serial&&requestPort===port)setStatus(saved?'답변을 이 기기에 저장했습니다. 당시 근거의 현재 유효성은 다시 확인하지 않았습니다.'+(answer.context_update?.status==='failed'?' 요약 갱신은 실패해 제한한 최근 대화로 답변했습니다.':'')+(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted?' 일부 대화 맥락은 제외됐습니다.':''):'답변과 요약 후보가 저장되지 않았습니다. 아래의 저장 재시도를 확인하세요.');
+              if(version===serial&&requestPort===port)setStatus(saved?'답변을 이 기기에 저장했습니다. 당시 근거의 현재 유효성은 다시 확인하지 않았습니다.'+(answer.context_update?.status==='failed'?' 요약 갱신은 실패해 제한한 최근 대화로 답변했습니다.':'')+(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted?' 일부 대화 맥락은 제외됐습니다.':''):'답변과 요약 후보의 저장을 확인하지 못했습니다. 아래의 저장 상태와 재시도를 확인하세요.');
               return;
             }
             // 기존 /chat은 이력을 수용하지만 현재 문서 검색·생성에는 마지막 질문만 사용한다.
@@ -258,7 +263,7 @@
           if(answer.targets.length&&!selected.length)throw new Error('invalid_reply');
           activeReply=appendMessage('assistant',status.textContent);activeReply.answer=answer.answer;
           history.push({role:'user',text:question},{role:'assistant',text:answer.answer});while(history.length>4||history.reduce((n,m)=>n+m.text.length,0)>1000)history.shift();
-        }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentHistory();void refreshDocumentAccess();}clear(error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply);}
+        }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentHistory();void refreshDocumentAccess();}const message=error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply;finishQuestion(message);clear(message);}
         finally{if(version===serial&&requestPort===port){clearTimeout(requestTimer);busy=false;cancelButton.hidden=true;questionForm.querySelector('button[type="submit"]').disabled=false;requestPort=null;inputAssist.update();}port.disconnect();}
       });
       port.postMessage({requestId,mode,payload,...(documentMode?{documentAccess:documentHistoryAccess,profileRevision:requestProfile.revision}:{}),...(conversationContext?{conversationContext:{revision:conversationContext.expectedRevision,generation:conversationContext.generation}}:{}),deadlineAt:startedAt+budgetSeconds*1000});delete payload.image;

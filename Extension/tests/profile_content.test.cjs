@@ -122,11 +122,11 @@ test('위조한 프로필 변경 통지는 진행 중 질문을 취소하지 않
  }finally{f.close();}
 });
 
-test('통지가 누락된 조건 변경 뒤 지연 오류도 새 상태를 덮지 않는다',async()=>{
+test('통지가 누락된 조건 변경 뒤 오류는 안전하게 즉시 표시한다',async()=>{
  const f=fixture({[key]:saved()});try{await f.ready();await f.question('문서 질문');const old=f.ports[0];
   f.data[key]=saved(2,{...profile,age:40});await f.error('generation_failed',old);
-  assert.ok(!f.root.querySelector('.status').textContent.includes('문서 검색이나 답변 처리에 실패'));
-  assert.match(f.root.querySelector('.profile-panel').textContent,/40세/);
+  assert.match(f.root.querySelector('.status').textContent,/문서 검색이나 답변 처리에 실패/);
+  assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
  }finally{f.close();}
 });
 

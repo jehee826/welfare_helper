@@ -1,10 +1,90 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,ui,key,profileKey,profile,answer,settle}=require('./conversation_fixture.cjs');
 
+test('오류 수신은 프로필 확인이 응답하지 않아도 즉시 종료한다',async()=>{
+  const server=worker(),f=ui(server);try{
+    await f.ready();await f.question('합성 질문');const port=f.ports.at(-1),original=f.w.chrome.runtime.sendMessage;
+    f.w.chrome.runtime.sendMessage=m=>m.type==='gyeote:profile-get'?new Promise(()=>{}):original(m);
+    await port.receive({type:'error',requestId:port.packet.requestId,error:'generation_failed'});await settle();
+    assert.match(f.root.querySelector('.status').textContent,/문서 검색이나 답변 처리에 실패/);
+    assert.match(f.root.querySelector('.request-outcome').textContent,/문서 검색이나 답변 처리에 실패/);
+    assert.equal(server.data[key],undefined);
+    assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
+    assert.equal(f.root.querySelector('.cancel').hidden,true);assert.equal(port.disconnected,true);
+  }finally{f.close();}
+});
+
+for(const ending of ['cancel','deadline'])test('문서 '+ending+' 결과를 질문에 남기되 상담에 저장하지 않는다',async()=>{
+  let deadline;const server=worker(),f=ui(server,1,w=>{
+    const set=w.setTimeout.bind(w),clear=w.clearTimeout.bind(w);
+    w.setTimeout=(fn,ms,...args)=>ms>10000?(deadline=fn,999998):set(fn,ms,...args);
+    w.clearTimeout=id=>id===999998?undefined:clear(id);
+  });try{
+    await f.ready();await f.question('합성 질문');assert.equal(f.ports.length,1);
+    if(ending==='cancel')f.root.querySelector('.cancel').click();else{assert.equal(typeof deadline,'function');deadline();}
+    await settle();assert.ok(f.root.querySelector('.request-outcome')?.textContent);
+    assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
+    assert.equal(server.data[key],undefined);assert.equal(f.ports[0].disconnected,true);
+  }finally{f.close();}
+});
+
+test('저장 확인 10초 초과는 미저장 답변을 보존하고 늦은 응답은 화면을 덮지 않는다',async()=>{
+  let deadline,resolveAppend;const server=worker(),f=ui(server,1,w=>{
+    const set=w.setTimeout.bind(w),clear=w.clearTimeout.bind(w);
+    w.setTimeout=(fn,ms,...args)=>ms===10000?(deadline=fn,999999):set(fn,ms,...args);
+    w.clearTimeout=id=>id===999999?undefined:clear(id);
+  });try{
+    await f.ready();await f.question('합성 질문');const port=f.ports.at(-1),original=f.w.chrome.runtime.sendMessage;
+    f.w.chrome.runtime.sendMessage=m=>m.type==='gyeote:conversations-append'?new Promise(resolve=>{resolveAppend=resolve;}):original(m);
+    const pending=port.receive({type:'result',requestId:port.packet.requestId,body:answer});await settle();
+    assert.equal(typeof deadline,'function');assert.equal(typeof resolveAppend,'function');deadline();await pending;await settle();
+    assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
+    assert.equal(f.root.querySelector('.cancel').hidden,true);assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);
+    assert.match(f.root.querySelector('.unsaved-conversation').textContent,/저장 확인이 필요한 답변/);
+    assert.match(f.root.querySelector('.unsaved-conversation').textContent,/목록을 다시 불러/);
+    await f.mode('screen');const before=f.root.querySelector('.conversation').textContent,status=f.root.querySelector('.status').textContent;
+    resolveAppend({ok:true,state:{}});await settle();
+    assert.equal(f.root.querySelector('.conversation').textContent,before);assert.equal(f.root.querySelector('.status').textContent,status);assert.equal(f.ports.length,1);
+    await f.mode('document');assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);
+  }finally{f.close();}
+});
+
+test('저장 확인 초과 뒤 동일 쌍의 실제 지연 저장은 통지로 확인된다',async()=>{
+  let deadline,release;const server=worker(),f=ui(server,1,w=>{
+    const set=w.setTimeout.bind(w),clear=w.clearTimeout.bind(w);
+    w.setTimeout=(fn,ms,...args)=>ms===10000?(deadline=fn,999999):set(fn,ms,...args);
+    w.clearTimeout=id=>id===999999?undefined:clear(id);
+  });try{
+    await f.ready();await f.question('합성 질문');server.failure.beforeSet=value=>key in value?new Promise(resolve=>{release=resolve;}):undefined;
+    const port=f.ports.at(-1),pending=port.receive({type:'result',requestId:port.packet.requestId,body:answer});await settle();
+    assert.equal(typeof release,'function');deadline();await pending;await settle();
+    assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);
+    delete server.failure.beforeSet;release();await settle();
+    assert.equal(server.data[key].conversations[0].messages.length,2);
+    assert.equal(f.root.querySelector('.unsaved-conversation').hidden,true);assert.equal(f.ports.length,1);
+  }finally{f.close();}
+});
+
+test('지연 저장과 새 상담 요청 경쟁에서 기록을 덮지 않는다',async()=>{
+  let deadline,release;const server=worker(),f=ui(server,1,w=>{
+    const set=w.setTimeout.bind(w),clear=w.clearTimeout.bind(w);
+    w.setTimeout=(fn,ms,...args)=>ms===10000?(deadline=fn,999999):set(fn,ms,...args);
+    w.clearTimeout=id=>id===999999?undefined:clear(id);
+  });try{
+    await f.ready();await f.question('기존 질문');server.failure.beforeSet=value=>key in value?new Promise(resolve=>{release=resolve;}):undefined;
+    const port=f.ports.at(-1),pending=port.receive({type:'result',requestId:port.packet.requestId,body:answer});await settle();
+    assert.equal(typeof release,'function');deadline();await pending;await settle();
+    f.button('새 상담',f.root.querySelector('.saved-conversations')).click();await settle();
+    delete server.failure.beforeSet;release();await settle();
+    const state=server.data[key];assert.equal(state.conversations.length,1);
+    assert.equal(state.conversations[0].messages.length,2);
+  }finally{f.close();}
+});
+
 test('성공 상담·목록·상세를 새 패널에서 복원하고 제한 이력을 계속 전송한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('신청 방법은?');assert.equal(f.ports.length,1);assert.deepEqual(f.ports[0].packet.payload.history,[]);
-    await f.answer(answer);assert.equal(server.data[key].conversations.length,1);assert.equal(f.root.querySelectorAll('.saved-conversation').length,1);assert.match(f.root.querySelector('.status').textContent,/저장했습니다/);
+    await f.answer(answer);assert.equal(server.data[key].conversations.length,1);assert.equal(f.root.querySelectorAll('.saved-conversation').length,1);assert.match(f.root.querySelector('.status').textContent,/저장했습니다/);assert.equal(f.root.querySelector('.request-outcome'),null);
     await f.question('필요 서류는?');assert.deepEqual(f.ports.at(-1).packet.payload.history,[{role:'user',content:'신청 방법은?'},{role:'assistant',content:answer.text}]);
     f.root.querySelector('.cancel').click();
   }finally{f.close();}

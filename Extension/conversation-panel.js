@@ -1,5 +1,6 @@
 (() => {
   const errors={conversation_conflict:'다른 탭에서 상담이 바뀌었습니다. 최신 목록을 다시 불러오세요.',conversation_access_changed:'문서 접근 상태가 바뀌었습니다.',conversation_profile_changed:'내 정보가 바뀌어 답변을 저장하지 않았습니다.',conversation_request_stopped:'중지된 요청의 답변은 저장하지 않았습니다.',conversation_count_limit:'상담은 최대 30개입니다. 필요한 기록을 직접 삭제한 뒤 다시 저장하세요.',conversation_messages_limit:'상담당 100개 메시지 한도입니다. 새 상담을 시작하세요.',conversation_bytes_limit:'상담 저장 공간 4MiB 한도입니다. 필요한 기록을 직접 삭제하세요.',conversation_data_invalid:'저장된 상담의 형식을 확인하지 못했습니다. 상담 저장소만 재설정할 수 있습니다.',conversation_storage_failed:'상담 저장소에 접근하지 못했습니다. 공간과 확장 상태를 확인하세요.'};
+  errors.conversation_save_timeout='10초 안에 저장 완료를 확인하지 못했습니다. 목록을 다시 불러와 저장 여부를 확인하세요.';
   function create(slot,{invalidate,render,profileRevision,onStateChange=()=>{}}){
     const details=document.createElement('details'),summary=document.createElement('summary'),notice=document.createElement('p'),list=document.createElement('div'),actions=document.createElement('div'),confirmation=document.createElement('div'),unsaved=document.createElement('div');
     details.className='saved-conversations';summary.textContent='이전 상담';notice.className='muted';notice.setAttribute('role','status');list.className='saved-conversation-list';actions.className='row';confirmation.hidden=true;unsaved.hidden=true;unsaved.className='unsaved-conversation';unsaved.setAttribute('role','status');
@@ -37,6 +38,11 @@
     }
     function apply(response,display=true){
       state=GyeoteConversations.record(response.state);resetToken=null;
+      if(pending?.errorCode==='conversation_save_timeout'){
+        const stored=state.conversations.flatMap(conversation=>conversation.messages.filter(message=>message.pairId===pending.pairId));
+        // 저장소에서 질문·답변·근거·요약 후보까지 일치할 때만 확인 대기를 해제한다.
+        if(stored.length===2&&JSON.stringify(stored)===JSON.stringify(GyeoteConversations.pair(pending.pairId,pending.question,pending.answer,pending.profileRevision,stored[0].createdAt))){pending=null;unsaved.hidden=true;}
+      }
       const latestMessage=current()?.messages.at(-1),latest=latestMessage?.contextUpdate;
       notice.textContent=response.warning?'개인정보를 가린 내용을 표시했지만 정제 결과는 저장되지 않았습니다. 다시 불러오세요.':'이 기기의 공개 상담만 저장합니다. 현재 조건·최근 대화와 제한된 누적 요약을 참고하며, 이전 근거의 현재 유효성을 보장하지 않습니다.'+(latest?.status==='failed'?' 마지막 요약 갱신은 실패했습니다.':'')+(latest?.status==='omitted'||latestMessage?.contextUsage?.omitted?' 일부 대화 맥락은 제외됐습니다.':'');
       show();if(display)render(current());if(pending)showUnsaved(new Error(pending.errorCode));
@@ -71,7 +77,7 @@
     function showUnsaved(error){
       if(pending)pending.errorCode=error.message;
       unsaved.replaceChildren();unsaved.hidden=false;
-      const label=document.createElement('strong');label.textContent='저장되지 않은 답변';
+      const label=document.createElement('strong');label.textContent=error.message==='conversation_save_timeout'?'저장 확인이 필요한 답변':'저장되지 않은 답변';
       const reason=document.createElement('p');reason.textContent=(errors[error.message]||errors.conversation_storage_failed)+' 모델을 다시 호출하지 않고 저장을 재시도할 수 있습니다.';
       const body=document.createElement('div');body.style.whiteSpace='pre-wrap';body.textContent=pending?GyeoteProtocol.privacy.maskText(pending.question+'\n'+pending.answer.text,true):'';
       const same=pending&&matches(pending.context),target=current();
@@ -96,13 +102,17 @@
     async function save(value,pairId,question,answer,revision,isOwner=()=>true){
       if(!matches(value)||!isOwner()||ownedPair!==pairId)throw new Error('conversation_request_stopped');
       pending={context:value,pairId,question,answer,profileRevision:revision};
-      const owner=version;changing=true;notification=null;show();
+      const owner=version;let timer;changing=true;notification=null;show();
       try{
-        const response=await send('append',{...value,pairId,question,answer,profileRevision:revision});
+        // 저장 확인만 제한하며 늦게 끝난 응답은 현재 화면에 적용하지 않는다.
+        const response=await Promise.race([
+          send('append',{...value,pairId,question,answer,profileRevision:revision}),
+          new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('conversation_save_timeout')),10000);}),
+        ]);
         if(owner!==version||!isOwner())return false;
         changing=false;pending=null;apply(response);unsaved.hidden=true;return true;
       }catch(error){if(owner===version&&isOwner()){changing=false;showUnsaved(error);}return false;}
-      finally{if(owner===version){changing=false;show();const message=notification;notification=null;if(message)changed(message.revision,message.generation);}}
+      finally{clearTimeout(timer);if(owner===version){changing=false;show();const message=notification;notification=null;if(message)changed(message.revision,message.generation);}}
     }
     async function retrySave(rehome=false){
       const retry=pending;if(!retry||changing)return;

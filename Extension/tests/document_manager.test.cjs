@@ -89,6 +89,6 @@ test('패널은 열기 실패를 표시하고 초안·저장값을 보존한 채
     await f.ready();const draft=f.root.querySelector('#gyeote-question');draft.value='작성 중인 질문';const before=plain(server.data);
     server.failure.createTab=true;await f.click('관리자 접근');assert.match(f.root.querySelector('.status').textContent,/문서 관리 페이지를 열지 못했습니다/);
     assert.equal(f.button('관리자 접근').disabled,false);assert.equal(draft.value,'작성 중인 질문');assert.deepEqual(server.data,before);assert.equal(f.ports.length,0);
-    server.failure.createTab=false;await f.click('관리자 접근');assert.equal(server.calls.openTabs.length,2);assert.equal(f.button('관리자 접근').disabled,false);assert.match(f.root.querySelector('.status').textContent,/문서 관리용 새 탭을 열었습니다/);
+    server.failure.createTab=false;await f.click('관리자 접근');assert.equal(server.calls.openTabs.length,2);assert.equal(f.button('관리자 접근').disabled,false);assert.equal(f.root.querySelector('.status').textContent,'');
   }finally{f.close();}
 });

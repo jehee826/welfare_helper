@@ -27,7 +27,7 @@ test('서버 fallback DTO는 저장 뒤 새 패널에 복원된다',async()=>{
     await f.ready();await f.question('합성 질문');
     await f.answer({kind:'fallback',reason:'out_of_scope',text:'복지 관련 질문을 알려주세요.',services:[],contacts:[],suggestions:[],evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}});
     assert.equal(server.data[key].conversations[0].messages.length,2);
-    assert.match(f.root.querySelector('.status').textContent,/저장했습니다/);
+    assert.equal(f.root.querySelector('.status').textContent,'');
   }finally{f.close();}
   const restored=ui(server);try{await restored.ready();assert.match(restored.root.querySelector('.conversation').textContent,/복지 관련 질문을 알려주세요/);}finally{restored.close();}
 });
@@ -115,7 +115,7 @@ test('지연 저장과 모드 전환 경쟁에서 기록을 덮지 않는다',as
 test('성공 대화를 새 패널에서 복원하고 제한 이력을 계속 전송한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('신청 방법은?');assert.equal(f.ports.length,1);assert.deepEqual(f.ports[0].packet.payload.history,[]);
-    await f.answer(answer);assert.equal(server.data[key].conversations.length,1);assert.match(f.root.querySelector('.status').textContent,/저장했습니다/);assert.equal(f.root.querySelector('.request-outcome'),null);
+    await f.answer(answer);assert.equal(server.data[key].conversations.length,1);assert.equal(f.root.querySelector('.status').textContent,'');assert.equal(f.root.querySelector('.request-outcome'),null);
     await f.question('필요 서류는?');assert.deepEqual(f.ports.at(-1).packet.payload.history,[{role:'user',content:'신청 방법은?'},{role:'assistant',content:answer.text}]);
     f.root.querySelector('button[type=submit]').click();
   }finally{f.close();}

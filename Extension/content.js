@@ -73,9 +73,9 @@
     ownMutation=false;position();
     if(checked.length&&!selected.length)return;
     const legends=checked.map(item=>`${palette[item.index].number} ${palette[item.index].name} 테두리의 ‘${item.candidate.label}’ · ${roleNames[item.candidate.role]||'요소'}`);
-    setStatus([explanation,...(legends.length?['현재 요소 표시',...legends]:[])].join('\n'));
+    return [explanation,...(legends.length?['현재 요소 표시',...legends]:[])].join('\n');
   }
-  $('.clear').addEventListener('click',()=>cancel('표시를 지웠습니다.'));
+  $('.clear').addEventListener('click',()=>cancel());
   function focusPanel(){
     const target=collapsed?$('.collapse'):mode==='document'&&profileOpen?[...profileSlot.querySelectorAll('input,select,button')].find(node=>!node.disabled&&!node.closest('[hidden]')&&!node.closest('details:not([open])')):$('#gyeote-question');
     (target||$('.collapse')).focus();
@@ -92,7 +92,7 @@
   shadow.append(formStyle);
   formStyle.textContent+=`.head{gap:4px;padding:10px 12px}.head strong{font-size:20px;letter-spacing:-1px;min-width:36px}.head .menu-toggle,.head .collapse{width:32px;flex-shrink:0}.head .profile-toggle{padding:6px;font-size:13px;flex-shrink:0}.mode-switch{display:flex;flex-shrink:0;border:1px solid #e5e5e5;border-radius:12px;background:#f6f6f6;padding:2px}.head .mode-switch button{font-size:13px;padding:4px 6px;min-height:40px;border-radius:9px;background:transparent}.head .mode-switch button[aria-pressed=true]{background:#fff;color:#111;box-shadow:0 1px 4px #0002}.head .mode-switch button:disabled{color:#888;cursor:not-allowed}.mode-reason{font-size:13px;margin:0;padding:4px 12px;color:#666;flex-shrink:0}.pending-reply{width:fit-content;padding:12px 16px;margin-bottom:14px;background:#f5f5f5;border-radius:16px 16px 16px 4px}.thinking-dots{display:flex;gap:5px;font-size:22px;line-height:1}.thinking-dots span{animation:gyeote-thinking 1.2s infinite ease-in-out}.thinking-dots span:nth-child(2){animation-delay:.15s}.thinking-dots span:nth-child(3){animation-delay:.3s}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}@keyframes gyeote-thinking{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}@media(prefers-reduced-motion:reduce){.thinking-dots span{animation:none;opacity:1}}`;
   formStyle.textContent+='.unsaved-conversation{padding:10px;border:1px solid #777;border-radius:9px;margin-top:10px}.unsaved-conversation>div{max-height:180px;overflow:auto;overflow-wrap:anywhere}';
-  $('.consultation').innerHTML='<form><label class="question-label" for="gyeote-question">복지 상담</label><div class="compose-row"><input id="gyeote-question" type="text" maxlength="240" autocomplete="off" placeholder="개인정보 없이 질문하세요"><button type="submit" aria-label="질문 보내기" title="질문 보내기"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 3-7 18-4-7-7-4Z"/><path d="m10 14 11-11"/></svg></button></div></form>';
+  $('.consultation').innerHTML='<form><label class="question-label" for="gyeote-question">복지 상담</label><div class="compose-row"><input id="gyeote-question" type="text" maxlength="240" autocomplete="off" placeholder="질문을 입력하세요"><button type="submit" aria-label="질문 보내기" title="질문 보내기"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 3-7 18-4-7-7-4Z"/><path d="m10 14 11-11"/></svg></button></div></form>';
   const questionForm=$('.consultation form'),sendButton=questionForm.querySelector('[type=submit]'),sendIcon=sendButton.innerHTML;
   const stopIcon='<svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor" aria-hidden="true" focusable="false"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>';
   function updateRequestControl(){
@@ -147,7 +147,7 @@
   }
   profileButton.addEventListener('click',()=>{if(collapsed)$('.collapse').click();profileOpen=!profileOpen;updateProfileView();if(profileOpen){showMenu(false);transcript.scrollTop=0;const target=profileSlot.querySelector('input')||profileSlot.querySelector('h2');if(target){if(target.tagName==='H2')target.tabIndex=-1;target.focus();}}else focusPanel();});
   transcript.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(profileSlot.contains(event.target)){profileOpen=false;updateProfileView();profileButton.focus();}else if(tools.contains(event.target)){showMenu(false);menuButton.focus();}});
-  profilePanel=GyeoteProfilePanel.create(profileSlot,()=>{documentHistory=[];inputAssist?.invalidate();if(mode==='document')cancel('내 정보가 바뀌어 이전 요청을 중지했습니다. 확인한 뒤 다시 질문해 주세요.');},updateProfileView);
+  profilePanel=GyeoteProfilePanel.create(profileSlot,()=>{documentHistory=[];inputAssist?.invalidate();if(mode==='document')cancel();},updateProfileView);
   const profileControls=document.createElement('details');profileControls.className='profile-controls';const managementSummary=document.createElement('summary');managementSummary.textContent='저장·확장 관리';profileControls.append(managementSummary);profileSlot.append(profileControls);
   $('.settings').textContent='확장 옵션';profileControls.append($('.settings'),modeLabel,modeNotice,accessNotice,$('.mode-intro'),$('.scope-notice'),$('.reset'));
   const closeButton=$('.close');closeButton.textContent='×';closeButton.title='패널 닫기';$('.head').append(closeButton);$('.documents').textContent='관리자 접근';
@@ -160,7 +160,7 @@
   const savedSlot=document.createElement('div');savedSlot.className='saved-slot';modeNotice.after(savedSlot);
   const conversationAlerts=document.createElement('div');conversationAlerts.className='conversation-alerts';transcript.append(conversationAlerts);
   savedPanel=GyeoteConversationPanel.create(savedSlot,{
-    invalidate:()=>{inputAssist?.invalidate();if(mode==='document'){cancel(busy||requestPending?'상담이 바뀌어 이전 요청을 중지했습니다.':undefined);documentHistory=[];}},
+    invalidate:()=>{inputAssist?.invalidate();if(mode==='document'){cancel();documentHistory=[];}},
     alerts:conversationAlerts,
     onError:()=>{profileOpen=true;updateProfileView();profileControls.open=true;showMenu(false);transcript.scrollTop=0;},
     onStateChange:()=>inputAssist?.update(),
@@ -336,11 +336,11 @@
             if(Date.now()>=startedAt+budgetSeconds*1000)throw new Error('request_stopped');
           }
           if(documentMode){
-            const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);removePending();pendingQuestion=null;setStatus('문서 답변입니다. 원문 근거를 함께 확인하세요.');appendDocumentAnswer(answer);
+            const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);removePending();pendingQuestion=null;setStatus('');appendDocumentAnswer(answer);
             if(publicRequest){
               clearTimeout(requestTimer);
               const saved=await savedPanel.save(conversationContext,requestId,question,answer,requestProfile.revision,()=>version===serial&&requestPort===port&&mode==='document');
-              if(version===serial&&requestPort===port)setStatus(saved?'답변을 이 기기에 저장했습니다. 당시 근거의 현재 유효성은 다시 확인하지 않았습니다.'+(answer.context_update?.status==='failed'?' 요약 갱신은 실패해 제한한 최근 대화로 답변했습니다.':'')+(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted?' 일부 대화 맥락은 제외됐습니다.':''):'답변과 요약 후보의 저장을 확인하지 못했습니다. 아래의 저장 상태와 재시도를 확인하세요.');
+              if(version===serial&&requestPort===port)setStatus(saved?[(answer.context_update?.status==='failed'?'요약 갱신은 실패해 제한한 최근 대화로 답변했습니다.':''),(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted?'일부 대화 맥락은 제외됐습니다.':'')].filter(Boolean).join(' '):'답변과 요약 후보의 저장을 확인하지 못했습니다. 대화 본문의 저장 상태와 재시도를 확인하세요.');
               return;
             }
             // 기존 /chat은 이력을 수용하지만 현재 문서 검색·생성에는 마지막 질문만 사용한다.
@@ -350,9 +350,9 @@
           const answer=GyeoteProtocol.reply(packet.body,payload);
           if(snapshot!==source||!GyeoteDOM.current(source))throw new Error('invalid_reply');
           removePending();
-          apply(source,answer.targets,answer.answer);
+          const display=apply(source,answer.targets,answer.answer);
           if(answer.targets.length&&!selected.length)throw new Error('invalid_reply');
-          activeReply=appendMessage('assistant',status.textContent);activeReply.answer=answer.answer;
+          setStatus('');activeReply=appendMessage('assistant',display);activeReply.answer=answer.answer;
           history.push({role:'user',text:question},{role:'assistant',text:answer.answer});while(history.length>4||history.reduce((n,m)=>n+m.text.length,0)>1000)history.shift();
         }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentHistory();void refreshDocumentAccess();}const message=error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply;finishQuestion(message);clear(message);}
         finally{if(version===serial&&requestPort===port){removePending();clearTimeout(requestTimer);busy=false;requestPort=null;updateRequestControl();inputAssist.update();}port.disconnect();}
@@ -366,7 +366,7 @@
     finally{if(version===serial){requestPending=false;updateRequestControl();inputAssist.update();}}
   }
   function documentError(code){return ({chat_rate_limited:'질문 요청이 많습니다. 잠시 기다린 뒤 직접 다시 질문해 주세요.',invalid_profile:'내 정보의 입력값을 확인한 뒤 다시 질문해 주세요.',profile_changed:'내 정보가 바뀌어 이전 답변을 표시하지 않았습니다. 확인한 뒤 다시 질문해 주세요.',profile_storage_failed:'내 정보를 확인하지 못해 질문을 보내거나 답변을 표시하지 않았습니다. 내 정보에서 다시 불러오세요.',profile_data_invalid:'저장된 내 정보를 확인하지 못했습니다. 내 정보에서 재설정을 확인해 주세요.',sensitive_input:'개인정보가 포함된 질문은 보낼 수 없습니다. 개인정보를 제외하고 다시 질문해 주세요.',document_auth_required:'관리자 세션이 없거나 만료됐습니다. Chrome 확장 옵션에서 다시 로그인하거나 익명으로 전환하세요.',document_access_changed:'문서 접근 상태가 바뀌어 이전 대화를 지웠습니다. 현재 접근 상태에서 직접 다시 질문하세요.',generation_failed:'문서 검색이나 답변 처리에 실패했습니다. 잠시 후 다시 질문해 주세요.',connection_failed:'서버에 연결하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.',request_timeout:'요청 처리 시간을 넘었습니다. 잠시 후 다시 질문해 주세요.',request_cancelled:'요청이 취소되었습니다. 다시 질문할 수 있습니다.',input_budget:'문서 질문은 300자, 대화 이력은 전체 6000자 이내여야 합니다.',invalid_reply:'문서 응답 형식을 확인하지 못해 표시하지 않았습니다.'})[code]||errors[code]||'문서 요청을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.';}
-  questionForm.addEventListener('submit',event=>{event.preventDefault();inputAssist.cancel();if(busy||requestPending){cancel('요청과 표시를 중지했습니다.');return;}if(mode==='document'&&!profilePanel.allowed){setStatus('내 정보를 저장하거나 나중 입력을 선택한 뒤 질문해 주세요.');return;}if(mode==='document'&&currentAccess?.mode==='anonymous'&&!savedPanel.ready){setStatus('대화 저장 상태를 확인한 뒤 다시 질문해 주세요. 대화 저장 관리에서 다시 불러올 수 있습니다.');return;}if(mode==='document'&&currentAccess?.mode==='anonymous'&&savedPanel.hasUnsaved){setStatus('미저장 답변을 보관하거나 명시적으로 버린 뒤 다음 질문을 보내세요.');return;}const input=$('#gyeote-question'),question=input.value.trim();if(question.length>input.maxLength){setStatus(`질문을 ${input.maxLength}자 이내로 수정한 뒤 전송해 주세요.`);input.focus();return;}input.value='';void ask(question);});
+  questionForm.addEventListener('submit',event=>{event.preventDefault();inputAssist.cancel();if(busy||requestPending){cancel();return;}if(mode==='document'&&!profilePanel.allowed){setStatus('내 정보를 저장하거나 나중 입력을 선택한 뒤 질문해 주세요.');return;}if(mode==='document'&&currentAccess?.mode==='anonymous'&&!savedPanel.ready){setStatus('대화 저장 상태를 확인한 뒤 다시 질문해 주세요. 대화 저장 관리에서 다시 불러올 수 있습니다.');return;}if(mode==='document'&&currentAccess?.mode==='anonymous'&&savedPanel.hasUnsaved){setStatus('미저장 답변을 보관하거나 명시적으로 버린 뒤 다음 질문을 보내세요.');return;}const input=$('#gyeote-question'),question=input.value.trim();if(question.length>input.maxLength){setStatus(`질문을 ${input.maxLength}자 이내로 수정한 뒤 전송해 주세요.`);input.focus();return;}input.value='';void ask(question);});
   $('.settings').addEventListener('click',()=>{void chrome.runtime.sendMessage({type:'gyeote:options'}).catch(()=>setStatus('확장 관리 화면에서 곁에의 옵션을 열어 주세요.'));});
   const managerButton=$('.documents');
   managerButton.addEventListener('click',async()=>{
@@ -374,12 +374,12 @@
     try{
       const result=await chrome.runtime.sendMessage({type:'gyeote:document-manager'});
       if(!result?.ok)throw new Error();
-      setStatus('문서 관리용 새 탭을 열었습니다.');
+      setStatus('');
     }
     catch{setStatus('문서 관리 페이지를 열지 못했습니다. 잠시 후 다시 눌러 주세요.');}
     finally{managerButton.disabled=false;}
   });
-  $('.reset').addEventListener('click',()=>{if(mode==='document'&&currentAccess?.mode==='anonymous')return;cancel('새 질문을 입력하세요.');if(mode==='document')resetDocumentHistory();else{history=[];historyUrl='';}conversations[mode]=[];$('.conversation').replaceChildren();snapshot=null;});
+  $('.reset').addEventListener('click',()=>{if(mode==='document'&&currentAccess?.mode==='anonymous')return;cancel();if(mode==='document')resetDocumentHistory();else{history=[];historyUrl='';}conversations[mode]=[];$('.conversation').replaceChildren();snapshot=null;});
   let drag=null;
   const head=$('.head');
   function clampPanel(left,top){
@@ -404,11 +404,11 @@
   addEventListener('scroll',()=>{if(capturing)pageVersion++;schedule();},{passive:true,capture:true});addEventListener('resize',()=>{finishDrag();clampPanel();pageVersion++;schedule();});
   addEventListener('pagehide',()=>{accessVersion++;finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
   addEventListener('pageshow',event=>{if(event.persisted){profilePanel.resume();savedPanel.resume();inputAssist.resume();if(mode==='document')void refreshDocumentAccess();sizeObserver?.observe(panel);clampPanel();}});
-  addEventListener('hashchange',()=>{if(mode==='screen')cancel('화면이 바뀌어 이전 표시를 지웠습니다.');else inputAssist.invalidate();snapshot=null;history=[];});
+  addEventListener('hashchange',()=>{if(mode==='screen')cancel();else inputAssist.invalidate();snapshot=null;history=[];});
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden){
       finishDrag();
-      if(mode==='screen')cancel('탭을 떠나 이전 표시를 지웠습니다.');
+      if(mode==='screen')cancel();
       else inputAssist.cancel();
     }else inputAssist.update();
   });
@@ -420,7 +420,7 @@
     if(ownMutation||!relevant.length)return;
     pageVersion++;
     if(capturing)return;
-    if(snapshot&&!GyeoteDOM.current(snapshot)||selected.some(s=>!s.node.isConnected||!rootStyles.get(s.node.getRootNode())?.isConnected||!GyeoteDOM.usable(s.node)||!GyeoteDOM.currentCandidate(snapshot,s.candidate))){cancel('화면 또는 대상이 바뀌어 이전 표시를 지웠습니다.');snapshot=null;history=[];}
+    if(snapshot&&!GyeoteDOM.current(snapshot)||selected.some(s=>!s.node.isConnected||!rootStyles.get(s.node.getRootNode())?.isConnected||!GyeoteDOM.usable(s.node)||!GyeoteDOM.currentCandidate(snapshot,s.candidate))){cancel();snapshot=null;history=[];}
     else schedule();
   });observer.observe(document.documentElement,observeOptions);
   chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{
@@ -430,7 +430,7 @@
       if(_sender.id!==chrome.runtime.id||_sender.tab)return;
       accessVersion++;
       resetDocumentHistory();
-      if(mode==='document'){cancel('문서 접근 상태가 바뀌어 이전 문서 요청과 대화를 지웠습니다.');snapshot=null;}
+      if(mode==='document'){cancel();snapshot=null;}
       showDocumentAccess(message.state);
       sendResponse({ok:true});return;
     }

@@ -16,7 +16,7 @@ test('기본 상담은 문서 안내와 텍스트 입력을 제공하고 개발 
     await f.ready();assert.match(f.root.querySelector('.panel').getAttribute('aria-label'),/복지 상담/);
     assert.doesNotMatch(f.root.querySelector('.mode-intro').textContent,/화면/);assert.equal(f.root.querySelector('.screen-controls').hidden,true);
     assert.equal(f.root.querySelector('[data-test],.body-test'),null);assert.doesNotMatch(f.root.textContent,/개발용 표시 검사|이미지 범위 검사/);
-    assert.equal(f.root.querySelectorAll('.question-suggestions button').length,3);
+    assert.equal(f.root.querySelectorAll('.question-suggestions button').length,3);assert.equal(f.root.querySelector('#gyeote-question').placeholder,'질문을 입력하세요');
     await f.mode('screen');assert.equal(f.root.querySelector('.screen-controls').hidden,false);assert.match(f.root.querySelector('.mode-intro').textContent,/공개 복지로 화면/);
     assert.equal(f.root.querySelector('.question-suggestions').hidden,true);
     const css=[...f.root.querySelectorAll('style')].map(node=>node.textContent).join('');
@@ -80,8 +80,8 @@ test('현재 DOM의 이름·역할로만 다중 범례를 만들고 모델 meani
     f.w.document.elementFromPoint=(_x,y)=>y<120?first:link;
     await f.mode('screen');await f.question('공개 메뉴와 서비스 소개는 어디 있어?');const port=f.ports.at(-1),payload=port.packet.payload;
     await f.answer({reply:{snapshot_id:payload.snapshot_id,kind:'안내',answer:'공개 메뉴와 서비스 소개 항목을 확인해 주세요.',targets:payload.candidates.map(c=>({target_id:c.id,meaning:'신청하면 지원이 확정됩니다.'}))}});
-    const shown=f.root.querySelector('.status').textContent;assert.match(shown,/① 파랑 테두리의 ‘공개 메뉴’ · 버튼/);assert.match(shown,/② 주황 테두리의 ‘서비스 소개’ · 링크/);assert.doesNotMatch(shown,/지원이 확정/);assert.equal(f.root.querySelectorAll('.badge').length,2);
-    f.root.querySelector('.clear').click();assert.equal(f.root.querySelectorAll('.badge').length,0);
+    const shown=f.root.querySelector('.conversation').textContent;assert.equal(f.root.querySelector('.status').textContent,'');assert.match(shown,/① 파랑 테두리의 ‘공개 메뉴’ · 버튼/);assert.match(shown,/② 주황 테두리의 ‘서비스 소개’ · 링크/);assert.doesNotMatch(shown,/지원이 확정/);assert.equal(f.root.querySelectorAll('.badge').length,2);
+    f.root.querySelector('.clear').click();assert.equal(f.root.querySelectorAll('.badge').length,0);assert.equal(f.root.querySelector('.status').textContent,'');
   }finally{f.close();}
 });
 

@@ -64,7 +64,7 @@ test('Shadow 대상 root에 테두리 스타일을 넣고 해제하며 사이트
     await displayTarget(w,()=>panelRoot);
     assert.match(root.querySelector('style[data-gyeote-style]').textContent,/outline:4px solid/);
     assert.match(button.className,/gyeote-/);assert.equal(clicks,0);
-    assert.match(panelRoot.querySelector('.status').textContent,/① 파랑 테두리의 ‘서비스 자세히 보기’/);
+    assert.match(panelRoot.querySelector('.conversation').textContent,/① 파랑 테두리의 ‘서비스 자세히 보기’/);
     panelRoot.querySelector('.clear').click();assert.equal(root.querySelector('style[data-gyeote-style]'),null);assert.equal(button.className,'');
     button.click();assert.equal(clicks,1);
   }finally{f.close();}
@@ -173,7 +173,7 @@ test('질문 응답의 실제 ID 세 개와 색상·번호·요소명을 함께 
     await send('검색과 복지서비스와 도움말 메뉴를 알려줘');
     const reply={snapshot_id:packet.payload.snapshot_id,kind:'설명',answer:'각 메뉴에서 관련 기능을 확인할 수 있어요.',targets:packet.payload.candidates.map(c=>({target_id:c.id,meaning:c.label}))};
     receiver({type:'result',requestId:packet.requestId,body:{reply}});
-    assert.equal(panelRoot.querySelectorAll('.badge').length,3);assert.match(panelRoot.querySelector('.status').textContent,/① 파랑.*② 주황.*③ 보라/s);
+    assert.equal(panelRoot.querySelectorAll('.badge').length,3);assert.match(panelRoot.querySelector('.conversation').textContent,/① 파랑.*② 주황.*③ 보라/s);
     await send('검색은 어디서 해?');receiver({type:'error',requestId:packet.requestId,error:'connection_failed'});
     assert.equal(panelRoot.querySelectorAll('.badge').length,0);assert.doesNotMatch(panelRoot.querySelector('.status').textContent,/테두리/);assert.equal(calls,2);
     assert.doesNotMatch(panelRoot.querySelector('.conversation article:nth-child(2)').textContent,/①|②|③/);

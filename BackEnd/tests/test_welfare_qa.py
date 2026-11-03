@@ -45,6 +45,42 @@ def test_exception_deadline_requires_citation_of_exception_source():
     response['citations'].append({'id':'exception','quote':'출산 후 60일까지'})
     assert validate_answer(response,sources).status=='answer'
 
+def test_grounded_service_explanation_can_include_one_missing_condition_question():
+    source={'id':'source','text':'합성 산모 지원은 건강관리 이용권을 제공합니다. 지원 대상은 출산가정입니다. 신청 시기는 출산 전과 출산 후로 구분합니다.'}
+    response={'status':'answer','text':'합성 산모 지원은 건강관리 이용권을 제공합니다. 지원받으실 분은 출산 전인가요, 출산 후인가요?',
+              'citations':[{'id':'source','quote':'합성 산모 지원은 건강관리 이용권을 제공합니다.'}]}
+    accepted=validate_answer(response,[source])
+    assert accepted.status=='answer' and accepted.text.count('?')==1
+    assert response['citations'][0]['quote'] in source['text']
+    assert '출산 전' in source['text'] and '출산 후' in source['text']
+
+def test_missing_requested_information_is_no_evidence_without_citations():
+    source={'id':'source','text':'합성 지원은 생리용품 구매 이용권을 제공합니다.'}
+    response={'status':'no_evidence','text':'해외 배송비 지원은 이 자료에서 확인되지 않습니다.','citations':[]}
+    assert validate_answer(response,[source]).status=='no_evidence'
+    assert '해외 배송' not in source['text']
+
+def test_pure_service_clarification_has_no_citations():
+    response={'status':'clarify','text':'어느 서비스의 신청 방법을 말씀하시나요?','citations':[]}
+    assert validate_answer(response,[SOURCE]).status=='clarify'
+
+def test_answer_document_passes_grounded_explanation_and_question_through_fake_model():
+    repo,service,_=components();snapshot=repo.snapshot();chunk=replace(snapshot.chunks[0],text='합성 산모 지원은 건강관리 이용권을 제공합니다. 지원 대상은 출산가정입니다. 신청 시기는 출산 전과 출산 후로 구분합니다.')
+    repo.snapshot=lambda:replace(snapshot,chunks=[chunk]);seen=[]
+    def generate(system,user,**kwargs):
+        seen.append((system,user,kwargs['schema']))
+        return {'status':'answer','text':'합성 산모 지원은 건강관리 이용권을 제공합니다. 지원받으실 분은 출산 전인가요, 출산 후인가요?',
+                'citations':[{'id':'C1','quote':'합성 산모 지원은 건강관리 이용권을 제공합니다.'}]}
+    service.llm.chat=generate
+    result,trace=answer_document(repo,service,'가족을 대신해 산모 지원 내용과 신청 시기를 알고 싶어요.')
+    assert result['kind']=='answer' and result['text'].count('?')==1 and trace['answer_validation']=='accepted'
+    assert result['evidence'][0]['quote'] in chunk.text and len(seen)==1
+    assert '출산 전' in chunk.text and '출산 후' in chunk.text
+    system=seen[0][0]
+    assert '질문1개 순서로 최대3개 서비스' in system and '찾은 서비스가 하나면 하나만' in system
+    assert '설명할 근거가 있으면 확인된 내용 뒤에 필요한 질문1개' in system
+    assert '보호자에게는 지원받으실 분의 조건' in system and '출산·주거 사실을 추정하지' in system
+
 @pytest.mark.parametrize('status', ['no_evidence','out_of_scope','clarify'])
 def test_nonanswer_with_citations_is_rejected(status):
     with pytest.raises(ValueError,match='unsupported_citations'):

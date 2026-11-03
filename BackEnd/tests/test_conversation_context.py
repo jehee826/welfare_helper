@@ -338,7 +338,7 @@ def test_too_large_first_source_is_safe_budget_fallback_without_generation_or_pa
     repo, service, calls = service_with_prepare()
     chunk = replace(repo.snapshot().chunks[0], text="큰 원문" * 10000)
     repo.snapshot = lambda: CatalogSnapshot([], [chunk], "fixed")
-    repo.dense_search = lambda *args, **kwargs: [chunk]
+    repo.dense_search = lambda *args, **kwargs: [replace(chunk,score=.65)]
     service.llm.context_limit = lambda: 2500
     result, trace = answer_document(repo, service, "질문")
     assert result["kind"] == "fallback" and result["reason"] == "document_input_budget" and result["evidence"] == []

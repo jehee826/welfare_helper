@@ -38,11 +38,10 @@ def components(settings, *, private=False):
     def generate(system, user):
         if system == PREPARE_SYSTEM:
             payload=json.loads(user)
-            return json.dumps({'source_ids':[item['id'] for item in payload['sources']][:8], 'document_ids':[], 'needs_clarification':False})
+            return json.dumps({'search_query':payload['current_question'],'source_ids':[item['id'] for item in payload['sources']][:8], 'document_ids':[], 'needs_clarification':False})
         sources = json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
         documents = [chunk for source in sources for chunk in source['chunks']]
-        return json.dumps({'status':'answer','text':('관리자' if private else '공개') + ' 답변. 가상 991399-1234567. 2026년 129/1355 안내',
-                           'citations':[{'id':doc['id'],'quote':doc['text']} for doc in documents]}, ensure_ascii=False)
+        return json.dumps({'status':'answer','text':('관리자' if private else '공개') + ' 답변. 가상 991399-1234567. 2026년 129/1355 안내'}, ensure_ascii=False)
     llm = SimpleNamespace(model_digest=Mock(return_value=DIGEST), embed=Mock(return_value=[[.1] * 1024]),
                           context_limit=lambda:32768, input_cost=lambda system,user:len((system+user).encode()),
                           chat_text=Mock(side_effect=generate),
@@ -300,6 +299,16 @@ def test_document_query_retains_scope_and_search_does_not_generate(diagnostic_ap
     assert api.qa.call_count == 1
 
 
+def test_runtime_policy_directly_reports_reference_validation_disabled(monkeypatch):
+    from BackEnd import main
+    settings=Settings(_env_file=None)
+    monkeypatch.setattr(main,'get_settings',lambda:settings)
+    monkeypatch.setattr(main,'get_chat_service',lambda:pytest.fail('외부 서비스 호출 금지'))
+    qa=main.runtime_settings()['qa']
+    assert qa['source_span_validation_enabled'] is False
+    assert qa['strict_citation_validation_enabled'] is False
+    assert qa['semantic_entailment_verified'] is False
+
 def test_runtime_reports_effective_document_policy_without_external_calls(diagnostic_api, monkeypatch):
     api = diagnostic_api
     blocked = Mock(side_effect=AssertionError("설정 조회에서 실행 의존성을 사용했습니다."))
@@ -311,7 +320,7 @@ def test_runtime_reports_effective_document_policy_without_external_calls(diagno
     assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": False,
                           "history_supported": True, "conversation_summary_supported": True,
                           "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
-                          "source_span_validation_enabled": True, "semantic_entailment_verified": False}
+                          "source_span_validation_enabled": False, "semantic_entailment_verified": False}
     assert body["retrieval"]["candidate_limit"] == api.public.top_n == 40 < api.settings.retrieve_top_n
     assert body["retrieval"]["dense_limit"] == api.public.dense_k
     assert body["retrieval"]["keyword_limit"] == api.public.keyword_k

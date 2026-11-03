@@ -184,7 +184,7 @@ def runtime_settings():
             "mode": "document_rag", "policy": "welfare_document_evidence",
             "profile_supported": False, "history_supported": True, "conversation_summary_supported": True,
             "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
-            "source_span_validation_enabled": True, "semantic_entailment_verified": False,
+            "source_span_validation_enabled": False, "semantic_entailment_verified": False,
         },
         "llm": {
             "model": settings.ollama_llm,

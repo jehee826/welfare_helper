@@ -252,11 +252,11 @@
       message.article.append(section);
     }
     if(!answer.evidence.length){if(message.follow)transcript.scrollTop=transcript.scrollHeight;return;}
-    const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`원문 근거 보기 (${answer.evidence.length}건)`;details.append(summary);
+    const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`참고자료 보기 (${answer.evidence.length}건)`;details.append(summary);
     for(const item of answer.evidence){
       const section=document.createElement('section');
       if(item.redacted){const notice=document.createElement('p');notice.textContent='개인정보 형식을 가린 자료입니다. 원문 그대로의 인용이 아닙니다.';section.append(notice);}
-      const lines=[item.role==='retrieved'?'검색 원문, 모델 답변의 정확한 인용으로 검증한 내용은 아닙니다.':item.role==='required_context'?'답변과 함께 확인할 원문 조건·예외':'답변 인용',item.quote,item.context,`쪽: ${item.pages.length?item.pages.join(', '):'미확인'} · 원문 블록: ${item.source_blocks.join(', ')}`,`출처: ${item.source_url||'미확인'}`,`지역: ${item.region_scope||'미확인'} · 자료 수정일: ${item.source_updated_at||'미확인'} · 기준연도: ${item.basis_year||'미기재'}`,'자료 수정일은 현행 운영 확인일이 아닙니다. 신청 전 관할 기관의 최신 기준을 확인하세요.'];
+      const lines=['답변에 제공한 참고자료입니다. 답변의 사실 정확도를 검증한 표시는 아닙니다.',item.quote,item.context,`쪽: ${item.pages.length?item.pages.join(', '):'미확인'} · 원문 블록: ${item.source_blocks.join(', ')}`,`출처: ${item.source_url||'미확인'}`,`지역: ${item.region_scope||'미확인'} · 자료 수정일: ${item.source_updated_at||'미확인'} · 기준연도: ${item.basis_year||'미기재'}`,'자료 수정일은 현행 운영 확인일이 아닙니다. 신청 전 관할 기관의 최신 기준을 확인하세요.'];
       for(const text of lines){if(!text)continue;const p=document.createElement('p');p.textContent=text;section.append(p);}
       const url=GyeoteConversations.sourceUrl(item.source_url);
       if(url){const link=document.createElement('a');link.textContent='출처 열기';link.href=url;link.target='_blank';link.rel='noopener noreferrer';section.append(link);}

@@ -2,7 +2,6 @@
 
 import math
 import time
-from copy import deepcopy
 from dataclasses import replace
 from pydantic import ValidationError
 
@@ -218,16 +217,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     try:
         checkpoint()
         schema = WelfareAnswer.model_json_schema()
-        schema['$defs']['Citation']['properties']['id']['enum'] = list(references)
-        # 비답변 상태와 인용이 함께 생성되지 않도록 상태별 인용 개수를 제한한다.
-        definitions = schema.pop('$defs')
-        answer_schema = deepcopy(schema)
-        answer_schema['properties']['status'] = {'type': 'string', 'enum': ['answer']}
-        answer_schema['properties']['citations']['minItems'] = 1
-        fallback_schema = deepcopy(schema)
-        fallback_schema['properties']['status'] = {'type': 'string', 'enum': ['clarify', 'no_evidence', 'out_of_scope']}
-        fallback_schema['properties']['citations']['maxItems'] = 0
-        schema = {'$defs': definitions, 'oneOf': [answer_schema, fallback_schema]}
         raw_answer = llm.chat(ANSWER_SYSTEM, prompt, schema=schema)
         checkpoint()
         if not isinstance(raw_answer, dict) or not raw_answer:
@@ -254,7 +243,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         service._document_bm25 = None
         raise DocumentError("embedding_digest_changed")
     try:
-        answer = validate_answer(raw_answer, included, user_sources=[query, *fitted.get("user_sources", [])])
+        answer = validate_answer(raw_answer)
         trace['answer_validation'] = 'accepted'
     except ValidationError:
         answer = None
@@ -262,11 +251,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     except (ValueError, TypeError) as exc:
         answer = None
         code = str(exc)
-        trace['answer_validation'] = code if code in {
-            'empty_answer','unsupported_citations','unsupported_clarification_quantity',
-            'missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_user_quote','unsupported_contact','invalid_source_references'
-        } else 'invalid_answer'
-    trace['citation_validation'] = 'exact_source_span_and_literal_values_only'
+        trace['answer_validation'] = code if code == 'empty_answer' else 'invalid_answer'
+    trace['citation_validation'] = 'not_performed_server_references'
     # 새 인덱스는 요청의 마지막 원문/digest 확인과 취소 점검이 끝난 뒤에만 게시한다.
     checkpoint()
     if pending_index is not None:
@@ -274,26 +260,16 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     status = answer.status if answer else 'invalid_evidence_answer'
     trace["reason"] = status
     trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-    if status != 'answer':
-        messages = {'out_of_scope':'복지서비스의 대상·지원 내용·신청 방법을 안내하고 있습니다. 복지 관련 질문을 알려주세요.',
-                    'no_evidence':'현재 자료에서 질문을 뒷받침하는 근거를 확인하지 못했습니다.',
-                    'invalid_evidence_answer':'답변과 원문 근거의 대응을 확인하지 못해 답변을 보류했습니다. 담당 기관의 공식 안내를 확인해 주세요.'}
-        text = messages.get(status, answer.text if answer else messages['invalid_evidence_answer'])
-        contacts = []
-        if status == 'no_evidence':
-            confirmed_ids = list(conversation['document_ids'])
-            if repo.document_scope:
-                confirmed_ids.append(str(repo.document_scope))
-            contact_query = search_query if context_trace['preparation'] in {'used', 'skipped'} else query
-            contacts = fallback_contacts(snapshot, included, query=contact_query, confirmed_document_ids=confirmed_ids)
-            text += ' 아래 문의처에서 확인해 주세요.' if contacts else ' 확인된 연락처를 제공하지 못했습니다.'
-        return {'kind':'fallback', 'reason':status, 'text':text,
-                'services':[], 'contacts':contacts, 'suggestions':[], 'evidence':[],
-                'context_usage':{'omitted':context_trace['context_omitted']},
-                **({'context_update':context_update} if context_update is not None else {})}, trace
-    quotes = {references[citation.id]:citation.quote for citation in answer.citations}
-    for item in evidence:
-        item['quote'] = quotes.get(item['chunk_id'], '')
-    return {"kind": "answer", "text": answer.text.strip(), "services": [], "suggestions": [], "evidence": evidence,
+    contacts = []
+    if status == 'no_evidence':
+        confirmed_ids = list(conversation['document_ids'])
+        if repo.document_scope:
+            confirmed_ids.append(str(repo.document_scope))
+        contact_query = search_query if context_trace['preparation'] in {'used', 'skipped'} else query
+        contacts = fallback_contacts(snapshot, included, query=contact_query, confirmed_document_ids=confirmed_ids)
+    return {"kind": "answer" if status == 'answer' else 'fallback',
+            **({'reason': status, 'contacts': contacts} if status != 'answer' else {}),
+            "text": answer.text.strip() if answer else '답변 형식을 확인하지 못했습니다. 잠시 후 다시 질문해 주세요.',
+            "services": [], "suggestions": [], "evidence": evidence if answer else [],
             "context_usage": {"omitted": context_trace["context_omitted"]},
             **({"context_update": context_update} if context_update is not None else {})}, trace

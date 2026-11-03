@@ -63,7 +63,7 @@ def test_failure_logs_only_safe_code_without_private_markers_and_clears_scope(st
     assert len(calls['prompts'])==1 and current_diagnostic() is None
 
 
-@pytest.mark.parametrize('validation', ['accepted','invalid_schema','empty_answer','unsupported_citations','unsupported_clarification_quantity','missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_user_quote','unsupported_contact','invalid_source_references','invalid_answer'])
+@pytest.mark.parametrize('validation', ['accepted','invalid_schema','empty_answer','invalid_answer'])
 @pytest.mark.parametrize('done_reason',['stop','length'])
 def test_end_logs_only_allowed_validation_and_generation_metadata(stream,validation,done_reason):
     result=({'kind':'fallback'}, {'reason':'invalid_evidence_answer','answer_validation':validation,

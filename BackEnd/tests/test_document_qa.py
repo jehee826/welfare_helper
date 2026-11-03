@@ -33,8 +33,7 @@ def components(*, empty=False, failure=None):
         sources = json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
         documents = [chunk for source in sources for chunk in source['chunks']]
         text = '원문에 따르면 평균 오차는 150만 원입니다.' if '150만 원' in documents[0]['text'] else '자료의 조건과 예외를 확인해 주세요.'
-        return json.dumps({'status':'answer', 'text':text,
-                           'citations':[{'id':documents[0]['id'], 'quote':documents[0]['text'][:1600]}]}, ensure_ascii=False)
+        return json.dumps({'status':'answer', 'text':text}, ensure_ascii=False)
 
     def rerank(_query, passages):
         if failure == "reranker":
@@ -138,7 +137,7 @@ def test_plain_document_rag_uses_ranked_source_without_rerank_cutoff_or_fact_sel
     assert response["kind"] == "answer" and "150만 원" in response["text"]
     assert calls["prompts"][0][1].endswith("질문: MAE 평균 오차는 얼마인가요?")
     assert "평균 절대 오차 MAE는 150만 원입니다." in calls["prompts"][0][1]
-    assert response["evidence"][0]["role"] == "retrieved" and response["evidence"][0]["quote"] == response["evidence"][0]["text"]
+    assert response["evidence"][0]["role"] == "retrieved" and response["evidence"][0]["quote"] == ''
     assert response["evidence"][0]["document_id"] == DOC_ID and response["evidence"][0]["pages"] == [2]
     assert trace["rerank"][0]["score"] == 0.01 and trace["rerank"][0]["selected"]
     assert trace["retrieval"][0]["keyword"] and trace["generation_metadata"]["done_reason"] == "stop"

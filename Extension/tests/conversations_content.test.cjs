@@ -1,5 +1,19 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,ui,key,profileKey,profile,answer,settle}=require('./conversation_fixture.cjs');
+test('빈 발췌 참고자료는 저장과 재열기 뒤 다음 요청의 문서 ID로 유지된다',async()=>{
+ const server=worker(),f=ui(server);
+ const ref={document_id:'doc',chunk_id:'chunk',quote:'',context:'<b>합성 자료</b>',source_url:'https://example.invalid',pages:[1],source_blocks:['block']};
+ try{
+  await f.ready();await f.question('첫 질문');await f.answer({kind:'answer',text:'합성 답변',evidence:[ref]});
+  assert.equal(server.data[key].conversations[0].messages.at(-1).evidence[0].quote,'');
+  assert.match(f.root.querySelector('.conversation').textContent,/참고자료/);
+  assert.equal(f.root.querySelector('.conversation b'),null);
+ }finally{f.close();}
+ const restored=ui(server);try{
+  await restored.ready();assert.match(restored.root.querySelector('.conversation').textContent,/참고자료/);
+  await restored.question('후속 질문');assert.deepEqual(Array.from(restored.ports.at(-1).packet.payload.conversation_context.documentIds),['doc']);
+ }finally{restored.close();}
+});
 test('근거 없는 안내의 공식 일반 연락처는 표시하고 새 패널에 복원한다',async()=>{
   const server=worker(),f=ui(server);
   const contact={label:'보건복지상담센터',phone:'129',kind:'general',source_url:'https://www.129.go.kr/counsel/counsel01.do',checked_at:'2026-11-03',hours:'평일 09:00~18:00'};

@@ -162,9 +162,9 @@
       selected.add(message.id);
     }
     const userMessages=originals.filter(m=>selected.has(m.id)).map(({id,role,content})=>({id,role,content}));
-    const cited=all.at(-1)?.role==='assistant'?all.at(-1).evidence.filter(e=>e.quote.trim()).map(e=>e.document_id):[];
-    const documentIds=[...new Set(cited)].slice(0,3);
-    sourceOmitted=sourceOmitted||new Set(cited).size>3;
+    const references=all.at(-1)?.role==='assistant'?all.at(-1).evidence.map(e=>e.document_id):[];
+    const documentIds=[...new Set(references)].slice(0,3);
+    sourceOmitted=sourceOmitted||new Set(references).size>3;
     return {history:result,conversation_context:{text:summary?.text||'',coveredThroughMessageId:summary?.coveredThroughMessageId||null,profileRevision,batch,omitted:sourceOmitted,userMessages,documentIds}};
   }
   function applyUpdate(conversation,input,update,profileRevision){

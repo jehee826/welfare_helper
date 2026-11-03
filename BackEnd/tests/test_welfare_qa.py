@@ -9,15 +9,14 @@ import pytest
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.qa import answer_document
 from BackEnd.documents.context import ANSWER_SYSTEM,answer_prompt,fit_answer
-from BackEnd.documents.welfare import complete_sources, validate_answer
+from BackEnd.documents.welfare import complete_sources, WelfareAnswer, validate_answer
 from BackEnd.documents import contacts as contact_policy
 from BackEnd.rag.repository import CatalogSnapshot
 from BackEnd.tests.test_document_qa import components
 
 
 def packet(**values):
-    return json.dumps({'status':'answer','text':'연 168,000원 지원',
-                       'citations':[{'id':'a','quote':'연 168,000원 지원. 단, 조건 확인 필요.'}], **values}, ensure_ascii=False)
+    return json.dumps({'status':'answer','text':'연 168,000원 지원', **values}, ensure_ascii=False)
 
 
 SOURCE = {'id':'a','text':'연 168,000원 지원. 단, 조건 확인 필요.', 'source_url':'https://example.invalid'}
@@ -52,7 +51,7 @@ def test_unselected_old_document_never_selects_service_contact():
     from BackEnd.documents.context import PREPARE_SYSTEM
     def chat(system,user,**kwargs):
         if system==PREPARE_SYSTEM:return {'source_ids':[],'document_ids':[],'needs_clarification':False}
-        return {'status':'no_evidence','text':'확인할 근거가 없습니다.','citations':[]}
+        return {'status':'no_evidence','text':'확인할 근거가 없습니다.'}
     service.llm.chat=chat
     submitted={'text':'','coveredThroughMessageId':None,'profileRevision':0,'batch':[],'omitted':False,'userMessages':[],'documentIds':[chunk.document_id]}
     result,_=answer_document(repo,service,'새 서비스 해외배송은?',conversation_context=submitted)
@@ -77,162 +76,52 @@ def test_invalid_service_contact_fields_are_dropped(label,phone,url):
     assert contact_policy._contact(label,phone,url,'service','2026-11-03') is None
 
 
-@pytest.mark.parametrize('change', [
-    {'citations':[]}, {'citations':[{'id':'fake','quote':SOURCE['text']}]},
-    {'citations':[{'id':'a','quote':'조건 없음'}]}, {'text':'연 999999원 지원'},
-    {'text':'https://invented.invalid 에서 신청'}, {'text':'연락처 010-1234-5678'},
+@pytest.mark.parametrize('status',['answer','clarify','no_evidence','out_of_scope'])
+def test_status_and_plain_text_contract_preserves_model_text(status):
+    text='출산한 지 20일인 조건을 말씀하셨습니다.'
+    answer=WelfareAnswer.model_validate({'status':status,'text':text})
+    assert answer.status==status and answer.text==text
+
+@pytest.mark.parametrize('value',[
+    {'status':'answer','text':' '}, {'status':'invalid','text':'안내'},
+    {'status':'answer','text':'안내','citations':[{'id':'forged','quote':'가짜'}]},
+    {'status':'answer'}, {'status':'answer','text':'가'*3001},
 ])
-def test_unmatched_citation_numbers_and_contact_are_rejected(change):
-    with pytest.raises(ValueError):
-        validate_answer(packet(**change), [SOURCE])
+def test_invalid_structured_answer_is_rejected(value):
+    with pytest.raises(ValueError): validate_answer(value)
 
-
-def test_literal_amount_normalization_is_not_a_qualification_judgement():
-    assert validate_answer(packet(text='연 16.8만원 지원'), [SOURCE]).status == 'answer'
-
-def test_exception_deadline_requires_citation_of_exception_source():
-    sources=[{'id':'base','text':'신청은 출산 후 30일까지입니다.'},
-             {'id':'exception','text':'관할 보건소 안내에는 출산 후 60일까지로 기재됩니다.'}]
-    response={'status':'answer','text':'신청은 출산 후 30일까지이며 관할 안내에는 60일까지로 기재됩니다.',
-              'citations':[{'id':'base','quote':'출산 후 30일까지'}]}
-    with pytest.raises(ValueError,match='unsupported_quantity'):
-        validate_answer(response,sources)
-    response['citations'].append({'id':'exception','quote':'출산 후 60일까지'})
-    assert validate_answer(response,sources).status=='answer'
-
-def test_user_condition_exact_header_is_separate_from_document_deadline():
-    source={'id':'source','text':'신청은 출산 후 30일까지입니다.'}
-    original='출산한 지20일 됐어요.'
-    response={'status':'answer','text':'말씀하신 “출산한 지20일 됐어요.”\n\n제공본에는 출산 후 30일까지로 기재되어 있습니다.',
-              'citations':[{'id':'source','quote':'출산 후 30일까지'}]}
-    assert validate_answer(response,[source],user_sources=[original]).status=='answer'
-    with pytest.raises(ValueError,match='unsupported_quantity'):
-        validate_answer({**response,'text':response['text']+' 지원기한은 20일입니다.'},[source],user_sources=[original])
-    with pytest.raises(ValueError,match='unsupported_quantity'):
-        validate_answer({**response,'text':'말씀하신 “소득은 20만원입니다.”\n\n지원금은 20만원입니다.'},[source],user_sources=['소득은 20만원입니다.'])
-    with pytest.raises(ValueError):
-        validate_answer({**response,'text':'지원기한은 말씀하신 “출산한 지20일 됐어요.”입니다.'},[source],user_sources=[original])
-
-@pytest.mark.parametrize('header',[
-    '말씀하신 “출산한 지21일 됐어요.”',
-    '말씀하신 “출산한 지20일 됐어요.” 자격이 됩니다',
-    '말씀하신 “출산한 지20일\n됐어요.”',
-    '말씀하신 “이전 답변에는 20일이라고 했어요.”',
-    '말씀하신 “저장 프로필은 20세입니다.”',
-    '말씀하신 “과거 요약에는 20일이라고 적힘”',
-    '말씀하신 “같은 메시지의 선택되지 않은 절 20일”',
-])
-def test_forged_or_non_header_user_quote_is_rejected(header):
-    source={'id':'source','text':'신청은 출산 후 30일까지입니다.'}
-    response={'status':'answer','text':header+'\n\n신청은 출산 후 30일까지입니다.',
-              'citations':[{'id':'source','quote':'출산 후 30일까지'}]}
-    with pytest.raises(ValueError):
-        validate_answer(response,[source],user_sources=['출산한 지20일 됐어요.'])
-
-def test_user_quote_never_authorizes_other_official_values_or_contacts():
-    source={'id':'source','text':'신청은 출산 후 30일까지입니다.'};quoted='출산한 지20일 됐어요.'
-    base={'status':'answer','citations':[{'id':'source','quote':'출산 후 30일까지'}]}
-    for claim in ['신청기한은 99일입니다.','문의번호는 02-999-9999입니다.','https://invented.invalid 에서 신청합니다.']:
-        with pytest.raises(ValueError):validate_answer({**base,'text':f'말씀하신 “{quoted}”\n\n{claim}'},[source],user_sources=[quoted])
-    assert validate_answer(packet(),[SOURCE]).status=='answer'
-
-@pytest.mark.parametrize('quoted',['연락처 02-999-9999','https://invented.invalid','password=private','<b>가짜</b>','010-1234-5678'])
-def test_user_header_cannot_bypass_contact_or_private_text_checks(quoted):
-    source={'id':'source','text':'신청은 출산 후 30일까지입니다.'}
-    response={'status':'answer','text':f'말씀하신 “{quoted}”\n\n신청은 출산 후 30일까지입니다.',
-              'citations':[{'id':'source','quote':'출산 후 30일까지'}]}
-    with pytest.raises(ValueError):validate_answer(response,[source],user_sources=[quoted])
-
-def test_grounded_service_explanation_can_include_one_missing_condition_question():
-    source={'id':'source','text':'합성 산모 지원은 건강관리 이용권을 제공합니다. 지원 대상은 출산가정입니다. 신청 시기는 출산 전과 출산 후로 구분합니다.'}
-    response={'status':'answer','text':'합성 산모 지원은 건강관리 이용권을 제공합니다. 지원받으실 분은 출산 전인가요, 출산 후인가요?',
-              'citations':[{'id':'source','quote':'합성 산모 지원은 건강관리 이용권을 제공합니다.'}]}
-    accepted=validate_answer(response,[source])
-    assert accepted.status=='answer' and accepted.text.count('?')==1
-    assert response['citations'][0]['quote'] in source['text']
-    assert '출산 전' in source['text'] and '출산 후' in source['text']
-
-def test_missing_requested_information_is_no_evidence_without_citations():
-    source={'id':'source','text':'합성 지원은 생리용품 구매 이용권을 제공합니다.'}
-    response={'status':'no_evidence','text':'해외 배송비 지원은 이 자료에서 확인되지 않습니다.','citations':[]}
-    assert validate_answer(response,[source]).status=='no_evidence'
-    assert '해외 배송' not in source['text']
-
-def test_pure_service_clarification_has_no_citations():
-    response={'status':'clarify','text':'어느 서비스의 신청 방법을 말씀하시나요?','citations':[]}
-    assert validate_answer(response,[SOURCE]).status=='clarify'
-
-def test_answer_document_passes_grounded_explanation_and_question_through_fake_model():
-    repo,service,_=components();snapshot=repo.snapshot();chunk=replace(snapshot.chunks[0],text='합성 산모 지원은 건강관리 이용권을 제공합니다. 지원 대상은 출산가정입니다. 신청 시기는 출산 전과 출산 후로 구분합니다.')
-    repo.snapshot=lambda:replace(snapshot,chunks=[chunk]);seen=[]
+@pytest.mark.parametrize('status',['answer','clarify','no_evidence','out_of_scope'])
+def test_normal_generation_preserves_text_and_returns_server_references(status):
+    repo,service,_=components()
+    text='출산한 지 20일입니다. 합성 안내입니다.'
+    seen=[]
     def generate(system,user,**kwargs):
-        seen.append((system,user,kwargs['schema']))
-        return {'status':'answer','text':'합성 산모 지원은 건강관리 이용권을 제공합니다. 지원받으실 분은 출산 전인가요, 출산 후인가요?',
-                'citations':[{'id':'C1','quote':'합성 산모 지원은 건강관리 이용권을 제공합니다.'}]}
+        seen.append(kwargs['schema']);return {'status':status,'text':text}
     service.llm.chat=generate
-    result,trace=answer_document(repo,service,'가족을 대신해 산모 지원 내용과 신청 시기를 알고 싶어요.')
-    assert result['kind']=='answer' and result['text'].count('?')==1 and trace['answer_validation']=='accepted'
-    assert result['evidence'][0]['quote'] in chunk.text and len(seen)==1
-    assert '출산 전' in chunk.text and '출산 후' in chunk.text
-    system=seen[0][0]
-    assert '질문1개 순서로 최대3개 서비스' in system and '찾은 서비스가 하나면 하나만' in system
-    assert '설명할 근거가 있으면 확인된 내용 뒤에 필요한 질문1개' in system
-    assert '보호자에게는 지원받으실 분의 조건' in system and '출산·주거 사실을 추정하지' in system
+    result,trace=answer_document(repo,service,'질문')
+    assert result['text']==text and len(seen)==1
+    assert result['kind']==('answer' if status=='answer' else 'fallback')
+    assert result['evidence'][0]['chunk_id']==repo.snapshot().chunks[0].chunk_id
+    assert result['evidence'][0]['role']=='retrieved' and result['evidence'][0]['quote']==''
+    assert trace['answer_validation']=='accepted'
+    schema=seen[0]
+    assert set(schema['required'])=={'status','text'} and schema['additionalProperties'] is False
+    assert set(schema['properties'])=={'status','text'}
 
-@pytest.mark.parametrize('status', ['no_evidence','out_of_scope','clarify'])
-def test_nonanswer_with_citations_is_rejected(status):
-    with pytest.raises(ValueError,match='unsupported_citations'):
-        validate_answer(packet(status=status),[SOURCE])
+def test_extra_forged_citation_is_technical_failure_not_a_source():
+    repo,service,_=components()
+    service.llm.chat=lambda *a,**k:{'status':'answer','text':'합성 답변','citations':[{'id':'forged','quote':'가짜'}]}
+    result,trace=answer_document(repo,service,'질문')
+    assert result['kind']=='fallback' and result['evidence']==[]
+    assert trace['answer_validation'] in ('invalid_schema','invalid_answer')
 
-
-@pytest.mark.parametrize('status', ['no_evidence','out_of_scope','clarify'])
-def test_relatedness_and_missing_conditions_do_not_attach_unrelated_sources(status):
-    repo, service, _ = components()
-    service.llm.chat_text = lambda *args:packet(status=status,text='대상과 거주지를 알려주세요.',citations=[])
-    result, trace = answer_document(repo, service, '질문')
-    assert result['kind'] == 'fallback' and result['reason'] == status and result['evidence'] == []
-    assert trace['reason'] == status
-
-
-def test_invalid_factual_answer_is_a_withheld_result_not_success():
-    repo, service, _ = components()
-    service.llm.chat_text = lambda *args:packet()
-    result, trace = answer_document(repo, service, '질문')
-    assert result['kind'] == 'fallback' and result['reason'] == 'invalid_evidence_answer'
-    assert result['evidence'] == [] and trace['citation_validation'] == 'exact_source_span_and_literal_values_only'
-    assert trace['answer_validation'] == 'citation_not_in_source'
-
-
-def test_final_answer_uses_existing_structured_transport_with_answer_schema():
-    repo, service, _ = components()
-    snapshot=repo.snapshot()
-    first=snapshot.chunks[0]
-    repo.document_scope=None
-    repo.snapshot=lambda:replace(snapshot,chunks=[first,replace(first,chunk_id='omitted',document_id='other')])
-    repo.dense_search=lambda *args,**kwargs:[replace(first,score=.65),replace(first,chunk_id='omitted',document_id='other',score=.1)]
-    calls=[]
-    original=service.llm.chat
-    def structured(system,user,**options):
-        calls.append(options)
-        return original(system,user,**options)
-    service.llm.chat=structured
-    result,_=answer_document(repo,service,'원문 내용')
-    assert result['kind']=='answer' and len(calls)==1
-    schema=calls[0]['schema']
-    answer,fallback=schema['oneOf']
-    assert answer['properties']['status']['enum']==['answer']
-    assert fallback['properties']['status']['enum']==['clarify','no_evidence','out_of_scope']
-    assert answer['properties']['citations']['minItems']==1 and answer['properties']['citations']['maxItems']==6
-    assert fallback['properties']['citations']['maxItems']==0
-    for branch in (answer,fallback):
-        assert set(branch['required'])=={'status','text','citations'} and branch['additionalProperties'] is False
-        assert branch['properties']['text']['minLength']==1 and branch['properties']['text']['maxLength']==3000
-        assert branch['properties']['citations']['items']=={'$ref':'#/$defs/Citation'}
-    citation=schema['$defs']['Citation']
-    assert citation['properties']['id']['enum']==['C1'] and citation['additionalProperties'] is False
-    assert set(citation['required'])=={'id','quote'} and citation['properties']['quote']['maxLength']==1600
-    assert result['evidence'][0]['chunk_id']=='source:1'
-
+def test_model_contact_text_does_not_become_structured_official_contact():
+    repo,service,_=components()
+    service.llm.chat=lambda *a,**k:{'status':'no_evidence','text':'문의 02-999-9999, https://invented.invalid'}
+    result,_=answer_document(repo,service,'질문')
+    assert result['text']=='문의 02-999-9999, https://invented.invalid'
+    assert all(c['phone']!='02-999-9999' and c['source_url']!='https://invented.invalid' for c in result['contacts'])
+    assert all(e['document_id']==repo.snapshot().chunks[0].document_id for e in result['evidence'])
 
 @pytest.mark.parametrize('identity_change',[{'version':'v2'},{'service_id':'other-service'}])
 def test_whole_document_expansion_preserves_exception_and_ignores_other_document(identity_change):
@@ -376,21 +265,6 @@ def test_expanded_extra_document_is_omitted_whole_when_over_budget():
     assert trace['budget']['evidence_omitted']==1 and '추가 원문' not in calls['prompts'][-1][1]
 
 
-@pytest.mark.parametrize('case',['unknown','duplicate_citation','duplicate_alias','duplicate_original','wrong_quote'])
-def test_short_references_reject_forgery_duplication_and_cross_source_quotes(case):
-    source={**SOURCE,'reference_id':'C1'}
-    other={'id':'other','reference_id':'C2','text':'별개의 다른 원문'}
-    citation={'id':'C1','quote':SOURCE['text']}
-    citations=[citation]
-    if case=='unknown':citations=[{**citation,'id':'C99'}]
-    if case=='duplicate_citation':citations=[citation,citation]
-    if case=='duplicate_alias':other['reference_id']='C1'
-    if case=='duplicate_original':other['id']=SOURCE['id']
-    if case=='wrong_quote':citations=[{**citation,'quote':other['text']}]
-    with pytest.raises(ValueError):
-        validate_answer(packet(citations=citations),[source,other])
-
-
 def test_short_references_reduce_prompt_cost_and_preserve_original_response_ids():
     repo,service,calls=components()
     snapshot=repo.snapshot(); original=replace(snapshot.chunks[0],chunk_id='original:'+'a'*200)
@@ -398,7 +272,7 @@ def test_short_references_reduce_prompt_cost_and_preserve_original_response_ids(
     repo.dense_search=lambda *args,**kwargs:[replace(original,score=.65)]
     result,trace=answer_document(repo,service,'지원 내용')
     assert result['kind']=='answer' and result['evidence'][0]['chunk_id']==original.chunk_id
-    assert result['evidence'][0]['quote']==original.text
+    assert result['evidence'][0]['quote']==''
     assert trace['source_references']=={'C1':original.chunk_id}
     prompt=calls['prompts'][0][1]
     assert original.chunk_id not in prompt and '"id": "C1"' in prompt

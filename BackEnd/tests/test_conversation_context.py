@@ -168,7 +168,7 @@ def test_no_evidence_contact_uses_only_validated_selected_document_id():
         if system==PREPARE_SYSTEM:
             payload=json.loads(user)
             return {'search_query':'지원 문의','source_ids':[],'document_ids':[payload['documents'][0]['id']],'needs_clarification':False}
-        return {'status':'no_evidence','text':'이 자료에서 확인되지 않습니다.','citations':[]}
+        return {'status':'no_evidence','text':'이 자료에서 확인되지 않습니다.'}
     service.llm.chat=chat
     submitted={**context(batch=False),'userMessages':[],'documentIds':[chunk.document_id]}
     result,_=answer_document(repo,service,'배송비가 있나요?',conversation_context=submitted)
@@ -361,10 +361,10 @@ def test_ambiguous_intent_preserves_final_model_withholding_after_search(status)
         if system == PREPARE_SYSTEM:
             return previous(system,user,**kwargs)
         calls['prompts'].append((system,user))
-        return {'status':status,'text':'대상과 거주지를 알려주세요.','citations':[]}
+        return {'status':status,'text':'대상과 거주지를 알려주세요.'}
     service.llm.chat.side_effect=structured
     result,trace=answer_document(repo,service,'거기서 신청해?',history=[{'role':'user','content':'둘 중 어느 안내인지 확인하고 싶어요'}])
-    assert result['kind']=='fallback' and result['reason']==status and result['evidence']==[]
+    assert result['kind']=='fallback' and result['reason']==status and result['evidence']
     assert trace['reason']==status and len(calls['prepare'])==len(calls['prompts'])==1
     service.llm.embed.assert_called_once()
     service.reranker.score.assert_called_once()

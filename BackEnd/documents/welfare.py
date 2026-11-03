@@ -1,27 +1,17 @@
-"""복지 답변의 원문 범위와 인용 형식을 확인한다. 의미적 자격 판정을 대신하지 않는다."""
+"""관련 원문 범위와 답변의 기술 형식을 확인한다. 답변의 사실 정확도를 인증하지 않는다."""
 
-import json
 import re
-from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from BackEnd.documents.contracts import DocumentError
-from BackEnd.documents.context import safe_context_text
-
-
-class Citation(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    id: str = Field(min_length=1, max_length=500)
-    quote: str = Field(min_length=1, max_length=1600)
 
 
 class WelfareAnswer(BaseModel):
     model_config = ConfigDict(extra='forbid')
     status: Literal['answer', 'clarify', 'no_evidence', 'out_of_scope']
     text: str = Field(min_length=1, max_length=3000)
-    citations: list[Citation] = Field(max_length=6)
 
 
 def complete_sources(snapshot, selected, query=''):
@@ -56,59 +46,8 @@ def complete_sources(snapshot, selected, query=''):
     return result
 
 
-def quantities(text):
-    values = set()
-    for number, unit in re.findall(r'(\d[\d,]*(?:\.\d+)?)\s*(만\s*원|천\s*원|원|%|세|일|개월|년)', text):
-        unit = re.sub(r'\s+', '', unit)
-        value = Decimal(number.replace(',', ''))
-        if unit in {'만원', '천원'}:
-            value *= 10000 if unit == '만원' else 1000
-            unit = '원'
-        values.add((value, unit))
-    return values
-
-
-def _document_claims(text, user_sources):
-    if not re.search(r'말씀하신\s*[“"]', text):
-        return text
-    header, separator, claims = text.partition('\n\n')
-    if not separator or not claims.strip() or re.search(r'말씀하신\s*[“"]', claims):
-        raise ValueError('unsupported_user_quote')
-    for line in header.split('\n'):
-        match = re.fullmatch(r'말씀하신 “([^“”\r\n]+)”', line)
-        if not match or match[1] not in user_sources:
-            raise ValueError('unsupported_user_quote')
-        try:
-            safe_context_text(match[1])
-        except ValueError:
-            raise ValueError('unsupported_user_quote') from None
-    return claims
-
-
-def validate_answer(raw, documents, *, user_sources=()):
+def validate_answer(raw):
     answer = WelfareAnswer.model_validate_json(raw) if isinstance(raw,str) else WelfareAnswer.model_validate(raw)
     if not answer.text.strip():
         raise ValueError('empty_answer')
-    if answer.status != 'answer':
-        if answer.citations:
-            raise ValueError('unsupported_citations')
-        if answer.status == 'clarify' and not quantities(answer.text).issubset(quantities(json.dumps(documents, ensure_ascii=False))):
-            raise ValueError('unsupported_clarification_quantity')
-        return answer
-    by_id = {doc.get('reference_id',doc['id']): doc for doc in documents}
-    if len(by_id) != len(documents) or len({d['id'] for d in documents}) != len(documents):
-        raise ValueError('invalid_source_references')
-    if not answer.citations or len({c.id for c in answer.citations}) != len(answer.citations):
-        raise ValueError('missing_or_duplicate_citation')
-    for citation in answer.citations:
-        if citation.id not in by_id or not citation.quote.strip() or citation.quote not in by_id[citation.id]['text']:
-            raise ValueError('citation_not_in_source')
-    sources = json.dumps([by_id[c.id] for c in answer.citations], ensure_ascii=False)
-    # 정확한 발췌와 숫자·연락처 대응만 확인한다. 인용이 모든 주장의 의미를 증명하지는 않는다.
-    # 검증한 독립 사용자 인용행만 제외한다. 문서 주장이나 연락처에 수치를 재사용할 권한은 주지 않는다.
-    if not quantities(_document_claims(answer.text, user_sources)).issubset(quantities(sources)):
-        raise ValueError('unsupported_quantity')
-    for value in re.findall(r'https?://[^\s<>"\)]+|0\d{1,2}-\d{3,4}-\d{4}', answer.text):
-        if value.rstrip('.,') not in sources:
-            raise ValueError('unsupported_contact')
     return answer

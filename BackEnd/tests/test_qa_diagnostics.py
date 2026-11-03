@@ -6,7 +6,8 @@ from dataclasses import replace
 
 import pytest
 
-from BackEnd.core.qa_diagnostics import CODES, current_diagnostic, logger
+from BackEnd.core.qa_diagnostics import CODES, current_diagnostic, diagnose_qa, logger
+from BackEnd.core.execution import ExecutionCancelledError
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.qa import answer_document
 from BackEnd.tests.test_document_qa import components
@@ -41,7 +42,7 @@ def test_success_logs_six_stages_to_default_handler_and_clears_scope(stream):
     assert [r['stage'] for r in rows if r['event']=='stage_end']==['snapshot','context','retrieval','rerank','generation','validation']
     assert len({r['request_id'] for r in rows})==1 and re.fullmatch(r'[0-9a-f]{32}',rows[0]['request_id'])
     assert all(r['code'] in CODES and isinstance(r['elapsed_ms'],(int,float)) and r['elapsed_ms']>=0 for r in rows)
-    assert all(set(r)<= {'request_id','event','elapsed_ms','code','stage'} for r in rows)
+    assert all(set(r)<= {'request_id','event','elapsed_ms','code','stage'} | ({'answer_validation','done_reason','prompt_eval_count','eval_count'} if r['event']=='qa_end' else set()) for r in rows)
     assert 'MAE' not in output and current_diagnostic() is None
 
 
@@ -60,3 +61,36 @@ def test_failure_logs_only_safe_code_without_private_markers_and_clears_scope(st
     assert all(row['code'] in CODES for row in rows)
     assert marker not in output and 'private.invalid' not in output and 'RuntimeError' not in output
     assert len(calls['prompts'])==1 and current_diagnostic() is None
+
+
+@pytest.mark.parametrize('validation', ['accepted','invalid_schema','empty_answer','unsupported_citations','unsupported_clarification_quantity','missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_contact','invalid_source_references','invalid_answer'])
+@pytest.mark.parametrize('done_reason',['stop','length'])
+def test_end_logs_only_allowed_validation_and_generation_metadata(stream,validation,done_reason):
+    result=({'kind':'fallback'}, {'reason':'invalid_evidence_answer','answer_validation':validation,
+        'generation_metadata':{'done_reason':done_reason,'prompt_eval_count':0,'eval_count':27,'private':'SYNTHETIC_PRIVATE'}})
+    assert diagnose_qa(lambda:result)() is result
+    output,rows=records(stream)
+    assert rows[-1]['answer_validation']==validation and rows[-1]['done_reason']==done_reason
+    assert rows[-1]['prompt_eval_count']==0 and rows[-1]['eval_count']==27
+    assert 'SYNTHETIC_PRIVATE' not in output and current_diagnostic() is None
+
+
+@pytest.mark.parametrize('bad',[-1,True,1.5,'42','SYNTHETIC_PRIVATE',None])
+def test_end_omits_invalid_metadata_and_never_logs_raw_trace(stream,bad):
+    result=({'question':'SYNTHETIC_PRIVATE'}, {'reason':'answer','answer_validation':'SYNTHETIC_PRIVATE',
+        'generation_metadata':{'done_reason':'SYNTHETIC_PRIVATE','prompt_eval_count':bad,'eval_count':bad},
+        'question':'SYNTHETIC_PRIVATE'})
+    assert diagnose_qa(lambda:result)() is result
+    output,rows=records(stream)
+    assert not ({'answer_validation','done_reason','prompt_eval_count','eval_count'} & rows[-1].keys())
+    assert 'SYNTHETIC_PRIVATE' not in output and current_diagnostic() is None
+
+
+def test_cancelled_scope_is_cleared_without_logging_exception_text(stream):
+    @diagnose_qa
+    def cancelled():
+        raise ExecutionCancelledError('SYNTHETIC_PRIVATE')
+    with pytest.raises(ExecutionCancelledError):cancelled()
+    output,rows=records(stream)
+    assert rows[-1]['code']=='cancelled' and 'SYNTHETIC_PRIVATE' not in output
+    assert current_diagnostic() is None

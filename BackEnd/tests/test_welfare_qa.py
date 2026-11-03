@@ -234,7 +234,8 @@ def test_final_answer_uses_existing_structured_transport_with_answer_schema():
     assert result['evidence'][0]['chunk_id']=='source:1'
 
 
-def test_whole_document_expansion_preserves_exception_and_ignores_other_document():
+@pytest.mark.parametrize('identity_change',[{'version':'v2'},{'service_id':'other-service'}])
+def test_whole_document_expansion_preserves_exception_and_ignores_other_document(identity_change):
     repo, _, _ = components()
     first = replace(repo.snapshot().chunks[0],version='v1',text='지원 대상',parent_id='p1')
     exception = replace(first,chunk_id='source:2',ordinal=1,text='단, 재학 조건이 필요하다.')
@@ -242,7 +243,7 @@ def test_whole_document_expansion_preserves_exception_and_ignores_other_document
     snapshot = CatalogSnapshot([], [first, exception, other], 'fixed')
     assert complete_sources(snapshot,[first]) == [first, exception]
     with pytest.raises(DocumentError, match='version_mismatch'):
-        complete_sources(CatalogSnapshot([], [first,replace(exception,version='v2')], 'fixed'),[first])
+        complete_sources(CatalogSnapshot([], [first,replace(exception,**identity_change)], 'fixed'),[first])
 
 
 def test_whole_document_over_budget_does_not_drop_exception_to_generate():
@@ -326,6 +327,53 @@ def test_missing_required_parent_does_not_allow_partial_factual_context():
     anchor=replace(repo.snapshot().chunks[0],version='v1',parent_id='p1',required_parents=('p1','missing'))
     with pytest.raises(DocumentError,match='document_evidence_incomplete'):
         complete_sources(CatalogSnapshot([], [anchor], 'fixed'),[anchor],'지원 내용')
+
+
+@pytest.mark.parametrize('query',['합성 서비스','집에서 도움을 받을 수 있나요?',''])
+def test_basic_sources_reach_prompt_for_short_indirect_or_empty_query(query):
+    repo,service,calls=components()
+    anchor=replace(repo.snapshot().chunks[0],version='v1',parent_id='base',heading_context='서비스 요약',text='합성 서비스 안내')
+    benefit=replace(anchor,chunk_id='benefit',parent_id='benefit',parent_index=1,heading_context='급여서비스 내용',text='돌봄 이용권을 제공합니다.')
+    continuation=replace(benefit,chunk_id='benefit:2',ordinal=1,text='지원 내용의 나머지 원문입니다.')
+    application=replace(anchor,chunk_id='application',parent_id='application',parent_index=2,heading_context='신청방법 내용',text='주민센터에서 신청합니다.')
+    exception=replace(anchor,chunk_id='exception',parent_id='exception',parent_index=3,heading_context='예외',text='단, 별도 조건을 확인합니다.')
+    appendix=replace(anchor,chunk_id='appendix',parent_id='appendix',parent_index=4,heading_context='일반서식 부록',text='무관한 부록 원문')
+    other=replace(benefit,chunk_id='other',document_id='other',text='다른 문서의 원문')
+    snapshot=CatalogSnapshot([], [anchor,benefit,continuation,application,exception,appendix,other], 'fixed')
+    selected=complete_sources(snapshot,[anchor,anchor],query)
+    assert [c.chunk_id for c in selected]==['source:1','benefit','benefit:2','application','exception']
+    repo.document_scope=None
+    repo.snapshot=lambda:snapshot
+    repo.dense_search=lambda *a,**k:[replace(c,score=.65 if c.chunk_id=='source:1' else .1) for c in snapshot.chunks]
+    service.dense_k=1
+    result,_=answer_document(repo,service,query)
+    assert result['kind']=='answer'
+    prompt=calls['prompts'][0][1]
+    for chunk in (benefit,continuation,application,exception): assert chunk.text in prompt
+    assert appendix.text not in prompt and other.text not in prompt
+
+
+def test_incomplete_newly_required_source_is_rejected():
+    repo,_,_=components()
+    anchor=replace(repo.snapshot().chunks[0],version='v1',parent_id='base')
+    incomplete=replace(anchor,chunk_id='incomplete',parent_id='benefit',heading_context='급여서비스 내용',complete=False)
+    with pytest.raises(DocumentError,match='document_evidence_incomplete'):
+        complete_sources(CatalogSnapshot([], [anchor,incomplete], 'fixed'),[anchor],'')
+
+
+def test_expanded_extra_document_is_omitted_whole_when_over_budget():
+    repo,service,calls=components()
+    first=replace(repo.snapshot().chunks[0],version='v1',parent_id='first')
+    second=replace(first,chunk_id='extra',document_id='second',parent_id='second',text='추가 원문'*10000)
+    repo.document_scope=None
+    repo.snapshot=lambda:CatalogSnapshot([], [first,second], 'fixed')
+    repo.dense_search=lambda *a,**k:[replace(first,score=.8),replace(second,score=.7)]
+    service.core_k=2
+    service.llm.context_limit=lambda:10000
+    result,trace=answer_document(repo,service,'질문')
+    assert result['kind']=='answer' and len(result['evidence'])==1
+    assert result['evidence'][0]['context']==first.text
+    assert trace['budget']['evidence_omitted']==1 and '추가 원문' not in calls['prompts'][-1][1]
 
 
 @pytest.mark.parametrize('case',['unknown','duplicate_citation','duplicate_alias','duplicate_original','wrong_quote'])

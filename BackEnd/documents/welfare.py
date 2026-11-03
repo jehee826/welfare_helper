@@ -27,13 +27,10 @@ class WelfareAnswer(BaseModel):
 def complete_sources(snapshot, selected, query=''):
     """관련 부모와 조건·예외를 보완한다. 이전 버전·다른 문서를 섞지 않는다."""
     result, seen = [], set()
-    # 메타데이터 조각이 높은 순위를 차지해도 질문이 요청한 급여·신청 절은 빠뜨리지 않는다.
-    topics = []
-    if re.search(r'혜택|급여|지원\s*(?:금|액|한도|내용)|금액|한도|얼마|수강료|바우처|이용권', query):
-        topics.append(r'급여|혜택|지원\s*(?:내용|금|액|한도)|수강료|이용권|바우처')
-    if re.search(r'신청|접수|절차|서류|준비물|온라인|방문|어디|방법', query):
-        topics.append(r'신청|접수|절차|제출|구비|필요\s*서류')
-    required_heading = '|'.join([r'대상|자격|조건|선정|예외|기준|기한|기간|시행|현행|제외|지역|시도|시군구|거주|수정|연도', *topics])
+    # 짧거나 간접적인 질문에도 같은 문서의 기본 지원·신청 내용과 조건을 함께 전달한다.
+    required_heading = (r'대상|자격|조건|선정|예외|기준|기한|기간|시행|현행|제외|지역|시도|시군구|거주|수정|연도|'
+                        r'급여|혜택|지원\s*(?:내용|금|액|한도)|수강료|이용권|바우처|'
+                        r'신청|접수|절차|제출|구비|필요\s*서류')
     for anchor in selected:
         identity = lambda c: (c.document_id, c.service_id, c.version, c.source_hash, c.source_url,
                               c.basis_year, c.source_updated_at, c.analysis_hash, c.processing_hash, c.embed_digest)

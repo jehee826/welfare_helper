@@ -57,31 +57,35 @@ def test_general_query_does_not_use_saved_profile_without_prepare():
     query = service.llm.embed.call_args.args[0][0]
     assert "70" not in query and "unknown" not in query and "None" not in query
     assert service.reranker.score.call_args.args[0] == query
-    assert not final_context(calls)["profile"]
+    assert 'profile' not in final_context(calls) and 'profile_description' not in final_context(calls)
     assert trace["context"]["profile_used"] is False and trace["context"]["preparation"] == "skipped"
 
-@pytest.mark.parametrize('question', ['내 조건에 맞나요?', '나도 받을 수 있나요?', '내가 대상인가요?', '제가 신청할 수 있나요?', '우리 가구가 대상인가요?'])
-def test_explicit_personal_query_uses_saved_profile(question):
-    repo, service, calls = service_with_prepare()
-    answer_document(repo, service, question, profile={'age': 70, 'income': 'unknown'})
-    assert '70' in service.llm.embed.call_args.args[0][0]
-    assert final_context(calls)['profile'] == {'age': 70}
+def test_identical_question_and_history_ignore_all_legacy_profiles():
+    observed=[]
+    for profile in (None,{'age':20,'region':'부산광역시'}, {'age':70,'region':'서울특별시'}):
+        repo,service,calls=service_with_prepare()
+        _,trace=answer_document(repo,service,'내 조건에 맞나요?',profile=profile,
+                                 history=[{'role':'user','content':'합성 서비스가 궁금해요'}])
+        assert 'current_profile' not in calls['prepare'][0]
+        assert 'profile' not in final_context(calls) and 'profile_description' not in final_context(calls)
+        observed.append((service.llm.embed.call_args.args[0][0], trace['retrieval'], calls['prompts'][-1][1]))
+    assert observed[0]==observed[1]==observed[2]
 
 def test_general_followup_excludes_profile_from_prepare_search_and_final():
     repo, service, calls = service_with_prepare()
     answer_document(repo, service, '그 서비스의 지원내용은?', profile={'age':70, 'household':'single'},
                     history=[{'role':'user','content':'합성 서비스가 궁금해요'}])
-    assert calls['prepare'][0]['current_profile'] == {}
+    assert 'current_profile' not in calls['prepare'][0]
     assert '70' not in service.llm.embed.call_args.args[0][0]
     assert '1인 가구' not in service.llm.embed.call_args.args[0][0]
-    assert not final_context(calls)['profile']
+    assert 'profile' not in final_context(calls) and 'profile_description' not in final_context(calls)
 
-@pytest.mark.parametrize(('question','used'), [('안내 정보를 알려줘',False),('내 정보로 대상인지 알려줘',True)])
-def test_personal_phrase_respects_word_boundary(question,used):
+@pytest.mark.parametrize('question', ['안내 정보를 알려줘','내 정보로 대상인지 알려줘'])
+def test_personal_wording_does_not_enable_saved_profile(question):
     repo,service,calls=service_with_prepare()
     _,trace=answer_document(repo,service,question,profile={'age':70})
-    assert trace['context']['profile_used'] is used
-    assert bool(final_context(calls)['profile']) is used
+    assert trace['context']['profile_used'] is False
+    assert 'profile' not in final_context(calls)
 
 
 def test_followup_uses_identical_dense_keyword_rerank_query_and_separate_untrusted_context(monkeypatch):
@@ -97,7 +101,7 @@ def test_followup_uses_identical_dense_keyword_rerank_query_and_separate_untrust
     result, trace = answer_document(repo, service, "내 조건에서 신청처는?", profile={"household": "single"}, history=history)
     assert len(calls["prepare"]) == len(calls["prompts"]) == 1
     query = service.llm.embed.call_args.args[0][0]
-    assert queries == [query] and service.reranker.score.call_args.args[0] == query and "합성 지원 신청처" in query and "1인 가구" in query
+    assert queries == [query] and service.reranker.score.call_args.args[0] == query and "합성 지원 신청처" in query and "1인 가구" not in query
     assert calls["prepare"][0]["recent_history"] == history
     assert "history" not in final_context(calls) and "summary" not in final_context(calls)
     assert final_context(calls)["search_intent"] == "합성 지원 신청처"
@@ -159,7 +163,7 @@ def test_previous_wrong_claims_stay_in_preparation_but_never_enter_final_factual
     prompt = calls["prompts"][0][1]
     assert "과거답변오답표식" not in prompt and "과거요약오답표식" not in prompt
     assert chunk.text in prompt and result["evidence"][0]["context"] == chunk.text
-    assert set(final_context(calls)) == {"profile","profile_description","search_intent","needs_clarification"}
+    assert set(final_context(calls)) == {"search_intent","needs_clarification"}
     assert trace["context"]["preparation_summary_used"] is True
     assert trace["context"]["generation_history_messages"] == 0 and trace["context"]["generation_summary_used"] is False
 
@@ -250,7 +254,7 @@ def test_chat_dto_forwards_optional_context_but_query_only_remains_compatible(ap
     body = {"query": "신청처", "profile": {"household": "single"}, "history": [{"role": "user", "content": "생활비"}], "conversation_context": submitted}
     assert api.client.post("/api/v1/chat", json=body).status_code == 200
     options = api.rag.call_args.kwargs
-    assert options["history"] == body["history"] and options["conversation_context"] == submitted and options["profile"]["household"] == "single"
+    assert options["history"] == body["history"] and options["conversation_context"] == submitted and 'profile' not in options
     api.rag.reset_mock()
     assert api.client.post("/api/v1/chat", json={"query": "질문"}).status_code == 200
     api.rag.assert_called_once_with(api.service.repo, api.service, "질문")

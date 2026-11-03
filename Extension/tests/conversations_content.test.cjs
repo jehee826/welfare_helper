@@ -25,7 +25,7 @@ test('맥락 불일치 저장 오류는 전용 안내와 미저장 답변을 보
 test('서버 fallback DTO는 저장 뒤 새 패널에 복원된다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('합성 질문');
-    await f.answer({kind:'fallback',reason:'out_of_scope',text:'복지 관련 질문을 알려주세요.',services:[],contacts:[],suggestions:[],evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}});
+    await f.answer({kind:'fallback',reason:'out_of_scope',text:'복지 관련 질문을 알려주세요.',services:[],contacts:[],suggestions:[],evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:0}});
     assert.equal(server.data[key].conversations[0].messages.length,2);
     assert.equal(f.root.querySelector('.status').textContent,'');
   }finally{f.close();}
@@ -166,11 +166,11 @@ test('동일 revision 늦은 통지는 새 질문을 취소하지 않는다',asy
     await f.answer({kind:'fallback',text:'근거가 부족합니다.',evidence:[]},port);assert.equal(server.data[key].conversations[0].messages.length,4);
   }finally{f.close();}
 });
-test('프로필 변경은 이전 요청만 중지하고 저장 대화는 보존하며 후속 이력을 비운다',async()=>{
+test('프로필 변경은 진행 요청과 저장 대화 및 후속 이력을 보존한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('이전 조건 질문');await f.answer(answer);await f.question('곧 바뀔 조건');const old=f.ports.at(-1);
     await server.send({type:'gyeote:profile-save',expectedRevision:1,profile:{age:60}});await settle();await f.answer({kind:'answer',text:'이전 조건 답변',evidence:[]},old);
-    assert.equal(server.data[key].conversations[0].messages.length,2);await f.question('새 조건 질문');assert.deepEqual(f.ports.at(-1).packet.payload.history,[]);
+    assert.equal(server.data[key].conversations[0].messages.length,4);await f.question('새 조건 질문');assert.equal(f.ports.at(-1).packet.payload.history.length,4);
     f.root.querySelector('button[type=submit]').click();
   }finally{f.close();}
 });

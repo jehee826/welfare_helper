@@ -1,6 +1,6 @@
 (() => {
   const key='gyeote.conversations';
-  function create({storage,profile,newId}){
+  function create({storage,newId}){
     let invalid=null;
     async function read(){
       const raw=(await storage.get(key))[key];
@@ -49,8 +49,7 @@
       if(!Number.isSafeInteger(message.expectedRevision)||message.expectedRevision<0||typeof message.generation!=='string')throw new Error('conversation_invalid_request');
       let pair;
       if(operation==='append'||operation==='begin'){
-        const savedProfile=await profile();
-        if(savedProfile.invalid||!savedProfile.state.onboardingCompleted||savedProfile.state.revision!==message.profileRevision)throw new Error('conversation_profile_changed');
+        if(!Number.isSafeInteger(message.profileRevision)||message.profileRevision<0)throw new Error('conversation_invalid_request');
         if(!GyeoteProtocol.id(message.pairId)||!ownsRequest())throw new Error('conversation_request_stopped');
       }
       if(operation==='append'){

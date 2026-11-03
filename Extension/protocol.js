@@ -114,7 +114,7 @@
     if(!payload||Object.keys(payload).some(k=>!['query','history','timeout_seconds','profile','conversation_context'].includes(k))||!documentText(payload.query,300)||payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('invalid_request');
     const history=payload.history||[];
     if(!Array.isArray(history)||history.length>12||history.some(h=>!h||!['user','assistant'].includes(h.role)||!documentText(h.content,6000)||Object.keys(h).some(k=>!['role','content'].includes(k)))||history.reduce((n,h)=>n+h.content.length,0)>6000)throw new Error('invalid_request');
-    return {query:payload.query,history,...(payload.timeout_seconds===undefined?{}:{timeout_seconds:payload.timeout_seconds}),...(Object.hasOwn(payload,'profile')?{profile:profile(payload.profile)}:{}),...(Object.hasOwn(payload,'conversation_context')?{conversation_context:conversationContext(payload.conversation_context)}:{})};
+    return {query:payload.query,history,...(payload.timeout_seconds===undefined?{}:{timeout_seconds:payload.timeout_seconds}),...(Object.hasOwn(payload,'conversation_context')?{conversation_context:conversationContext(payload.conversation_context)}:{})};
   }
   function documentReply(body,submitted){
     if(!body||!['answer','fallback'].includes(body.kind)||!documentText(body.text,60000)||body.evidence!==undefined&&!Array.isArray(body.evidence))throw new Error('invalid_reply');

@@ -56,7 +56,7 @@ def test_chat_returns_document_rag_result(api):
     )
     assert response.status_code == 200
     assert response.json() == api.result
-    api.rag.assert_called_once_with(api.service.repo, api.service, "연금", profile={"age":70,"income":"under50","household":"single","region":"서울특별시","disability":False})
+    api.rag.assert_called_once_with(api.service.repo, api.service, "연금")
 
 
 @pytest.mark.parametrize("profile", [{}, {"profile": None}])

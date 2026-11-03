@@ -107,7 +107,7 @@ def test_chat_and_debug_execute_identical_document_qa_once_per_request(diagnosti
     assert api.qa.call_count == 2
     for call in api.qa.call_args_list:
         assert call.args == (service.repo, service, "현재 질문")
-        assert call.kwargs == {"profile":body["profile"],"history":body["history"]}
+        assert call.kwargs == {"history":body["history"]}
     assert service.llm.embed.call_count == 2 and service.llm.chat.call_count == 4
     service.llm.chat_text.assert_not_called()
     assert service.answer_with_diagnostics.call_count == service.answer.call_count == 0
@@ -124,9 +124,9 @@ def test_chat_and_debug_execute_identical_document_qa_once_per_request(diagnosti
     assert public_evidence["source_blocks"] == ["block:9913991234567"]
     assert any(item["document_id"] == PRIVATE_DOC for item in chat.json()["evidence"]) is private
     for prompt in (call for call in service.llm.chat.call_args_list if call.args[0] == PREPARE_SYSTEM):
-        assert "과거 질문" in prompt.args[1] and "부산광역시" in prompt.args[1]
+        assert "과거 질문" in prompt.args[1] and "부산광역시" not in prompt.args[1]
     for prompt in (call for call in service.llm.chat.call_args_list if call.args[0] == ANSWER_SYSTEM):
-        assert "과거 질문" not in prompt.args[1] and "부산광역시" in prompt.args[1]
+        assert "과거 질문" not in prompt.args[1] and "부산광역시" not in prompt.args[1]
     assert api.repository.call_count == (2 if private else 0)
     if private:
         assert all(call.kwargs == {"documents_enabled": True, "include_local_documents": True} for call in api.repository.call_args_list)
@@ -284,7 +284,7 @@ def test_runtime_reports_effective_document_policy_without_external_calls(diagno
     assert response.status_code == 200
     body = response.json()
     assert body["configuration_only"] is True and body["readiness_checked"] is False
-    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": True,
+    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": False,
                           "history_supported": True, "conversation_summary_supported": True,
                           "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
                           "source_span_validation_enabled": True, "semantic_entailment_verified": False}

@@ -42,7 +42,7 @@ function fixture(data={},failure={}){
 test('기본 상담·선택적 최초 폼·수정·삭제와 UI 대역 재생성 복원을 확인한다',async()=>{
  const data={},f=fixture(data);try{
   await f.ready();assert.equal(f.root.querySelector('.mode').value,'document');
-  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,true);
+  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
   f.root.querySelector('.profile-toggle').click();
   assert.equal(f.root.querySelector('[name=age]').value,'');assert.equal(f.root.querySelector('[name=household]').value,'');assert.equal(f.root.querySelector('[name=region]').value,'');assert.equal(f.root.querySelector('[name=disability]').value,'');
   await f.save({age:'70',household:'single',region:'서울특별시'});assert.deepEqual(data[key],saved());
@@ -56,9 +56,9 @@ test('기본 상담·선택적 최초 폼·수정·삭제와 UI 대역 재생성
  }finally{g.close();}
 });
 
-test('나중 입력은 저장 성공 후 상담을 열고 문서에만 nullable 조건을 전송한다',async()=>{
+test('나중 입력은 상담을 열고 조건을 전송하지 않는다',async()=>{
  const f=fixture();try{await f.ready();await f.click('나중에 입력');assert.equal(f.data[key].onboardingCompleted,true);assert.equal(f.data[key].profile,null);
-  await f.question('문서 내용은?');assert.equal(f.ports.length,1);assert.equal(f.ports[0].packet.payload.profile,null);assert.equal(f.ports[0].packet.mode,'document');
+  await f.question('문서 내용은?');assert.equal(f.ports.length,1);assert.equal(Object.hasOwn(f.ports[0].packet.payload,'profile'),false);assert.equal(f.ports[0].packet.mode,'document');
   assert.ok(!('candidates' in f.ports[0].packet.payload));await f.answer({kind:'answer',text:'가상 문서 답변',evidence:[]});
   assert.match(f.root.querySelector('.conversation').textContent,/가상 문서 답변/);assert.deepEqual(Object.keys(f.data),[key,'gyeote.conversations']);
  }finally{f.close();}
@@ -67,7 +67,7 @@ test('나중 입력은 저장 성공 후 상담을 열고 문서에만 nullable 
 test('저장 실패 시 입력·첫 이용 상태를 유지하고 재시도 성공 후에만 폼을 닫는다',async()=>{
  const f=fixture({}, {set:true});try{await f.ready();f.root.querySelector('.profile-toggle').click();await f.save({age:'55'});
   assert.equal(f.data[key],undefined);assert.equal(f.root.querySelector('[name=age]').value,'55');assert.match(f.root.querySelector('.profile-error').textContent,/저장하거나 읽지 못했습니다/);
-  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,true);
+  assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
   f.failure.set=false;await f.save({});assert.equal(f.data[key].profile.age,55);assert.equal(f.root.querySelector('.profile-panel form'),null);assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
  }finally{f.close();}
 });
@@ -88,14 +88,14 @@ test('복수 탭 충돌은 편집 중 입력을 보존하고 최신 정보 확�
  }finally{f.close();}
 });
 
-for(const notify of [true,false])test('revision 변경 후 늦은 답변은 표시·이력에 반영하지 않는다, 통지='+notify,async()=>{
+for(const notify of [true,false])test('profile revision 변경은 진행 답변과 이력을 유지한다, 통지='+notify,async()=>{
  const f=fixture({[key]:saved()});try{await f.ready();await f.question('첫 질문');const old=f.ports[0];
   if(notify)await f.send({type:'gyeote:profile-save',expectedRevision:1,profile:{...profile,age:40}});
   else f.data[key]=saved(2,{...profile,age:40});
   await settle();await f.answer({kind:'answer',text:'늦은 예전 답변',evidence:[]},old);
-  assert.ok(!f.root.querySelector('.conversation').textContent.includes('늦은 예전 답변'));
+  assert.match(f.root.querySelector('.conversation').textContent,/늦은 예전 답변/);
   await f.question('새 질문');const current=f.ports.at(-1).packet;
-  assert.equal(current.payload.profile.age,40);assert.equal(current.payload.history.length,0);assert.deepEqual(Object.keys(f.data),[key]);
+  assert.equal(Object.hasOwn(current.payload,'profile'),false);assert.equal(current.payload.history.length,2);assert.deepEqual(Object.keys(f.data).sort(),[key,'gyeote.conversations'].sort());
  }finally{f.close();}
 });
 
@@ -133,7 +133,7 @@ test('통지가 누락된 조건 변경 뒤 오류는 안전하게 즉시 표시
 
 test('같은 revision의 지연 통지는 삭제 후 폼과 새 요청을 방해하지 않는다',async()=>{
  const f=fixture({[key]:saved()});try{await f.ready();await f.click('내 정보 삭제');f.notify(2);await settle();assert.equal(f.root.querySelector('.profile-error').textContent,'');
-  await f.click('나중에 입력');await f.question('새 질문');const port=f.ports.at(-1);assert.equal(port.packet.profileRevision,3);
+  await f.click('나중에 입력');await f.question('새 질문');const port=f.ports.at(-1);assert.equal(Object.hasOwn(port.packet,'profileRevision'),false);
   f.notify(3);await settle();assert.equal(port.disconnected,undefined);
   await f.answer({kind:'answer',text:'현재 답변',evidence:[]});assert.match(f.root.querySelector('.conversation').textContent,/현재 답변/);
  }finally{f.close();}

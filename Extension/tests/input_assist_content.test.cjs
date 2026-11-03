@@ -7,6 +7,20 @@ function speech(){
     result:text=>({resultIndex:0,results:[Object.assign([{transcript:text}],{isFinal:true})]})};
 }
 const suggestions=f=>[...f.root.querySelectorAll('.question-suggestions button')];
+for(const failureMode of ['failure','pending'])test('조건 조회 '+failureMode+'이어도 문서 질문과 저장은 진행된다',async()=>{
+  let release;const server=worker(undefined,{beforeGet:name=>{if(name!==profileKey)return;if(failureMode==='failure')throw Error('합성 조건 조회 오류');return new Promise(ok=>{release=ok;});}}),f=ui(server);
+  try{await f.ready();await f.question('합성 문서 질문');assert.equal(f.ports.length,1);assert.equal(Object.hasOwn(f.ports[0].packet.payload,'profile'),false);await f.answer(answer);assert.equal(server.data[key].conversations[0].messages.length,2);}
+  finally{release?.();f.close();}
+});
+for(const saveFailure of [false,true])test('요청 중 조건 수정 및 저장 '+(saveFailure?'실패':'성공')+'은 응답과 대화 저장을 막지 않는다',async()=>{
+  const server=worker(),f=ui(server);try{
+    await f.ready();await f.question('합성 문서 질문');const port=f.ports.at(-1);
+    if(saveFailure)server.failure.beforeSet=value=>{if(profileKey in value)throw Error('합성 조건 저장 오류');};
+    await f.click('내 정보');await f.click('내 정보 수정');const form=f.root.querySelector('.profile-panel form');const age=form.querySelector('[name=age]');age.value='70';age.dispatchEvent(new f.w.Event('change'));form.dispatchEvent(new f.w.Event('submit',{cancelable:true}));await settle();
+    assert.notEqual(port.disconnected,true);await f.answer(answer,port);assert.equal(server.data[key].conversations[0].messages.length,2);assert.match(f.root.querySelector('.conversation').textContent,/합성 복지 안내/);
+    if(saveFailure)assert.match(f.root.querySelector('.profile-error').textContent,/저장하거나 읽지 못했습니다/);
+  }finally{f.close();}
+});
 test('이미지 입력과 고정 전송 안내는 제공하지 않는다',async()=>{const f=ui(worker());try{await f.ready();await f.mode('screen');assert.equal(f.root.querySelector('.image-option'),null);assert.equal(f.root.querySelector('.send-notice'),null);}finally{f.close();}});
 test('음성 overlay는 패널만 비활성화하고 Escape로 정리한다',async()=>{const voice=speech(),f=ui(worker(),1,voice.setup);try{await f.ready();const root=f.root,mic=root.querySelector('.voice-start');assert.equal(mic.getAttribute('aria-label'),'음성 입력');assert.equal(mic.parentElement,root.querySelector('.compose-row'));assert.equal(mic.nextElementSibling.type,'submit');mic.click();await settle();const overlay=root.querySelector('.listening-overlay');assert.equal(overlay.hidden,false);assert.match(overlay.textContent,/듣고 있습니다/);assert.match(overlay.textContent,/외부 인식 서비스/);assert.equal(root.querySelector('.head').inert,true);assert.equal(root.querySelector('.body').inert,true);assert.equal(root.activeElement,overlay.querySelector('.voice-cancel'));assert.match([...root.querySelectorAll('style')].map(s=>s.textContent).join(''),/prefers-reduced-motion:reduce/);const late=voice.instances[0].onresult;f.w.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Escape'}));assert.equal(overlay.hidden,true);assert.equal(root.querySelector('.body').inert,false);assert.equal(voice.instances[0].aborts,1);late(voice.result('오래된 음성'));assert.equal(root.querySelector('#gyeote-question').value,'');assert.equal(f.ports.length,0);}finally{f.close();}});
 test('음성 최종 결과는 overlay를 닫고 전송 없이 초안에 남긴다',async()=>{const voice=speech(),f=ui(worker(),1,voice.setup);try{await f.ready();await f.click('음성 입력');voice.instances[0].onresult(voice.result('합성 음성 초안'));assert.equal(f.root.querySelector('#gyeote-question').value,'합성 음성 초안');assert.equal(f.root.querySelector('.listening-overlay').hidden,true);assert.equal(f.root.querySelector('.head').inert,false);assert.equal(f.ports.length,0);}finally{f.close();}});
@@ -17,21 +31,21 @@ function seed(){
   return {[profileKey]:{...profile,profile:{age:70,income:'unknown',household:'single',region:'서울특별시',disability:false}},
     [key]:{...policy.empty(),revision:1,lastActiveConversationId:'conversation',conversations:[{id:'conversation',title:'합성 상담',createdAt:date,updatedAt:date,messages,summary}]}};
 }
-test('추천은 초안만 만들고 명시 전송 때 현재 profile/history/summary를 유지한다',async()=>{
+test('추천은 초안만 만들고 profile 전송 없이 history/summary를 유지한다',async()=>{
   const server=worker(seed()),f=ui(server);try{
     await f.ready();const button=suggestions(f)[2];assert.match(button.textContent,/그 서비스/);
-    assert.ok(suggestions(f).every(item=>/내 조건/.test(item.textContent)));assert.match(suggestions(f)[0].textContent,/70세 · 서울특별시/);assert.doesNotMatch(button.textContent,/70|서울/);
+    assert.match(suggestions(f)[0].textContent,/70세 · 서울특별시/);assert.doesNotMatch(button.textContent,/70|서울/);
     button.click();await settle();assert.equal(f.ports.length,0);const input=f.root.querySelector('#gyeote-question');assert.equal(input.value,button.textContent);
     input.closest('form').dispatchEvent(new f.w.Event('submit',{cancelable:true}));await settle();
     assert.equal(f.ports.length,1);const payload=f.ports[0].packet.payload;
-    assert.equal(payload.query,button.textContent);assert.equal(payload.profile.age,70);assert.equal(payload.history.length,6);
+    assert.equal(payload.query,button.textContent);assert.equal(Object.hasOwn(payload,'profile'),false);assert.equal(payload.history.length,6);
     assert.equal(payload.conversation_context.text,server.data[key].conversations[0].summary.text);assert.equal(payload.conversation_context.batch.length,6);
   }finally{f.close();}
 });
 test('전체 삭제·모드 전환에서 옛 추천은 무효이고 초안은 덮지 않는다',async()=>{
   const server=worker(seed()),f=ui(server);try{
     await f.ready();const old=suggestions(f)[0];await f.click('전체 대화 삭제');await f.click('삭제 확인');old.click();assert.equal(f.root.querySelector('#gyeote-question').value,'');
-    const first=suggestions(f)[0];assert.match(first.textContent,/내 조건/);f.root.querySelector('#gyeote-question').value='직접 쓴 초안';first.click();assert.equal(f.root.querySelector('#gyeote-question').value,'직접 쓴 초안');
+    const first=suggestions(f)[0];assert.match(first.textContent,/이 조건/);f.root.querySelector('#gyeote-question').value='직접 쓴 초안';first.click();assert.equal(f.root.querySelector('#gyeote-question').value,'직접 쓴 초안');
     await f.mode('screen');first.click();assert.equal(f.root.querySelector('.question-suggestions').hidden,true);assert.equal(f.root.querySelector('#gyeote-question').value,'');assert.equal(f.ports.length,0);
   }finally{f.close();}
 });

@@ -2,7 +2,7 @@
   const errors={conversation_conflict:'다른 탭에서 대화가 바뀌었습니다. 최신 대화를 다시 불러오세요.',conversation_access_changed:'문서 접근 상태가 바뀌었습니다.',conversation_profile_changed:'내 정보가 바뀌어 답변을 저장하지 않았습니다.',conversation_request_stopped:'중지된 요청의 답변은 저장하지 않았습니다.',conversation_bytes_limit:'대화 저장 공간 4MiB 한도입니다. 공간을 확인한 뒤 다시 저장하세요.',conversation_data_invalid:'저장된 대화의 형식을 확인하지 못했습니다. 원본은 유지했습니다.',conversation_storage_failed:'대화 저장소에 접근하지 못했습니다. 공간과 확장 상태를 확인하세요.'};
   errors.conversation_save_timeout='10초 안에 저장 완료를 확인하지 못했습니다. 대화를 다시 불러와 저장 여부를 확인하세요.';
   errors.conversation_context_conflict='요청 당시 대화 맥락과 현재 기록이 달라 자동 저장하지 않았습니다.';
-  function create(slot,{invalidate,render,profileRevision,onStateChange=()=>{},alerts=slot,onError=()=>{}}){
+  function create(slot,{invalidate,render,onStateChange=()=>{},alerts=slot,onError=()=>{}}){
     const details=document.createElement('details'),summary=document.createElement('summary'),notice=document.createElement('p'),actions=document.createElement('div'),confirmation=document.createElement('div'),unsaved=document.createElement('div');
     details.className='conversation-settings';summary.textContent='대화 저장 관리';notice.className='muted';notice.setAttribute('role','status');actions.className='row';confirmation.hidden=true;unsaved.hidden=true;unsaved.className='unsaved-conversation';unsaved.setAttribute('role','status');
     const warning=document.createElement('p');warning.className='conversation-warning';warning.setAttribute('role','status');
@@ -16,7 +16,8 @@
     function current(){return state?.conversations.find(c=>c.id===state.lastActiveConversationId)||null;}
     function context(){
       if(!state||!access||access.mode!=='anonymous'||changing||disposed||resetToken||readOnly)throw new Error('conversation_storage_failed');
-      return {expectedRevision:state.revision,generation:state.generation,conversationId:state.lastActiveConversationId,accessId:access.accessId};
+      // 기존 기록의 태그를 이어 쓰되 현재 저장 프로필과는 비교하지 않는다.
+      return {expectedRevision:state.revision,generation:state.generation,conversationId:state.lastActiveConversationId,accessId:access.accessId,profileRevision:current()?.messages.at(-1)?.profileRevision??0};
     }
     function matches(value){return !!state&&!!access&&access.mode==='anonymous'&&value.expectedRevision===state.revision&&value.generation===state.generation&&value.conversationId===state.lastActiveConversationId&&value.accessId===access.accessId;}
     async function send(operation,fields={}){
@@ -82,8 +83,8 @@
       const reason=document.createElement('p');reason.textContent=(errors[error.message]||errors.conversation_storage_failed)+' 모델을 다시 호출하지 않고 저장을 재시도할 수 있습니다.';
       const body=document.createElement('div');body.style.whiteSpace='pre-wrap';body.textContent=pending?GyeoteProtocol.privacy.maskText(pending.question+'\n'+pending.answer.text,true):'';
       const retry=button('답변 저장 다시 시도',()=>void retrySave());
-      retry.disabled=changing||readOnly||!pending||!state||pending.context.accessId!==access?.accessId||pending.context.generation!==state.generation||profileRevision()!==pending.profileRevision;
-      const destination=document.createElement('p');destination.textContent='현재 대화의 마지막에 저장합니다. 기록 삭제·내 정보 변경 후에는 이전 답변을 다시 삽입하지 않습니다.';
+      retry.disabled=changing||readOnly||!pending||!state||pending.context.accessId!==access?.accessId||pending.context.generation!==state.generation;
+      const destination=document.createElement('p');destination.textContent='현재 대화의 마지막에 저장합니다. 기록 삭제 후에는 이전 답변을 다시 삽입하지 않습니다.';
       const discard=button('미저장 답변 버리기',()=>{
         if(discard.dataset.confirmed){pending=null;unsaved.hidden=true;cancelRequest();onStateChange();return;}
         discard.dataset.confirmed='true';discard.textContent='미저장 답변 버리기 확인';
@@ -117,7 +118,7 @@
     async function retrySave(){
       const retry=pending;if(!retry||changing)return;
       try{
-        if(retry.context.accessId!==access?.accessId||profileRevision()!==retry.profileRevision)throw new Error('conversation_profile_changed');
+        if(retry.context.accessId!==access?.accessId)throw new Error('conversation_access_changed');
         let value=retry.context;const moved=!matches(value);
         if(!matches(value)){
           if(retry.context.generation!==state?.generation)throw new Error('conversation_context_conflict');

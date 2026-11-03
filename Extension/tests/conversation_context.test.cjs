@@ -56,10 +56,10 @@ test('quota 뒤 답변과 요약을 추론 없이 함께 재저장하고 같은 
   assert.deepEqual(await f.action('append',fields),saved);
   assert.equal((await f.action('append',{...fields,answer:{...fields.answer,context_update:{...fields.answer.context_update,text:'바뀐 요약'}}})).error,'conversation_conflict');
 });
-test('프로필 변경은 과거 요약을 보존하되 후속 요청에는 전송하지 않는다',async()=>{
+test('프로필 변경은 기존 대화 태그와 요약을 바꾸지 않는다',async()=>{
   const f=worker(seed()),state=(await f.action('get')).state,plan=await begin(f,state),saved=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'질문',answer:{...answer,context_update:update(plan.input.conversation_context)}});
   await f.send({type:'gyeote:profile-save',expectedRevision:1,profile:{household:'single'}});
-  const next=await begin(f,saved.state,pairId(101),2);assert.deepEqual(next.input.history,[]);assert.equal(next.input.conversation_context.text,'');assert.deepEqual(next.input.conversation_context.batch,[]);assert.ok(f.data[key].conversations[0].summary.text);
+  const next=await begin(f,saved.state,pairId(101),1);assert.ok(next.input.history.length);assert.equal(next.input.conversation_context.text,f.data[key].conversations[0].summary.text);assert.equal(next.input.conversation_context.profileRevision,1);
 });
 test('요약 응답도 삭제·권한·소유권 변화 뒤 옛 대화를 되살리지 않는다',async()=>{
   for(const operation of ['clear','auth','cancel']){
@@ -75,7 +75,7 @@ test('요약 응답도 삭제·권한·소유권 변화 뒤 옛 대화를 되살
 test('패널 복원 뒤 지시 대상 맥락과 summary 갱신 계약을 HTTP payload로 전달한다',async()=>{
   const server=worker(seed()),f=ui(server);try{
     await f.ready();await f.question('그 서비스 신청처는?');const packet=f.ports.at(-1).packet,input=packet.payload.conversation_context;
-    assert.equal(input.batch.length,6);assert.equal(packet.payload.history.length,6);assert.equal(input.profileRevision,packet.profileRevision);
+    assert.equal(input.batch.length,6);assert.equal(packet.payload.history.length,6);assert.equal(input.profileRevision,1);assert.equal(Object.hasOwn(packet,'profileRevision'),false);
     await f.answer({...answer,context_update:update(input)});assert.ok(server.data[key].conversations[0].summary);
   }finally{f.close();}
   const g=ui(server);try{await g.ready();await g.question('그 서비스는?');assert.equal(g.ports.at(-1).packet.payload.conversation_context.text,'사용자는 합성 서비스의 신청처를 찾고 있음');g.root.querySelector('button[type=submit]').click();}finally{g.close();}

@@ -71,7 +71,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     search_query, conversation, context_update, context_trace = prepare_context(
         llm, query, profile, history, conversation_context, capacity, output)
     trace["context"] = context_trace
-    trace["context"]["profile_used"] = bool(conversation["profile"])
+    trace["context"]["profile_used"] = False
     trace["context"]["history_used"] = bool(conversation["history"])
     trace["context"]["summary_used"] = bool(conversation["summary"])
     trace["context"]["summary_status"] = context_update["status"] if context_update else "none"

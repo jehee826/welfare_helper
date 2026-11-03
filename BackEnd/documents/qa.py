@@ -75,13 +75,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     trace["context"]["summary_used"] = bool(conversation["summary"])
     trace["context"]["summary_status"] = context_update["status"] if context_update else "none"
     trace["context"]["generation_context_policy"] = "resolved_intent_only"
-    if conversation["needs_clarification"]:
-        trace["reason"] = "conversation_clarification_required"
-        trace["timings_ms"]["total"] = round((time.monotonic()-started)*1000, 2)
-        return {"kind":"fallback", "text":"이어서 확인할 서비스 이름과 현재 조건을 구체적으로 알려주세요.",
-                "reason":"conversation_clarification_required", "services":[], "contacts":[], "suggestions":[], "evidence":[],
-                "context_usage":{"omitted":context_trace["context_omitted"]},
-                **({"context_update":context_update} if context_update is not None else {})}, trace
     qa_stage("retrieval")
     retrieval_started = time.monotonic()
     try:

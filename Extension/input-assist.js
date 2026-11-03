@@ -1,6 +1,8 @@
 (() => {
   const initial=['내 조건에 맞는 복지서비스를 찾아줘.','지원 대상을 확인하려면 어떤 정보가 필요해?','복지서비스를 신청하려면 무엇을 확인해야 해?'];
   const followup=['그 서비스의 지원 대상을 알려줘.','그 서비스의 지원 내용을 알려줘.','그 서비스는 어떻게 신청해?'];
+  const personalInitial=['내 조건에 맞는 복지서비스를 찾아줘.','내 조건으로 받을 수 있는 지원 내용을 알려줘.','내 조건으로 신청하려면 무엇을 준비해야 해?'];
+  const personalFollowup=['그 서비스의 지원 대상과 내 조건을 비교해 줘.','그 서비스에서 내 조건으로 받을 수 있는 지원 내용을 알려줘.','그 서비스에 내 조건으로 신청하려면 무엇을 준비해야 해?'];
   const errors={'not-allowed':'마이크 권한이 거부됐습니다. 브라우저 권한을 확인하거나 직접 입력해 주세요.',
     'service-not-allowed':'브라우저가 음성 인식 서비스를 허용하지 않습니다. 직접 입력해 주세요.',
     'audio-capture':'마이크를 사용할 수 없습니다. 연결 상태를 확인하거나 직접 입력해 주세요.',
@@ -38,11 +40,15 @@
       start.disabled=blocked||listening||!supported;start.setAttribute('aria-pressed',String(listening));cancel.hidden=!listening;voice.setAttribute('aria-busy',String(listening));
       onListening(listening);
       suggestions.hidden=current.mode!=='document';
-      const key=JSON.stringify([current.key,current.mode,current.hasHistory,blocked,listening]);
+      const hasProfile=Object.values(current.profile||{}).some(value=>value!==null&&value!==undefined&&value!=='unknown');
+      const knownConditions=[Number.isInteger(current.profile?.age)?current.profile.age+'세':'',current.profile?.region||''].filter(Boolean).join(' · ');
+      const key=JSON.stringify([current.key,current.mode,current.hasHistory,hasProfile,knownConditions,blocked,listening]);
       if(key===viewKey)return;
       viewKey=key;const owner=++recommendationVersion;suggestions.replaceChildren();
       if(current.mode!=='document')return;
-      for(const question of current.hasHistory?followup:initial){
+      const questions=[...(hasProfile?(current.hasHistory?personalFollowup:personalInitial):(current.hasHistory?followup:initial))];
+      if(knownConditions)questions[0]=questions[0].replace('내 조건',`내 조건(${knownConditions})`);
+      for(const question of questions){
         const button=document.createElement('button');button.type='button';button.textContent=question;button.disabled=blocked||listening;
         button.addEventListener('click',()=>{
           const latest=state();

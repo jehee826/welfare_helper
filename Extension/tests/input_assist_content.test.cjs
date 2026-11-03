@@ -20,6 +20,7 @@ function seed(){
 test('추천은 초안만 만들고 명시 전송 때 현재 profile/history/summary를 유지한다',async()=>{
   const server=worker(seed()),f=ui(server);try{
     await f.ready();const button=suggestions(f)[2];assert.match(button.textContent,/그 서비스/);
+    assert.ok(suggestions(f).every(item=>/내 조건/.test(item.textContent)));assert.match(suggestions(f)[0].textContent,/70세 · 서울특별시/);assert.doesNotMatch(button.textContent,/70|서울/);
     button.click();await settle();assert.equal(f.ports.length,0);const input=f.root.querySelector('#gyeote-question');assert.equal(input.value,button.textContent);
     input.closest('form').dispatchEvent(new f.w.Event('submit',{cancelable:true}));await settle();
     assert.equal(f.ports.length,1);const payload=f.ports[0].packet.payload;

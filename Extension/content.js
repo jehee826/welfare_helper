@@ -206,7 +206,7 @@
     $('.screen-controls').hidden=documentMode;
     input.maxLength=documentMode?300:240;input.value='';
     questionForm.querySelector('label').textContent=documentMode?'복지 상담':'화면 안내';
-    modeNotice.textContent=documentMode?'질문·현재 조건·제한한 최근 대화와 누적 요약으로 문서를 다시 검색합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요. 비공개 자료는 Chrome 확장 옵션에서 관리자 로그인 후 질문하세요.':'질문을 보낼 때 공개 화면의 요소 이름·주변 문구를 연결 서버로 전송합니다. 이미지·입력값·내 정보는 보내지 않습니다. 클릭은 직접 해 주세요.';
+    modeNotice.textContent=documentMode?'질문·제한한 최근 대화와 누적 요약으로 문서를 검색합니다. 내 조건을 요청한 질문에만 저장 조건을 참고합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요. 비공개 자료는 Chrome 확장 옵션에서 관리자 로그인 후 질문하세요.':'질문을 보낼 때 공개 화면의 요소 이름·주변 문구를 연결 서버로 전송합니다. 이미지·입력값·내 정보는 보내지 않습니다. 클릭은 직접 해 주세요.';
     accessNotice.hidden=!documentMode;if(documentMode){accessNotice.textContent='문서 접근 상태 확인 중';void refreshDocumentAccess();}
     $('.mode-intro').textContent=documentMode?'등록된 문서의 원문 근거로 답변합니다.':'현재 공개 복지로 화면을 함께 봅니다. 클릭은 직접 해 주세요.';
     $('.scope-notice').textContent=documentMode?'복지 정보는 등록 문서를 기준으로 안내합니다. 개인정보는 입력하지 마세요.':'다른 사이트·로그인·개인정보 화면은 지원하지 않습니다.';
@@ -228,7 +228,7 @@
     return {mode,key:[mode,serial,accessKey(currentAccess),profilePanel.state?.revision,saved?.generation,saved?.revision,saved?.lastActiveConversationId].join('|'),
       available:host.isConnected&&!panel.hidden&&!collapsed&&!document.hidden&&!questionForm.hidden,
       blocked:!configurationReady||busy||requestPending||mode==='document'&&(!profilePanel.allowed||!currentAccess||anonymous&&(!savedPanel.ready||savedPanel.hasUnsaved)||!anonymous&&currentAccess.status!=='ready'),
-      hasHistory:anonymous?!!conversation?.messages.some(m=>m.role==='assistant'):documentHistory.some(m=>m.role==='assistant'),limit:$('#gyeote-question').maxLength};
+      profile:profilePanel.state?.profile,hasHistory:anonymous?!!conversation?.messages.some(m=>m.role==='assistant'):documentHistory.some(m=>m.role==='assistant'),limit:$('#gyeote-question').maxLength};
   }});
   updateMode();
   function atConversationEnd(){return transcript.scrollHeight-transcript.clientHeight-transcript.scrollTop<48;}
@@ -237,7 +237,7 @@
     while($('.conversation').children.length>limit)$('.conversation').firstElementChild.remove();if(follow)transcript.scrollTop=transcript.scrollHeight;return {article,label,text:body,answer:text,follow};
   }
   function appendDocumentAnswer(answer,restored=false){
-    const message=appendMessage('assistant',answer.text);message.label.textContent=answer.kind==='answer'?'곁에 · 문서 답변':'곁에 · 문서에서 확인하지 못함';
+    const message=appendMessage('assistant',answer.text);message.label.textContent=answer.kind==='answer'?'곁에 · 문서 답변':'곁에 · 안내';
     if(restored){const notice=document.createElement('p');notice.className='muted';notice.textContent='저장한 당시의 답변입니다. 근거의 현재 유효성은 다시 확인하지 않았습니다.'+(answer.evidenceTruncated?' 근거는 일부 인용·참조만 저장했습니다.':'');message.article.append(notice);}
     if(answer.context_usage?.omitted){const notice=document.createElement('p');notice.className='muted';notice.textContent='이 답변은 입력 예산에 따라 일부 대화 맥락을 제외했습니다.';message.article.append(notice);}
     if(!answer.evidence.length){if(message.follow)transcript.scrollTop=transcript.scrollHeight;return;}

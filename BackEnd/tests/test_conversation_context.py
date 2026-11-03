@@ -50,15 +50,38 @@ def final_context(calls):
     return json.loads(user.split("비근거 상담 맥락(JSON):\n")[1].split("\n\n문서 근거(JSON):")[0])
 
 
-def test_query_only_remains_one_answer_call_and_profile_only_changes_search_without_prepare():
+def test_general_query_does_not_use_saved_profile_without_prepare():
     repo, service, calls = service_with_prepare()
     result, trace = answer_document(repo, service, "현재 질문", profile={"age": 70, "income": "unknown", "region": None})
     assert result["kind"] == "answer" and calls["prepare"] == [] and len(calls["prompts"]) == 1
     query = service.llm.embed.call_args.args[0][0]
-    assert "70" in query and "unknown" not in query and "None" not in query
+    assert "70" not in query and "unknown" not in query and "None" not in query
     assert service.reranker.score.call_args.args[0] == query
-    assert final_context(calls)["profile"] == {"age": 70}
-    assert trace["context"]["profile_used"] is True and trace["context"]["preparation"] == "skipped"
+    assert not final_context(calls)["profile"]
+    assert trace["context"]["profile_used"] is False and trace["context"]["preparation"] == "skipped"
+
+@pytest.mark.parametrize('question', ['내 조건에 맞나요?', '나도 받을 수 있나요?', '내가 대상인가요?', '제가 신청할 수 있나요?', '우리 가구가 대상인가요?'])
+def test_explicit_personal_query_uses_saved_profile(question):
+    repo, service, calls = service_with_prepare()
+    answer_document(repo, service, question, profile={'age': 70, 'income': 'unknown'})
+    assert '70' in service.llm.embed.call_args.args[0][0]
+    assert final_context(calls)['profile'] == {'age': 70}
+
+def test_general_followup_excludes_profile_from_prepare_search_and_final():
+    repo, service, calls = service_with_prepare()
+    answer_document(repo, service, '그 서비스의 지원내용은?', profile={'age':70, 'household':'single'},
+                    history=[{'role':'user','content':'합성 서비스가 궁금해요'}])
+    assert calls['prepare'][0]['current_profile'] == {}
+    assert '70' not in service.llm.embed.call_args.args[0][0]
+    assert '1인 가구' not in service.llm.embed.call_args.args[0][0]
+    assert not final_context(calls)['profile']
+
+@pytest.mark.parametrize(('question','used'), [('안내 정보를 알려줘',False),('내 정보로 대상인지 알려줘',True)])
+def test_personal_phrase_respects_word_boundary(question,used):
+    repo,service,calls=service_with_prepare()
+    _,trace=answer_document(repo,service,question,profile={'age':70})
+    assert trace['context']['profile_used'] is used
+    assert bool(final_context(calls)['profile']) is used
 
 
 def test_followup_uses_identical_dense_keyword_rerank_query_and_separate_untrusted_context(monkeypatch):
@@ -71,7 +94,7 @@ def test_followup_uses_identical_dense_keyword_rerank_query_and_separate_untrust
         return original(index, query, *args)
     monkeypatch.setattr(qa.BM25Index, "search", search)
     history = [{"role": "user", "content": "혼자 살며 합성 지원이 필요해요"}, {"role": "assistant", "content": "이전 설명은 공식 근거가 아님"}]
-    result, trace = answer_document(repo, service, "신청처는?", profile={"household": "single"}, history=history)
+    result, trace = answer_document(repo, service, "내 조건에서 신청처는?", profile={"household": "single"}, history=history)
     assert len(calls["prepare"]) == len(calls["prompts"]) == 1
     query = service.llm.embed.call_args.args[0][0]
     assert queries == [query] and service.reranker.score.call_args.args[0] == query and "합성 지원 신청처" in query and "1인 가구" in query
@@ -141,14 +164,35 @@ def test_previous_wrong_claims_stay_in_preparation_but_never_enter_final_factual
     assert trace["context"]["generation_history_messages"] == 0 and trace["context"]["generation_summary_used"] is False
 
 
-def test_ambiguous_intent_requests_clarification_without_a_factual_generation_call():
+def test_ambiguous_intent_reaches_search_and_grounded_generation():
     repo, service, calls = service_with_prepare('{"query":"여러 안내의 신청처 확인","summary":null,"needs_clarification":true}')
     result, trace = answer_document(repo,service,"거기서 신청해?",history=[{"role":"user","content":"둘 중 어떤 안내인지 아직 정하지 못했어"}])
-    assert result["kind"] == "fallback" and result["reason"] == "conversation_clarification_required" and result["evidence"] == []
-    assert trace["reason"] == "conversation_clarification_required"
-    assert len(calls["prepare"]) == 1 and calls["prompts"] == []
-    service.llm.embed.assert_not_called()
-    service.reranker.score.assert_not_called()
+    assert result['kind'] == 'answer' and result['evidence']
+    assert len(calls['prepare']) == len(calls['prompts']) == 1
+    service.llm.embed.assert_called_once()
+    service.reranker.score.assert_called_once()
+
+@pytest.mark.parametrize('status',['clarify','no_evidence'])
+def test_ambiguous_intent_preserves_final_model_withholding_after_search(status):
+    repo, service, calls = service_with_prepare('{"query":"여러 안내의 신청처 확인","summary":null,"needs_clarification":true}')
+    previous=service.llm.chat.side_effect
+    def structured(system,user,**kwargs):
+        if system == PREPARE_SYSTEM:
+            return previous(system,user,**kwargs)
+        calls['prompts'].append((system,user))
+        return {'status':status,'text':'대상과 거주지를 알려주세요.','citations':[]}
+    service.llm.chat.side_effect=structured
+    result,trace=answer_document(repo,service,'거기서 신청해?',history=[{'role':'user','content':'둘 중 어느 안내인지 확인하고 싶어요'}])
+    assert result['kind']=='fallback' and result['reason']==status and result['evidence']==[]
+    assert trace['reason']==status and len(calls['prepare'])==len(calls['prompts'])==1
+    service.llm.embed.assert_called_once()
+    service.reranker.score.assert_called_once()
+
+def test_uncertain_prepare_preserves_current_named_service_in_search():
+    repo,service,calls=service_with_prepare('{"query":"다른 서비스 신청처","summary":null,"needs_clarification":true}')
+    answer_document(repo,service,'한빛 지원의 신청처는?',history=[{'role':'user','content':'서비스 안내를 봤어요'}])
+    query=service.llm.embed.call_args.args[0][0]
+    assert '한빛 지원의 신청처는?' in query and '다른 서비스' not in query
 
 
 @pytest.mark.parametrize("error", [ExecutionTimeoutError(), ExecutionCancelledError()])

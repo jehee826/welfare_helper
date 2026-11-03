@@ -8,7 +8,15 @@ import pytest
 from BackEnd.core import execution
 from BackEnd.documents import qa
 from BackEnd.documents.contracts import DocumentError
-from BackEnd.tests.measure_document_bm25 import CountingAnalyzer, components
+from BackEnd.tests.measure_document_bm25 import CountingAnalyzer, components as measured_components
+
+
+def components(size):
+    repo,service,snapshot,calls=measured_components(size)
+    original=repo.dense_search
+    repo.dense_search=lambda *args,**kwargs:[replace(chunk,score=.65) for chunk in original(*args,**kwargs)]
+    service.min_similarity=.52
+    return repo,service,snapshot,calls
 
 
 def ask(repo, service):

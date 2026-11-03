@@ -22,7 +22,7 @@ logger.propagate = False
 
 STAGES = frozenset({"snapshot", "context", "retrieval", "rerank", "generation", "validation"})
 CODES = frozenset({
-    "ok", "answer", "clarify", "no_evidence", "out_of_scope", "no_document_evidence",
+    "ok", "answer", "clarify", "no_evidence", "out_of_scope", "no_document_evidence", "low_similarity",
     "conversation_clarification_required", "document_input_budget", "invalid_evidence_answer",
     "document_scope_mismatch", "embedding_digest_changed", "document_embedding_failed",
     "document_reranker_failed", "document_generation_failed", "document_changed_during_search",

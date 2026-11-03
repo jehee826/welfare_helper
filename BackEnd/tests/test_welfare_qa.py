@@ -75,7 +75,7 @@ def test_final_answer_uses_existing_structured_transport_with_answer_schema():
     first=snapshot.chunks[0]
     repo.document_scope=None
     repo.snapshot=lambda:replace(snapshot,chunks=[first,replace(first,chunk_id='omitted',document_id='other')])
-    repo.dense_search=lambda *args,**kwargs:[first]
+    repo.dense_search=lambda *args,**kwargs:[replace(first,score=.65),replace(first,chunk_id='omitted',document_id='other',score=.1)]
     calls=[]
     original=service.llm.chat
     def structured(system,user,**options):
@@ -116,7 +116,7 @@ def test_whole_document_over_budget_does_not_drop_exception_to_generate():
     first = replace(repo.snapshot().chunks[0],version='v1',parent_id='p1')
     exception = replace(first,chunk_id='source:2',ordinal=1,text='필수 예외' * 10000)
     repo.snapshot = lambda:CatalogSnapshot([], [first,exception], 'fixed')
-    repo.dense_search = lambda *a,**k:[first]
+    repo.dense_search = lambda *a,**k:[replace(first,score=.65),replace(exception,score=.65)]
     service.llm.context_limit = lambda:6000
     result, _ = answer_document(repo,service,'지원 조건')
     assert result['reason'] == 'document_input_budget' and calls['prompts'] == []
@@ -128,11 +128,13 @@ def test_large_unrelated_parent_does_not_block_small_complete_related_scope():
     condition = replace(first,chunk_id='condition',parent_id='p2',parent_index=1,text='단, 재학 중인 경우에 한함.')
     unrelated = replace(first,chunk_id='unrelated',parent_id='p3',parent_index=2,heading_context='부록 일반서식',text='무관한 부록' * 10000)
     repo.snapshot = lambda:CatalogSnapshot([], [first,condition,unrelated], 'fixed')
-    repo.dense_search = lambda *a,**k:[first]
+    repo.dense_search = lambda *a,**k:[replace(first,score=.65),replace(condition,score=.65),replace(unrelated,score=.1)]
+    service.dense_k = 1
     service.llm.context_limit = lambda:6000
-    result, _ = answer_document(repo,service,'지원 조건')
+    result, trace = answer_document(repo,service,'지원 조건')
     assert result['kind'] == 'answer'
     assert {c['chunk_id'] for c in result['evidence']} == {first.chunk_id,condition.chunk_id}
+    assert trace['evidence_expansion']=={'core_chunks':1,'expanded_chunks':2,'added_chunks':1}
     assert '무관한 부록' not in calls['prompts'][0][1]
 
 
@@ -211,7 +213,7 @@ def test_short_references_reduce_prompt_cost_and_preserve_original_response_ids(
     repo,service,calls=components()
     snapshot=repo.snapshot(); original=replace(snapshot.chunks[0],chunk_id='original:'+'a'*200)
     repo.snapshot=lambda:replace(snapshot,chunks=[original])
-    repo.dense_search=lambda *args,**kwargs:[original]
+    repo.dense_search=lambda *args,**kwargs:[replace(original,score=.65)]
     result,trace=answer_document(repo,service,'지원 내용')
     assert result['kind']=='answer' and result['evidence'][0]['chunk_id']==original.chunk_id
     assert result['evidence'][0]['quote']==original.text

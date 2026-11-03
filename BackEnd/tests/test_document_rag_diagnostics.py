@@ -34,7 +34,7 @@ def components(settings, *, private=False):
                      document_name="비공개 가상 문서", text="가상 계좌번호: 321-00-000001")
     snapshot = CatalogSnapshot([], [public, hidden] if private else [public], "snapshot-9913991234567")
     repo = SimpleNamespace(document_scope=None, include_local_documents=private, snapshot=Mock(return_value=snapshot),
-                           dense_search=Mock(return_value=[replace(c, score=.01) for c in snapshot.chunks]))
+                           dense_search=Mock(return_value=[replace(c, score=.99) for c in snapshot.chunks]))
     def generate(system, user):
         if system == PREPARE_SYSTEM:
             payload=json.loads(user)
@@ -294,7 +294,7 @@ def test_runtime_reports_effective_document_policy_without_external_calls(diagno
     assert body["retrieval"]["keyword_limit"] == api.public.keyword_k
     assert body["retrieval"]["core_evidence_limit"] == api.public.core_k
     assert body["retrieval"]["min_dense_similarity"] == body["retrieval"]["dense_threshold"]["configured"] == .99
-    assert body["retrieval"]["dense_threshold"]["enabled"] is False and body["retrieval"]["dense_threshold"]["effective"] is None
+    assert body['retrieval']['dense_threshold']=={'configured':.99,'enabled':True,'effective':.99,'stage':'hybrid_union'}
     assert body["reranker"]["min_score"] == body["reranker"]["score_threshold"]["configured"] == .99
     assert body["reranker"]["score_threshold"]["enabled"] is False and body["reranker"]["score_threshold"]["effective"] is None
     for dependency in (api.qa, api.repository, api.factory, api.public.llm.embed, api.public.llm.chat_text, blocked):

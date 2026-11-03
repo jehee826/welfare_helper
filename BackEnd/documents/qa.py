@@ -3,6 +3,7 @@
 import math
 import time
 from copy import deepcopy
+from dataclasses import replace
 from pydantic import ValidationError
 
 from BackEnd.documents.contracts import DocumentError
@@ -101,7 +102,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             raise DocumentError("embedding_digest_changed")
         vector = llm.embed([search_query])[0]
         checkpoint()
-        dense = repo.dense_search(vector, service.dense_k, sorted(allowed), snapshot=snapshot)
+        # 저장소가 이미 계산한 전체 코사인을 받아 BM25 전용 후보에도 재사용한다.
+        scored = repo.dense_search(vector, len(allowed), sorted(allowed), snapshot=snapshot)
         checkpoint()
     except (ExecutionTimeoutError, ExecutionCancelledError):
         raise
@@ -113,18 +115,40 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     checkpoint()
     keyword = index.search(search_query, service.keyword_k, allowed)
     checkpoint()
-    fused = reciprocal_ranks([dense, [chunk for chunk, _ in keyword]])
+    by_id = {chunk.chunk_id: chunk for chunk in snapshot.chunks if chunk.chunk_id in allowed}
+    if (len({c.chunk_id for c in scored}) != len(scored)
+            or any(c.chunk_id not in by_id or type(c.score) not in (int, float)
+                   or not math.isfinite(c.score) or not -1 <= c.score <= 1 for c in scored)):
+        raise DocumentError("document_embedding_failed")
+    cosines = {c.chunk_id: c.score for c in scored}
+    dense = [replace(by_id[c.chunk_id], score=c.score) for c in scored[:service.dense_k]]
+    keyword = [(by_id[c.chunk_id], score) for c, score in keyword if c.chunk_id in by_id]
+    union = {c.chunk_id: c for c in [*dense, *(c for c, _ in keyword)]}
+    if any(identifier not in cosines for identifier in union):
+        raise DocumentError("document_embedding_failed")
+    passing = {identifier for identifier in union if cosines[identifier] >= service.min_similarity}
+    filtered_dense = [c for c in dense if c.chunk_id in passing]
+    filtered_keyword = [c for c, _ in keyword if c.chunk_id in passing]
+    fused = reciprocal_ranks([filtered_dense, filtered_keyword])
     candidates = [chunk for chunk, _ in fused[:service.top_n]]
+    dense_ids = {c.chunk_id for c in dense}
+    keyword_ids = {c.chunk_id for c, _ in keyword}
     trace["retrieval"] = [{"intent_id": "document",
         "dense": [{"chunk_id": c.chunk_id, "rank": i + 1, "similarity": c.score} for i, c in enumerate(dense)],
         "keyword": [{"chunk_id": c.chunk_id, "rank": i + 1, "bm25": score} for i, (c, score) in enumerate(keyword)],
+        "dense_threshold": {"configured": service.min_similarity, "enabled": True,
+                            "effective": service.min_similarity, "stage": "hybrid_union"},
+        "candidates": [{"chunk_id": identifier, "cosine": cosines[identifier],
+                        "sources": [name for name, ids in (("dense", dense_ids), ("keyword", keyword_ids)) if identifier in ids],
+                        "passed": identifier in passing} for identifier in union],
         "rrf": [{"chunk_id": c.chunk_id, "rank": i + 1, "score": score} for i, (c, score) in enumerate(fused)]}]
     trace["timings_ms"]["retrieval"] = round((time.monotonic() - retrieval_started) * 1000, 2)
     if not candidates:
-        trace["reason"] = "no_document_evidence"
+        reason = "low_similarity" if union else "no_document_evidence"
+        trace["reason"] = reason
         trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-        return {"kind": "fallback", "text": "등록된 문서에서 질문에 사용할 원문을 찾지 못했습니다.",
-                "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": [],
+        return {"kind": "fallback", "text": "질문과 충분히 가까운 문서 근거를 찾지 못했습니다." if union else "등록된 문서에서 질문에 사용할 원문을 찾지 못했습니다.",
+                "reason": reason, "services": [], "contacts": [], "suggestions": [], "evidence": [],
                 "context_usage": {"omitted": context_trace["context_omitted"]},
                 **({"context_update": context_update} if context_update is not None else {})}, trace
 
@@ -145,7 +169,10 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     trace["rerank"] = [{"chunk_id": c.chunk_id, "score": score, "selected": i < service.core_k}
                        for i, (c, score) in enumerate(ordered)]
     trace["timings_ms"]["rerank"] = round((time.monotonic() - rerank_started) * 1000, 2)
+    core_ids = {chunk.chunk_id for chunk in selected}
     selected = complete_sources(snapshot, selected, query+' '+conversation['search_intent'])
+    trace['evidence_expansion'] = {'core_chunks': len(core_ids), 'expanded_chunks': len(selected),
+                                 'added_chunks': sum(c.chunk_id not in core_ids for c in selected)}
     trace['evidence_policy'] = 'related_parents_and_conditions_within_document_version'
     documents = [{"id": c.chunk_id, "name": c.document_name, "pages": list(c.page_refs),
                   "heading": c.heading_context, "text": c.text, 'document_id':c.document_id,

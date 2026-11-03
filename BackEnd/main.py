@@ -201,7 +201,8 @@ def runtime_settings():
             "core_evidence_limit": settings.core_evidence_k,
             "min_dense_similarity": settings.min_dense_sim,
             "dense_prefilter_enabled": False,
-            "dense_threshold": {"configured": settings.min_dense_sim, "enabled": False, "effective": None},
+            "dense_threshold": {"configured": settings.min_dense_sim, "enabled": True,
+                                "effective": settings.min_dense_sim, "stage": "hybrid_union"},
         },
         "reranker": {
             "model": settings.rerank_model,

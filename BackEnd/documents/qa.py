@@ -253,7 +253,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         service._document_bm25 = None
         raise DocumentError("embedding_digest_changed")
     try:
-        answer = validate_answer(raw_answer, included)
+        answer = validate_answer(raw_answer, included, user_sources=[query, *fitted.get("user_sources", [])])
         trace['answer_validation'] = 'accepted'
     except ValidationError:
         answer = None
@@ -263,7 +263,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         code = str(exc)
         trace['answer_validation'] = code if code in {
             'empty_answer','unsupported_citations','unsupported_clarification_quantity',
-            'missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_contact','invalid_source_references'
+            'missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_user_quote','unsupported_contact','invalid_source_references'
         } else 'invalid_answer'
     trace['citation_validation'] = 'exact_source_span_and_literal_values_only'
     # 새 인덱스는 요청의 마지막 원문/digest 확인과 취소 점검이 끝난 뒤에만 게시한다.

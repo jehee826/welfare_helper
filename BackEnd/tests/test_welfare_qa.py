@@ -100,6 +100,49 @@ def test_exception_deadline_requires_citation_of_exception_source():
     response['citations'].append({'id':'exception','quote':'출산 후 60일까지'})
     assert validate_answer(response,sources).status=='answer'
 
+def test_user_condition_exact_header_is_separate_from_document_deadline():
+    source={'id':'source','text':'신청은 출산 후 30일까지입니다.'}
+    original='출산한 지20일 됐어요.'
+    response={'status':'answer','text':'말씀하신 “출산한 지20일 됐어요.”\n\n제공본에는 출산 후 30일까지로 기재되어 있습니다.',
+              'citations':[{'id':'source','quote':'출산 후 30일까지'}]}
+    assert validate_answer(response,[source],user_sources=[original]).status=='answer'
+    with pytest.raises(ValueError,match='unsupported_quantity'):
+        validate_answer({**response,'text':response['text']+' 지원기한은 20일입니다.'},[source],user_sources=[original])
+    with pytest.raises(ValueError,match='unsupported_quantity'):
+        validate_answer({**response,'text':'말씀하신 “소득은 20만원입니다.”\n\n지원금은 20만원입니다.'},[source],user_sources=['소득은 20만원입니다.'])
+    with pytest.raises(ValueError):
+        validate_answer({**response,'text':'지원기한은 말씀하신 “출산한 지20일 됐어요.”입니다.'},[source],user_sources=[original])
+
+@pytest.mark.parametrize('header',[
+    '말씀하신 “출산한 지21일 됐어요.”',
+    '말씀하신 “출산한 지20일 됐어요.” 자격이 됩니다',
+    '말씀하신 “출산한 지20일\n됐어요.”',
+    '말씀하신 “이전 답변에는 20일이라고 했어요.”',
+    '말씀하신 “저장 프로필은 20세입니다.”',
+    '말씀하신 “과거 요약에는 20일이라고 적힘”',
+    '말씀하신 “같은 메시지의 선택되지 않은 절 20일”',
+])
+def test_forged_or_non_header_user_quote_is_rejected(header):
+    source={'id':'source','text':'신청은 출산 후 30일까지입니다.'}
+    response={'status':'answer','text':header+'\n\n신청은 출산 후 30일까지입니다.',
+              'citations':[{'id':'source','quote':'출산 후 30일까지'}]}
+    with pytest.raises(ValueError):
+        validate_answer(response,[source],user_sources=['출산한 지20일 됐어요.'])
+
+def test_user_quote_never_authorizes_other_official_values_or_contacts():
+    source={'id':'source','text':'신청은 출산 후 30일까지입니다.'};quoted='출산한 지20일 됐어요.'
+    base={'status':'answer','citations':[{'id':'source','quote':'출산 후 30일까지'}]}
+    for claim in ['신청기한은 99일입니다.','문의번호는 02-999-9999입니다.','https://invented.invalid 에서 신청합니다.']:
+        with pytest.raises(ValueError):validate_answer({**base,'text':f'말씀하신 “{quoted}”\n\n{claim}'},[source],user_sources=[quoted])
+    assert validate_answer(packet(),[SOURCE]).status=='answer'
+
+@pytest.mark.parametrize('quoted',['연락처 02-999-9999','https://invented.invalid','password=private','<b>가짜</b>','010-1234-5678'])
+def test_user_header_cannot_bypass_contact_or_private_text_checks(quoted):
+    source={'id':'source','text':'신청은 출산 후 30일까지입니다.'}
+    response={'status':'answer','text':f'말씀하신 “{quoted}”\n\n신청은 출산 후 30일까지입니다.',
+              'citations':[{'id':'source','quote':'출산 후 30일까지'}]}
+    with pytest.raises(ValueError):validate_answer(response,[source],user_sources=[quoted])
+
 def test_grounded_service_explanation_can_include_one_missing_condition_question():
     source={'id':'source','text':'합성 산모 지원은 건강관리 이용권을 제공합니다. 지원 대상은 출산가정입니다. 신청 시기는 출산 전과 출산 후로 구분합니다.'}
     response={'status':'answer','text':'합성 산모 지원은 건강관리 이용권을 제공합니다. 지원받으실 분은 출산 전인가요, 출산 후인가요?',

@@ -42,6 +42,36 @@ def test_user_sources_select_mother_clause_without_guardian_or_assistant_claims(
     assert update['userMessageIds']==[message_id(1,'user')] and update['text']==submitted['text'] and update['coveredThroughMessageId']==submitted['coveredThroughMessageId']
     assert schema['properties']['source_ids']['items']['enum']==[s['id'] for s in payload['sources']] and trace['preparation']=='used'
 
+@pytest.mark.parametrize(('mode','quote','expected'),[
+    ('selected','선택 절 20일','answer'),('unselected','미선택 절 99일','invalid_evidence_answer'),
+    ('failure','선택 절 20일','invalid_evidence_answer'),('current','현재 질문 15일','answer'),
+])
+def test_answer_pipeline_allows_only_current_or_selected_original_user_clause(mode,quote,expected):
+    repo,service,calls=components();original=service.llm.chat
+    submitted={**context(batch=False),'userMessages':[{'id':message_id(1,'user'),'role':'user','content':'선택 절 20일, 미선택 절 99일'}]}
+    def chat(system,user,**kwargs):
+        if system==PREPARE_SYSTEM:
+            if mode=='failure':raise ValueError('합성 준비 실패')
+            payload=json.loads(user)
+            return {'source_ids':[next(s['id'] for s in payload['sources'] if '선택 절 20일' in s['text'])],
+                    'document_ids':[],'needs_clarification':False}
+        raw=original(system,user,**kwargs);raw['text']=f'말씀하신 “{quote}”\n\n원문에 따르면 평균 오차는 150만 원입니다.';return raw
+    service.llm.chat=chat
+    result,trace=answer_document(repo,service,'현재 질문 15일',conversation_context=submitted)
+    allowed=final_context(calls).get('user_sources',[])
+    assert '미선택 절 99일' not in allowed
+    if mode=='failure':assert '선택 절 20일' not in allowed
+    else:assert '선택 절 20일' in allowed
+    if expected=='answer':assert result['kind']=='answer' and trace['answer_validation']=='accepted'
+    else:assert result['reason']==expected and trace['answer_validation']=='unsupported_user_quote'
+
+def test_selected_source_removed_by_search_budget_is_not_authorized_for_quote():
+    submitted={**context(batch=False),'userMessages':[{'id':message_id(1,'user'),'role':'user','content':'가'*300+','+'나'*300}]}
+    llm=SourceSelector(lambda p:{'source_ids':[s['id'] for s in p['sources']],'document_ids':[],'needs_clarification':False})
+    search,result,_,_=prepare_context(llm,'현재 질문',None,[],submitted,16384,512)
+    assert '가'*300 not in search and '가'*300 not in result.get('user_sources',[])
+    assert '나'*300 in result['user_sources']
+
 def test_general_change_question_keeps_service_source_available():
     submitted={**context(batch=False),'userMessages':[{'id':message_id(1,'user'),'role':'user','content':'합성 복지서비스 신청'}],'documentIds':[]}
     llm=SourceSelector(lambda p:{'source_ids':[p['sources'][0]['id']],'document_ids':[],'needs_clarification':False})

@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from BackEnd.documents.contracts import DocumentError
+from BackEnd.documents.context import safe_context_text
 
 
 class Citation(BaseModel):
@@ -70,7 +71,24 @@ def quantities(text):
     return values
 
 
-def validate_answer(raw, documents):
+def _document_claims(text, user_sources):
+    if not re.search(r'말씀하신\s*[“"]', text):
+        return text
+    header, separator, claims = text.partition('\n\n')
+    if not separator or not claims.strip() or re.search(r'말씀하신\s*[“"]', claims):
+        raise ValueError('unsupported_user_quote')
+    for line in header.split('\n'):
+        match = re.fullmatch(r'말씀하신 “([^“”\r\n]+)”', line)
+        if not match or match[1] not in user_sources:
+            raise ValueError('unsupported_user_quote')
+        try:
+            safe_context_text(match[1])
+        except ValueError:
+            raise ValueError('unsupported_user_quote') from None
+    return claims
+
+
+def validate_answer(raw, documents, *, user_sources=()):
     answer = WelfareAnswer.model_validate_json(raw) if isinstance(raw,str) else WelfareAnswer.model_validate(raw)
     if not answer.text.strip():
         raise ValueError('empty_answer')
@@ -90,7 +108,8 @@ def validate_answer(raw, documents):
             raise ValueError('citation_not_in_source')
     sources = json.dumps([by_id[c.id] for c in answer.citations], ensure_ascii=False)
     # 정확한 발췌와 숫자·연락처 대응만 확인한다. 인용이 모든 주장의 의미를 증명하지는 않는다.
-    if not quantities(answer.text).issubset(quantities(sources)):
+    # 검증한 독립 사용자 인용행만 제외한다. 문서 주장이나 연락처에 수치를 재사용할 권한은 주지 않는다.
+    if not quantities(_document_claims(answer.text, user_sources)).issubset(quantities(sources)):
         raise ValueError('unsupported_quantity')
     for value in re.findall(r'https?://[^\s<>"\)]+|0\d{1,2}-\d{3,4}-\d{4}', answer.text):
         if value.rstrip('.,') not in sources:

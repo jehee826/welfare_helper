@@ -31,7 +31,7 @@ CODES = frozenset({
 ANSWER_VALIDATION_CODES = frozenset({
     "accepted", "invalid_schema", "empty_answer", "unsupported_citations",
     "unsupported_clarification_quantity", "missing_or_duplicate_citation", "citation_not_in_source",
-    "unsupported_quantity", "unsupported_contact", "invalid_source_references", "invalid_answer",
+    "unsupported_quantity", "unsupported_user_quote", "unsupported_contact", "invalid_source_references", "invalid_answer",
 })
 
 

@@ -314,7 +314,7 @@
             if(publicRequest){
               clearTimeout(requestTimer);
               const saved=await savedPanel.save(conversationContext,requestId,question,answer,conversationContext.profileRevision,()=>version===serial&&requestPort===port&&mode==='document');
-              if(version===serial&&requestPort===port)setStatus(saved?[(answer.context_update?.status==='failed'?'요약 갱신은 실패해 제한한 최근 대화로 답변했습니다.':''),(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted?'일부 대화 맥락은 제외됐습니다.':'')].filter(Boolean).join(' '):'답변과 요약 후보의 저장을 확인하지 못했습니다. 대화 본문의 저장 상태와 재시도를 확인하세요.');
+              if(version===serial&&requestPort===port)setStatus(saved?[(answer.context_update?.status==='failed'?'이전 대화 일부만 참고해 답변했습니다.':''),(answer.context_update?.status!=='failed'&&(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted)?'일부 대화 맥락은 제외됐습니다.':'')].filter(Boolean).join(' '):'답변과 대화 맥락의 저장을 확인하지 못했습니다. 저장 상태와 재시도를 확인하세요.');
               return;
             }
             // 기존 /chat은 이력을 수용하지만 현재 문서 검색·생성에는 마지막 질문만 사용한다.

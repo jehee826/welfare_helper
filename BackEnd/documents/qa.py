@@ -9,7 +9,7 @@ from BackEnd.documents.contracts import DocumentError
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
 from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
-from BackEnd.documents.context import prepare_context, fit_answer, ANSWER_SYSTEM
+from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
 
 MAX_CACHED_CHUNKS = 2000
@@ -68,14 +68,29 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         raise
     except Exception:
         raise DocumentError("document_input_budget") from None
+    submitted_context = ConversationContext.model_validate(conversation_context) if conversation_context is not None else None
+    names = {chunk.document_id: chunk.document_name for chunk in snapshot.chunks}
+    requested_documents = submitted_context.documentIds if submitted_context else []
+    references = [{"id": identifier, "name": names[identifier]} for identifier in requested_documents if identifier in names]
     search_query, conversation, context_update, context_trace = prepare_context(
-        llm, query, profile, history, conversation_context, capacity, output)
+        llm, query, profile, history, submitted_context, capacity, output, documents=references)
+    if len(references) < len(requested_documents):
+        context_trace["context_omitted"] = True
+        if context_update and context_update["status"] == "unchanged":
+            context_update["status"] = "omitted"
     trace["context"] = context_trace
     trace["context"]["profile_used"] = False
-    trace["context"]["history_used"] = bool(conversation["history"])
+    trace["context"]["history_used"] = bool(context_trace["selected_user_messages"])
     trace["context"]["summary_used"] = bool(conversation["summary"])
     trace["context"]["summary_status"] = context_update["status"] if context_update else "none"
     trace["context"]["generation_context_policy"] = "resolved_intent_only"
+    if conversation.get("clarification_documents"):
+        trace["reason"] = "clarify"
+        return {"kind": "fallback", "reason": "clarify",
+                "text": "어느 서비스를 말씀하시나요? " + ", ".join(conversation["clarification_documents"]),
+                "services": [], "contacts": [], "suggestions": [], "evidence": [],
+                "context_usage": {"omitted": context_trace["context_omitted"]},
+                **({"context_update": context_update} if context_update is not None else {})}, trace
     qa_stage("retrieval")
     retrieval_started = time.monotonic()
     try:
@@ -158,11 +173,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     selected = [chunk for chunk in selected if chunk.chunk_id in included_ids]
     trace["context"]["generation_history_messages"] = len(fitted["history"])
     trace["context"]["generation_summary_used"] = bool(fitted["summary"])
-    prepared_history = context_trace["preparation"] == "used" and bool(
-        context_trace.get("preparation_history_messages", 0) + context_trace["batch_messages"])
-    fallback_questions = context_trace["preparation"] not in {"used", "skipped"} and any(
-        message["role"] == "user" for message in conversation["history"])
-    trace["context"]["history_used"] = bool(fitted["history"]) or prepared_history or fallback_questions
     trace["context"]["summary_used"] = context_trace["preparation_summary_used"] or bool(fitted["summary"])
     evidence = [{"chunk_id": c.chunk_id, "document_id": c.document_id, "role": "retrieved", "quote": "",
                  "text": c.text, "context": c.text, "pages": list(c.page_refs), "source_blocks": list(c.source_blocks),

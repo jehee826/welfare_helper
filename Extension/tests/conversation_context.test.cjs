@@ -11,6 +11,59 @@ function seed(count=6,custom={}){
 const update=(input,status='updated',text='사용자는 합성 서비스의 신청처를 찾고 있음')=>({status,text:status==='updated'?text:input.text,coveredThroughMessageId:status==='updated'?input.batch.at(-1).id:input.coveredThroughMessageId,profileRevision:input.profileRevision});
 async function begin(f,state,id=pairId(100),rev=1){return f.action('begin',{...expected(state),pairId:id,profileRevision:rev});}
 
+test('전송 원문 목록은 사용자 메시지만 포함하며 구형 자유문 요약을 보존한다',async()=>{
+  const data=seed(),old={text:'이전 자유문 요약',coveredThroughMessageId:pairId(3)+':assistant',profileRevision:1};data[key].conversations[0].summary=old;
+  const f=worker(data),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
+  assert.deepEqual(ctx.userMessages.map(x=>x.id),state.conversations[0].messages.filter(x=>x.role==='user').map(x=>x.id));
+  assert.ok(ctx.userMessages.every(x=>x.role==='user'&&x.content.startsWith('사용자 주제')));
+  assert.equal(ctx.text,old.text);assert.equal(ctx.coveredThroughMessageId,old.coveredThroughMessageId);
+});
+
+test('응답이 제출하지 않은 원문 ID를 선택하면 저장을 거절한다',async()=>{
+  const f=worker(seed()),state=(await f.action('get')).state,plan=await begin(f,state),before=JSON.stringify(f.data[key]);
+  const update={status:'unchanged',text:plan.input.conversation_context.text,coveredThroughMessageId:plan.input.conversation_context.coveredThroughMessageId,profileRevision:1,userMessageIds:[pairId(999)+':user']};
+  const result=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'질문',answer:{...answer,context_update:update}});
+  assert.equal(result.ok,false);assert.equal(JSON.stringify(f.data[key]),before);
+});
+
+test('정정 뒤 원문 ID 메모를 저장하면 다음 요청은 해당 원문과 최신 발화를 복원한다',async()=>{
+  const data=seed(2);data[key].conversations[0].messages[0].content='어머니는 68세이고 월세입니다';
+  const f=worker(data),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
+  const selected=ctx.userMessages.at(-1).id,update={status:'unchanged',text:ctx.text,coveredThroughMessageId:ctx.coveredThroughMessageId,profileRevision:1,userMessageIds:[selected]};
+  const saved=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'월세가 아니라 자가입니다',answer:{...answer,context_update:update}});
+  assert.equal(saved.ok,true);const next=await begin(f,saved.state,pairId(101));
+  assert.ok(next.input.conversation_context.userMessages.some(m=>m.id===selected));
+  assert.ok(next.input.conversation_context.userMessages.some(m=>m.id===pairId(100)+':user'&&m.content==='월세가 아니라 자가입니다'));
+  assert.equal(next.input.conversation_context.text,ctx.text);assert.equal(next.input.conversation_context.coveredThroughMessageId,ctx.coveredThroughMessageId);
+});
+
+test('일반 질문에서 빈 메모를 저장해도 다음 요청에 앞선 사용자 나이를 보존한다',async()=>{
+  const data=seed(2);data[key].conversations[0].messages[0].content='어머니는 68세입니다';
+  const f=worker(data),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
+  const update={status:'unchanged',text:ctx.text,coveredThroughMessageId:ctx.coveredThroughMessageId,profileRevision:1,userMessageIds:[]};
+  const saved=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'일반 신청 방법은?',answer:{...answer,context_update:update}});
+  assert.equal(saved.ok,true);const next=await begin(f,saved.state,pairId(101));
+  assert.ok(next.input.conversation_context.userMessages.some(m=>m.id===pairId(1)+':user'&&m.content==='어머니는 68세입니다'));
+});
+
+test('6000자 제한에서는 선택된 오래된 원문 ID를 우선 보존한다',async()=>{
+  const data=seed(25),messages=data[key].conversations[0].messages;
+  for(let i=0;i<messages.length;i+=2)messages[i].content='가나다라마'[(i/2)%5].repeat(300);
+  messages.at(-1).contextUpdate={status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1,userMessageIds:[pairId(1)+':user']};
+  const f=worker(data),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
+  assert.ok(ctx.userMessages.some(m=>m.id===pairId(1)+':user'));
+  assert.ok(ctx.userMessages.reduce((n,m)=>n+m.content.length,0)<=6000);assert.equal(ctx.omitted,true);
+  assert.deepEqual(ctx.userMessages.map(m=>m.id),[...ctx.userMessages].map(m=>m.id).sort());
+});
+test('31번째 저장으로 메모 원문이 잘리면 다음 요청은 추정 없이 누락을 표시한다',async()=>{
+  const f=worker(seed(30)),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
+  const update={status:'unchanged',text:ctx.text,coveredThroughMessageId:ctx.coveredThroughMessageId,profileRevision:1,userMessageIds:[pairId(1)+':user']};
+  const saved=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'새 질문',answer:{...answer,context_update:update}});
+  assert.equal(saved.ok,true);assert.equal(saved.state.conversations[0].messages.length,60);
+  const next=await begin(f,saved.state,pairId(101)),nextContext=next.input.conversation_context;
+  assert.equal(nextContext.omitted,true);assert.ok(!nextContext.userMessages.some(m=>m.id===pairId(1)+':user'));
+});
+
 test('첫6쌍의 오래된3쌍만 요약하고 이후3쌍 누적 때 연속 범위를 갱신한다',async()=>{
   const f=worker(seed());let state=(await f.action('get')).state;
   const first=await begin(f,state);assert.equal(first.input.conversation_context.batch.length,6);assert.equal(first.input.history.length,6);
@@ -35,11 +88,11 @@ test('임의 source ID·profileRevision·요약본문·출력 필드는 원자 �
     assert.equal(result.ok,false);assert.equal(JSON.stringify(f.data[key]),before);
   }
 });
-test('큰 첫쌍을 건너뛰지 않고 omitted로 표시하며 들어가는 연속 prefix만 갱신한다',async()=>{
+test('큰 이전 답변이 있어도 사용자 원문이 모두 있으면 누락 없이 보존한다',async()=>{
   const large=worker(seed(6,{1:'가'.repeat(6100)})),state=(await large.action('get')).state,plan=await begin(large,state);
-  assert.equal(plan.input.conversation_context.batch.length,0);assert.equal(plan.input.conversation_context.omitted,true);assert.equal(plan.input.history.length,10);
+  assert.equal(plan.input.conversation_context.batch.length,0);assert.equal(plan.input.conversation_context.omitted,false);assert.equal(plan.input.conversation_context.userMessages.length,6);assert.equal(plan.input.history.length,10);
   const partial=worker(seed(6,{1:'가'.repeat(2700),2:'나'.repeat(2700),3:'다'.repeat(1000)})),before=(await partial.action('get')).state,prefix=await begin(partial,before);
-  assert.equal(prefix.input.conversation_context.batch.length,4);assert.equal(prefix.input.conversation_context.omitted,true);
+  assert.equal(prefix.input.conversation_context.batch.length,4);assert.equal(prefix.input.conversation_context.omitted,false);assert.equal(prefix.input.conversation_context.userMessages.length,6);
   const saved=await partial.action('append',{...expected(before),pairId:pairId(100),profileRevision:1,question:'질문',answer:{...answer,context_update:update(prefix.input.conversation_context)}});
   assert.equal(saved.state.conversations[0].summary.coveredThroughMessageId,pairId(2)+':assistant');
 });

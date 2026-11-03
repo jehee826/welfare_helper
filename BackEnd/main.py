@@ -108,7 +108,9 @@ class ChatRequest(BaseModel):
         if self.history:
             result["history"] = [message.model_dump() for message in self.history]
         if self.conversation_context is not None:
-            result["conversation_context"] = self.conversation_context.model_dump()
+            context = self.conversation_context
+            absent = {"userMessages", "documentIds"} - context.model_fields_set
+            result["conversation_context"] = context.model_dump(exclude=absent)
         return result
 
     @model_validator(mode="before")

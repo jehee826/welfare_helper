@@ -37,7 +37,8 @@ def components(settings, *, private=False):
                            dense_search=Mock(return_value=[replace(c, score=.01) for c in snapshot.chunks]))
     def generate(system, user):
         if system == PREPARE_SYSTEM:
-            return json.dumps({"query":json.loads(user)["current_question"],"summary":None,"needs_clarification":False})
+            payload=json.loads(user)
+            return json.dumps({'source_ids':[item['id'] for item in payload['sources']][:8], 'document_ids':[], 'needs_clarification':False})
         sources = json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
         documents = [chunk for source in sources for chunk in source['chunks']]
         return json.dumps({'status':'answer','text':('관리자' if private else '공개') + ' 답변. 가상 991399-1234567. 2026년 129/1355 안내',
@@ -126,7 +127,7 @@ def test_chat_and_debug_execute_identical_document_qa_once_per_request(diagnosti
     for prompt in (call for call in service.llm.chat.call_args_list if call.args[0] == PREPARE_SYSTEM):
         assert "과거 질문" in prompt.args[1] and "부산광역시" not in prompt.args[1]
     for prompt in (call for call in service.llm.chat.call_args_list if call.args[0] == ANSWER_SYSTEM):
-        assert "과거 질문" not in prompt.args[1] and "부산광역시" not in prompt.args[1]
+        assert "과거 질문" in prompt.args[1] and "부산광역시" not in prompt.args[1]
     assert api.repository.call_count == (2 if private else 0)
     if private:
         assert all(call.kwargs == {"documents_enabled": True, "include_local_documents": True} for call in api.repository.call_args_list)
@@ -308,8 +309,8 @@ def test_chat_and_diagnostics_share_summary_input_and_safe_failure_update(diagno
     chat = api.client.post("/api/v1/chat", json=payload)
     debug = api.client.post("/debug/rag", headers={"X-Rag-Debug-Token":TOKEN}, json=payload)
     assert chat.status_code == debug.status_code == 200 and chat.json() == debug.json()["response"]
-    assert chat.json()["context_update"]["status"] == "failed"
-    assert debug.json()["diagnostics"]["context"]["summary_status"] == "failed"
+    assert chat.json()['context_update']['status'] in ('unchanged','omitted')
+    assert chat.json()['context_update']['coveredThroughMessageId'] is None
     assert all(call.kwargs["conversation_context"] == context for call in api.qa.call_args_list)
     api.public.llm.chat_text.assert_not_called()
     assert api.public.llm.chat.call_count == 4

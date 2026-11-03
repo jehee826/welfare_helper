@@ -90,7 +90,7 @@
   const messageId=value=>typeof value==='string'&&/^[A-F0-9]{20}:(user|assistant)$/.test(value);
   const contextText=(value,max=1200)=>typeof value==='string'&&value.length<=max&&!sensitiveInput(value)&&!/<[^>]*>|\bBearer\s+\S+|(?:password|비밀번호|api[_ -]?key|access[_ -]?token)\s*[:=：]\s*\S+/i.test(value);
   function conversationContext(value){
-    if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['text','coveredThroughMessageId','profileRevision','batch','omitted'].includes(k))||!contextText(value.text)||!Number.isSafeInteger(value.profileRevision)||value.profileRevision<0||!Array.isArray(value.batch)||value.batch.length>6||value.batch.length%2||typeof value.omitted!=='boolean')throw new Error('invalid_context');
+    if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['text','coveredThroughMessageId','profileRevision','batch','omitted','userMessages','documentIds'].includes(k))||!contextText(value.text)||!Number.isSafeInteger(value.profileRevision)||value.profileRevision<0||!Array.isArray(value.batch)||value.batch.length>6||value.batch.length%2||typeof value.omitted!=='boolean')throw new Error('invalid_context');
     if(!!value.text.trim()!==(value.coveredThroughMessageId!==null)||value.coveredThroughMessageId!==null&&(!messageId(value.coveredThroughMessageId)||!value.coveredThroughMessageId.endsWith(':assistant')))throw new Error('invalid_context');
     let size=0;const ids=new Set();
     const batch=value.batch.map((m,index)=>{
@@ -99,11 +99,30 @@
       ids.add(m.id);size+=m.content.length;return {id:m.id,role:m.role,content:m.content};
     });
     if(size>6000)throw new Error('invalid_context');
-    return {text:value.text,coveredThroughMessageId:value.coveredThroughMessageId,profileRevision:value.profileRevision,batch,omitted:value.omitted};
+    const metadata={};
+    if(Object.hasOwn(value,'userMessages')){
+      if(!Array.isArray(value.userMessages)||value.userMessages.length>30)throw new Error('invalid_context');
+      const sourceIds=new Set();let sourceSize=0;
+      metadata.userMessages=value.userMessages.map(m=>{
+        if(!m||Object.keys(m).sort().join(',')!=='content,id,role'||!messageId(m.id)||!m.id.endsWith(':user')||m.role!=='user'||!documentText(m.content,6000)||!contextText(m.content,6000)||sourceIds.has(m.id))throw new Error('invalid_context');
+        sourceIds.add(m.id);sourceSize+=m.content.length;return {id:m.id,role:m.role,content:m.content};
+      });
+      if(sourceSize>6000)throw new Error('invalid_context');
+    }
+    if(Object.hasOwn(value,'documentIds')){
+      if(!Array.isArray(value.documentIds)||value.documentIds.length>3||new Set(value.documentIds).size!==value.documentIds.length||value.documentIds.some(id=>typeof id!=='string'||! /^[A-Za-z0-9_.:/-]{1,256}$/.test(id)))throw new Error('invalid_context');
+      metadata.documentIds=[...value.documentIds];
+    }
+    return {text:value.text,coveredThroughMessageId:value.coveredThroughMessageId,profileRevision:value.profileRevision,batch,omitted:value.omitted,...metadata};
   }
   function contextUpdate(value){
-    if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='coveredThroughMessageId,profileRevision,status,text'||!['updated','unchanged','failed','omitted'].includes(value.status)||!contextText(value.text)||!Number.isSafeInteger(value.profileRevision)||value.profileRevision<0||!!value.text.trim()!==(value.coveredThroughMessageId!==null)||value.coveredThroughMessageId!==null&&(!messageId(value.coveredThroughMessageId)||!value.coveredThroughMessageId.endsWith(':assistant')))throw new Error('invalid_context_update');
-    return {status:value.status,text:value.text,coveredThroughMessageId:value.coveredThroughMessageId,profileRevision:value.profileRevision};
+    if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).filter(k=>k!=='userMessageIds').sort().join(',')!=='coveredThroughMessageId,profileRevision,status,text'||!['updated','unchanged','failed','omitted'].includes(value.status)||!contextText(value.text)||!Number.isSafeInteger(value.profileRevision)||value.profileRevision<0||!!value.text.trim()!==(value.coveredThroughMessageId!==null)||value.coveredThroughMessageId!==null&&(!messageId(value.coveredThroughMessageId)||!value.coveredThroughMessageId.endsWith(':assistant')))throw new Error('invalid_context_update');
+    const metadata={};
+    if(Object.hasOwn(value,'userMessageIds')){
+      if(!Array.isArray(value.userMessageIds)||value.userMessageIds.length>8||new Set(value.userMessageIds).size!==value.userMessageIds.length||value.userMessageIds.some(id=>!messageId(id)||!id.endsWith(':user')))throw new Error('invalid_context_update');
+      metadata.userMessageIds=[...value.userMessageIds];
+    }
+    return {status:value.status,text:value.text,coveredThroughMessageId:value.coveredThroughMessageId,profileRevision:value.profileRevision,...metadata};
   }
   function contextUsage(value){
     if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).join(',')!=='omitted'||typeof value.omitted!=='boolean')throw new Error('invalid_context_update');
@@ -123,6 +142,10 @@
     const update=Object.hasOwn(body,'context_update')?contextUpdate(body.context_update):undefined;
     if(update&&submitted!==undefined){
       if(!submitted||update.profileRevision!==submitted.profileRevision||update.status==='updated'&&(!submitted.batch.length||update.coveredThroughMessageId!==submitted.batch.at(-1).id||!update.text.trim())||update.status!=='updated'&&(update.text!==submitted.text||update.coveredThroughMessageId!==submitted.coveredThroughMessageId))throw new Error('invalid_context_update');
+      if(update.userMessageIds!==undefined){
+        const ids=submitted.userMessages?.map(m=>m.id);
+        if(!ids||update.userMessageIds.some(id=>!ids.includes(id))||JSON.stringify(ids.filter(id=>update.userMessageIds.includes(id)))!==JSON.stringify(update.userMessageIds))throw new Error('invalid_context_update');
+      }
     }
     return redactDocument({kind:body.kind,text:body.text,evidence,...(update?{context_update:update}:{}),...(Object.hasOwn(body,'context_usage')?{context_usage:contextUsage(body.context_usage)}:{})});
   }

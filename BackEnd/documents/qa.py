@@ -85,7 +85,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             context_update["status"] = "omitted"
     trace["context"] = context_trace
     trace["context"]["profile_used"] = False
-    trace["context"]["history_used"] = bool(context_trace["selected_user_messages"])
+    trace["context"]["history_used"] = context_trace["preparation"] == "used" and bool(
+        context_trace["selected_user_messages"] or context_trace["preparation_dialogue_messages"])
     trace["context"]["summary_used"] = bool(conversation["summary"])
     trace["context"]["summary_status"] = context_update["status"] if context_update else "none"
     trace["context"]["generation_context_policy"] = "resolved_intent_only"
@@ -280,7 +281,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         text = messages.get(status, answer.text if answer else messages['invalid_evidence_answer'])
         contacts = []
         if status == 'no_evidence':
-            confirmed_ids = [d['id'] for d in context_documents if context_trace['preparation'] == 'used' and d['name'] in search_query]
+            confirmed_ids = list(conversation['document_ids'])
             if repo.document_scope:
                 confirmed_ids.append(str(repo.document_scope))
             contact_query = search_query if context_trace['preparation'] in {'used', 'skipped'} else query

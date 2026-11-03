@@ -128,6 +128,25 @@
     if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).join(',')!=='omitted'||typeof value.omitted!=='boolean')throw new Error('invalid_context_update');
     return {omitted:value.omitted};
   }
+  function documentContacts(value){
+    if(!Array.isArray(value))return [];
+    const result=[],seen=new Set();
+    for(const item of value){
+      if(!item||typeof item!=='object'||Array.isArray(item)||Object.keys(item).some(k=>!['label','phone','kind','source_url','checked_at','hours'].includes(k)))continue;
+      if(typeof item.label!=='string'||typeof item.phone!=='string'||typeof item.source_url!=='string'||typeof item.checked_at!=='string')continue;
+      const label=item.label.trim(),phone=item.phone.trim(),source_url=item.source_url.trim(),hours=typeof item.hours==='string'?item.hours.trim():undefined;
+      if(!label||!contextText(label,160)||! /^(?:1\d{2,3}|1\d{3}-\d{4}|0[2-9]\d{0,2}-\d{3,4}-\d{4})$/.test(phone)||!['general','service'].includes(item.kind)||!contextText(source_url,2048)||! /^\d{4}-\d{2}-\d{2}$/.test(item.checked_at)||item.hours!==undefined&&!contextText(item.hours,100)||/[\x00-\x1f]/.test(label+source_url+(hours||''))||/(?:token|secret)\s*[:=]/i.test(label+(hours||'')))continue;
+      try{
+        if(new Date(item.checked_at).toISOString().slice(0,10)!==item.checked_at)continue;
+        const url=new URL(source_url),decoded=decodeURIComponent(url.pathname+url.search+url.hash);
+        if(url.protocol!=='https:'||!url.hostname.endsWith('.go.kr')||url.username||url.password||url.port&&url.port!=='443'||!contextText(decoded,2048)||[...url.searchParams.keys()].some(key=>/token|password|secret|key|auth/i.test(key))||/(?:token|password|secret|key|auth)\s*[:=]/i.test(decodeURIComponent(url.hash)))continue;
+      }catch{continue;}
+      const key=phone.replace(/-/g,'');if(seen.has(key))continue;
+      seen.add(key);result.push({label,phone,kind:item.kind,source_url,checked_at:item.checked_at,...(hours?{hours}:{})});
+      if(result.length===3)break;
+    }
+    return result;
+  }
   function documentRequest(payload){
     if(payload&&(typeof payload.query==='string'&&sensitiveInput(payload.query)||Array.isArray(payload.history)&&payload.history.some(h=>typeof h?.content==='string'&&sensitiveInput(h.content))))throw new Error('sensitive_input');
     if(!payload||Object.keys(payload).some(k=>!['query','history','timeout_seconds','profile','conversation_context'].includes(k))||!documentText(payload.query,300)||payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('invalid_request');
@@ -147,10 +166,10 @@
         if(!ids||update.userMessageIds.some(id=>!ids.includes(id))||JSON.stringify(ids.filter(id=>update.userMessageIds.includes(id)))!==JSON.stringify(update.userMessageIds))throw new Error('invalid_context_update');
       }
     }
-    return redactDocument({kind:body.kind,text:body.text,evidence,...(update?{context_update:update}:{}),...(Object.hasOwn(body,'context_usage')?{context_usage:contextUsage(body.context_usage)}:{})});
+    return redactDocument({kind:body.kind,text:body.text,evidence,...(Object.hasOwn(body,'contacts')?{contacts:documentContacts(body.contacts)}:{}),...(update?{context_update:update}:{}),...(Object.hasOwn(body,'context_usage')?{context_usage:contextUsage(body.context_usage)}:{})});
   }
   const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
   const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&value.origin===documentOrigin();
-  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
+  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,documentContacts,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

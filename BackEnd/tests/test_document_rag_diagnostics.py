@@ -190,11 +190,34 @@ def test_no_evidence_has_matching_fallback_and_no_generation(diagnostic_api, emp
     debug = api.client.post("/debug/rag", headers={"X-Rag-Debug-Token": TOKEN}, json=body)
     assert chat.status_code == debug.status_code == 200
     assert chat.json() == debug.json()["response"] and chat.json()["kind"] == "fallback"
+    assert chat.json()['contacts'][0]['phone']=='129' and chat.json()['contacts'][0]['kind']=='general'
     assert debug.json()["diagnostics"]["reason"] == "no_document_evidence"
     assert "generation" not in debug.json()["diagnostics"]["timings_ms"]
     api.public.llm.chat_text.assert_not_called()
     if empty == "snapshot":
         api.public.llm.embed.assert_not_called()
+
+
+def test_actual_synthetic_api_contact_dto_is_rendered_and_restored(diagnostic_api):
+    import subprocess
+    from pathlib import Path
+    api=diagnostic_api
+    api.public.repo.snapshot.return_value=CatalogSnapshot([],[],'empty')
+    response=api.client.post('/api/v1/chat',json={'query':'합성 질문'})
+    assert response.status_code==200 and response.json()['reason']=='no_document_evidence'
+    script=r"""
+const assert=require('node:assert/strict');
+const {worker,ui}=require('./Extension/tests/conversation_fixture.cjs');
+let text='';process.stdin.setEncoding('utf8');process.stdin.on('data',x=>text+=x);process.stdin.on('end',async()=>{
+  const body=JSON.parse(text),server=worker(),f=ui(server);
+  try{await f.ready();await f.question('합성 질문');await f.answer(body);assert.ok(f.root.querySelector('.conversation a[href="tel:129"]'));assert.match(f.root.querySelector('.conversation').textContent,/공식 안내 검토일/);}finally{f.close();}
+  const restored=ui(server);try{await restored.ready();assert.ok(restored.root.querySelector('.conversation a[href="tel:129"]'));}finally{restored.close();}
+  process.stdout.write('API_DTO_RENDER_RESTORE_OK');
+});
+"""
+    completed=subprocess.run(['node','-e',script],input=response.content,capture_output=True,cwd=Path(__file__).resolve().parents[2],timeout=20)
+    assert completed.returncode==0,completed.stderr.decode('utf-8',errors='replace')
+    assert completed.stdout==b'API_DTO_RENDER_RESTORE_OK'
 
 
 @pytest.mark.parametrize("failure,code", [

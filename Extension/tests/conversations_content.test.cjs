@@ -1,5 +1,21 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,ui,key,profileKey,profile,answer,settle}=require('./conversation_fixture.cjs');
+test('근거 없는 안내의 공식 일반 연락처는 표시하고 새 패널에 복원한다',async()=>{
+  const server=worker(),f=ui(server);
+  const contact={label:'보건복지상담센터',phone:'129',kind:'general',source_url:'https://www.129.go.kr/counsel/counsel01.do',checked_at:'2026-11-03',hours:'평일 09:00~18:00'};
+  try{
+    await f.ready();await f.question('합성 질문');await f.answer({kind:'fallback',reason:'no_evidence',text:'자료에서 확인하지 못했습니다.',evidence:[],contacts:[contact]});
+    const conversation=f.root.querySelector('.conversation'),link=conversation.querySelector('a[href="tel:129"]');
+    assert.ok(link);assert.match(conversation.textContent,/보건복지상담센터/);assert.match(conversation.textContent,/2026-11-03/);assert.match(conversation.textContent,/09:00/);
+    assert.equal(server.data[key].conversations[0].messages.at(-1).contacts[0].phone,'129');
+  }finally{f.close();}
+  const restored=ui(server);try{await restored.ready();assert.ok(restored.root.querySelector('.conversation a[href="tel:129"]'));}finally{restored.close();}
+});
+test('서비스 연락처는 공식 안내 검토일이 아닌 자료 대조일로 표시한다',async()=>{
+  const f=ui(worker());try{await f.ready();await f.question('합성 질문');await f.answer({kind:'fallback',reason:'no_evidence',text:'자료에서 확인하지 못했습니다.',evidence:[],contacts:[{label:'합성 기관',phone:'02-123-4567',kind:'service',source_url:'https://www.example.go.kr/help',checked_at:'2026-11-03'}]});
+    const conversation=f.root.querySelector('.conversation');assert.ok(conversation.querySelector('a[href="tel:021234567"]'));assert.match(conversation.textContent,/자료 대조일/);assert.doesNotMatch(conversation.textContent,/공식 안내 검토일/);
+  }finally{f.close();}
+});
 
 test('요청 빈도 제한은 질문 옆에 안전하게 표시하고 다시 보낼 수 있다',async()=>{
  const server=worker(),f=ui(server);try{

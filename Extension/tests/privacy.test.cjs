@@ -2,6 +2,13 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const protocol=require('../protocol.js');
 const cases=require('../../BackEnd/tests/fixtures/document_privacy_cases.json');
 const source=name=>fs.readFileSync(path.join(__dirname,'..',name),'utf8');
+test('문서 연락처는 허용 형식만 정규화하고 위험값과 중복을 제외한다',()=>{
+  const valid={label:'보건복지상담센터',phone:'129',kind:'general',source_url:'https://www.129.go.kr/counsel/counsel01.do',checked_at:'2026-11-03',hours:'평일 09:00~18:00'};
+  const invalid=[{...valid,label:'   '},{...valid,phone:' '},{...valid,label:'<script>명령</script>'},{...valid,label:'token=secret'},{...valid,phone:'129<script>'},{...valid,source_url:'https://example.invalid/?token=secret'},{...valid,checked_at:'invalid'}];
+  const safe=protocol.documentContacts([valid,valid,...invalid]);
+  assert.equal(safe.length,1);assert.equal(safe[0].phone,'129');assert.equal(safe[0].source_url,valid.source_url);
+  assert.doesNotMatch(JSON.stringify(safe),/script|secret/);
+});
 for(const item of cases)test(`공통 가상 입력 정책: ${item.text}`,()=>assert.equal(protocol.privacy.sensitiveInput(item.text),item.sensitive));
 
 test('가림은 표시 텍스트·URL에만 적용하고 식별자·해시·원문 범위를 보존한다',()=>{

@@ -172,7 +172,7 @@
       $('.conversation').replaceChildren();
       for(const message of conversation?.messages||[]){
         if(message.role==='user')appendMessage('user',message.content,GyeoteConversations.limits.messages+2);
-        else appendDocumentAnswer({kind:message.kind,text:message.content,evidence:message.evidence,evidenceTruncated:message.evidenceTruncated,context_usage:message.contextUsage},true);
+        else appendDocumentAnswer({kind:message.kind,text:message.content,evidence:message.evidence,contacts:message.contacts,evidenceTruncated:message.evidenceTruncated,context_usage:message.contextUsage},true);
       }
       $('.conversation').append(...pendingNodes);
       transcript.scrollTop=follow?transcript.scrollHeight:scroll;
@@ -237,8 +237,20 @@
   }
   function appendDocumentAnswer(answer,restored=false){
     const message=appendMessage('assistant',answer.text);message.label.textContent=answer.kind==='answer'?'곁에 · 문서 답변':'곁에 · 안내';
-    if(restored){const notice=document.createElement('p');notice.className='muted';notice.textContent='저장한 당시의 답변입니다. 근거의 현재 유효성은 다시 확인하지 않았습니다.'+(answer.evidenceTruncated?' 근거는 일부 인용·참조만 저장했습니다.':'');message.article.append(notice);}
+    if(restored){const notice=document.createElement('p');notice.className='muted';notice.textContent='저장한 당시의 답변입니다. 연락처·근거의 현재 유효성은 다시 확인하지 않았습니다.'+(answer.evidenceTruncated?' 근거는 일부 인용·참조만 저장했습니다.':'');message.article.append(notice);}
     if(answer.context_usage?.omitted){const notice=document.createElement('p');notice.className='muted';notice.textContent='이 답변은 입력 예산에 따라 일부 대화 맥락을 제외했습니다.';message.article.append(notice);}
+    const contacts=GyeoteProtocol.documentContacts(answer.contacts);
+    if(contacts.length){
+      const section=document.createElement('section');section.className='document-contacts';section.setAttribute('aria-label','확인할 문의처');
+      for(const contact of contacts){
+        const label=document.createElement('p');label.textContent=(contact.kind==='general'?'일반 복지상담 (문서 근거와 별도) · ':'문서 문의처 (자료 기준) · ')+contact.label;
+        const phone=document.createElement('a');phone.textContent=contact.phone;phone.href='tel:'+contact.phone.replace(/-/g,'');
+        const note=document.createElement('p');note.className='muted';note.textContent=[contact.hours,(contact.kind==='general'?'공식 안내 검토일: ':'자료 대조일: ')+contact.checked_at].filter(Boolean).join(' · ');
+        const source=document.createElement('a');source.textContent='문의처 출처';source.href=contact.source_url;source.target='_blank';source.rel='noopener noreferrer';
+        section.append(label,phone,note,source);
+      }
+      message.article.append(section);
+    }
     if(!answer.evidence.length){if(message.follow)transcript.scrollTop=transcript.scrollHeight;return;}
     const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent=`원문 근거 보기 (${answer.evidence.length}건)`;details.append(summary);
     for(const item of answer.evidence){

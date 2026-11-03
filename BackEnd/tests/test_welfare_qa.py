@@ -10,6 +10,7 @@ from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.qa import answer_document
 from BackEnd.documents.context import ANSWER_SYSTEM,answer_prompt,fit_answer
 from BackEnd.documents.welfare import complete_sources, validate_answer
+from BackEnd.documents import contacts as contact_policy
 from BackEnd.rag.repository import CatalogSnapshot
 from BackEnd.tests.test_document_qa import components
 
@@ -20,6 +21,60 @@ def packet(**values):
 
 
 SOURCE = {'id':'a','text':'연 168,000원 지원. 단, 조건 확인 필요.', 'source_url':'https://example.invalid'}
+
+def test_confirmed_official_contact_requires_included_matching_source_and_deduplicates():
+    repo,_,_=components();original=repo.snapshot().chunks[0]
+    chunk=replace(original,heading_context='문의처',text='합성 기관 02-123-4567',source_url='https://www.example.go.kr/help')
+    record=SimpleNamespace(service_id=chunk.service_id,name='합성 복지 서비스',contacts=[{'label':'합성 기관','phone':'02-123-4567'}])
+    snapshot=CatalogSnapshot([record],[chunk],'fixed');docs=[{'document_id':chunk.document_id}]
+    found=contact_policy.fallback_contacts(snapshot,docs,query='합성 복지 서비스 문의')
+    assert len(found)==1 and found[0]['kind']=='service' and found[0]['phone']=='02-123-4567'
+    assert found[0]['source_url']==chunk.source_url and found[0]['checked_at']
+    assert contact_policy.fallback_contacts(snapshot,[],query='합성 복지 서비스 문의')[0]['phone']=='129'
+    assert contact_policy.fallback_contacts(snapshot,docs,query='다른 서비스')[0]['phone']=='129'
+
+def test_missing_contacts_safe_fallback_and_technical_failures_stay_distinct(monkeypatch):
+    repo,service,calls=components();repo.dense_search=lambda *args,**kwargs:[replace(repo.snapshot().chunks[0],score=.1)]
+    response,trace=answer_document(repo,service,'질문')
+    assert trace['reason']=='low_similarity' and response['contacts'][0]['phone']=='129' and calls['prompts']==[]
+    monkeypatch.setattr(contact_policy,'GENERAL_CONTACT',{})
+    response,_=answer_document(repo,service,'질문')
+    assert response['contacts']==[] and '연락처를 제공하지 못했습니다' in response['text']
+    repo.dense_search=lambda *_args,**_kwargs: (_ for _ in ()).throw(RuntimeError('합성 오류'))
+    with pytest.raises(DocumentError,match='document_embedding_failed'):answer_document(repo,service,'질문')
+
+def test_unselected_old_document_never_selects_service_contact():
+    repo,service,_=components();snapshot=repo.snapshot();base=snapshot.chunks[0]
+    chunk=replace(base,heading_context='문의처',text='합성 기관 02-123-4567',source_url='https://www.example.go.kr/help')
+    record=SimpleNamespace(service_id=chunk.service_id,name='옛 합성 서비스',contacts=[{'label':'합성 기관','phone':'02-123-4567'}])
+    repo.document_scope=None;repo.snapshot=lambda:replace(snapshot,services=[record],chunks=[chunk])
+    repo.dense_search=lambda *_args,**_kwargs:[replace(chunk,score=.8)]
+    from BackEnd.documents.context import PREPARE_SYSTEM
+    def chat(system,user,**kwargs):
+        if system==PREPARE_SYSTEM:return {'source_ids':[],'document_ids':[],'needs_clarification':False}
+        return {'status':'no_evidence','text':'확인할 근거가 없습니다.','citations':[]}
+    service.llm.chat=chat
+    submitted={'text':'','coveredThroughMessageId':None,'profileRevision':0,'batch':[],'omitted':False,'userMessages':[],'documentIds':[chunk.document_id]}
+    result,_=answer_document(repo,service,'새 서비스 해외배송은?',conversation_context=submitted)
+    assert result['reason']=='no_evidence' and result['contacts'][0]['phone']=='129'
+
+def test_malformed_service_contacts_metadata_does_not_break_fallback():
+    repo,_,_=components();chunk=replace(repo.snapshot().chunks[0],heading_context='본문',text='연락처 정보 없음',source_url='https://www.example.go.kr/help')
+    record=SimpleNamespace(service_id=chunk.service_id,name='합성 복지 서비스',contacts=None)
+    snapshot=CatalogSnapshot([record],[chunk],'fixed')
+    assert contact_policy.fallback_contacts(snapshot,[{'document_id':chunk.document_id}],query='합성 복지 서비스')[0]['phone']=='129'
+
+@pytest.mark.parametrize(('label','phone','url'),[
+    (' ','129','https://www.example.go.kr/help'),
+    ('합성 기관',' ','https://www.example.go.kr/help'),
+    ('<script>기관</script>','129','https://www.example.go.kr/help'),
+    ('token=secret','129','https://www.example.go.kr/help'),
+    ('합성 기관','129','https://www.example.go.kr/help?token=secret'),
+    ('합성 기관','129','https://www.example.invalid/help'),
+    ('합성 기관','010-1234-5678','https://www.example.go.kr/help'),
+])
+def test_invalid_service_contact_fields_are_dropped(label,phone,url):
+    assert contact_policy._contact(label,phone,url,'service','2026-11-03') is None
 
 
 @pytest.mark.parametrize('change', [

@@ -68,6 +68,7 @@
           if(!['answer','fallback'].includes(message.kind))fail();
           const refs=evidence(message.evidence);
           Object.assign(value,{kind:message.kind,evidence:refs.values,evidenceTruncated:message.evidenceTruncated===true||refs.truncated,redacted:value.redacted||refs.redacted});
+          if(message.contacts!==undefined)value.contacts=GyeoteProtocol.documentContacts(message.contacts);
           if(!legacy&&message.contextUpdate!==undefined){
             const update=GyeoteProtocol.contextUpdate({...message.contextUpdate,text:cleanText(message.contextUpdate.text)});
             if(update.profileRevision!==message.profileRevision||update.coveredThroughMessageId!==null&&!conversation.messages.slice(0,index-1).some(m=>m.id===update.coveredThroughMessageId&&m.role==='assistant'&&m.profileRevision===message.profileRevision))fail();
@@ -122,7 +123,7 @@
     const user=cleanText(question),assistant=cleanText(reply.text);
     if(!user.trim()||!assistant.trim())throw new Error('conversation_invalid_request');
     return [{id:pairId+':user',pairId,role:'user',content:user,createdAt,profileRevision,redacted:user!==question},
-      {id:pairId+':assistant',pairId,role:'assistant',content:assistant,createdAt,profileRevision,redacted:assistant!==answer.text||refs.redacted,kind:reply.kind,evidence:refs.values,evidenceTruncated:refs.truncated,...(reply.context_update?{contextUpdate:reply.context_update}:{}),...(reply.context_usage?{contextUsage:reply.context_usage}:{})}];
+      {id:pairId+':assistant',pairId,role:'assistant',content:assistant,createdAt,profileRevision,redacted:assistant!==answer.text||refs.redacted,kind:reply.kind,evidence:refs.values,evidenceTruncated:refs.truncated,...(reply.contacts!==undefined?{contacts:reply.contacts}:{}),...(reply.context_update?{contextUpdate:reply.context_update}:{}),...(reply.context_usage?{contextUsage:reply.context_usage}:{})}];
   }
   function requestContext(conversation,profileRevision){
     const all=conversation?.messages||[];let start=all.length;

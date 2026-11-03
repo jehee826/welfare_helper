@@ -35,6 +35,21 @@ def test_unmatched_citation_numbers_and_contact_are_rejected(change):
 def test_literal_amount_normalization_is_not_a_qualification_judgement():
     assert validate_answer(packet(text='연 16.8만원 지원'), [SOURCE]).status == 'answer'
 
+def test_exception_deadline_requires_citation_of_exception_source():
+    sources=[{'id':'base','text':'신청은 출산 후 30일까지입니다.'},
+             {'id':'exception','text':'관할 보건소 안내에는 출산 후 60일까지로 기재됩니다.'}]
+    response={'status':'answer','text':'신청은 출산 후 30일까지이며 관할 안내에는 60일까지로 기재됩니다.',
+              'citations':[{'id':'base','quote':'출산 후 30일까지'}]}
+    with pytest.raises(ValueError,match='unsupported_quantity'):
+        validate_answer(response,sources)
+    response['citations'].append({'id':'exception','quote':'출산 후 60일까지'})
+    assert validate_answer(response,sources).status=='answer'
+
+@pytest.mark.parametrize('status', ['no_evidence','out_of_scope','clarify'])
+def test_nonanswer_with_citations_is_rejected(status):
+    with pytest.raises(ValueError,match='unsupported_citations'):
+        validate_answer(packet(status=status),[SOURCE])
+
 
 @pytest.mark.parametrize('status', ['no_evidence','out_of_scope','clarify'])
 def test_relatedness_and_missing_conditions_do_not_attach_unrelated_sources(status):
@@ -69,9 +84,19 @@ def test_final_answer_uses_existing_structured_transport_with_answer_schema():
     service.llm.chat=structured
     result,_=answer_document(repo,service,'원문 내용')
     assert result['kind']=='answer' and len(calls)==1
-    assert calls[0]['schema']['properties']['status']['enum']==['answer','clarify','no_evidence','out_of_scope']
-    assert 'citations' in calls[0]['schema']['required']
-    assert calls[0]['schema']['$defs']['Citation']['properties']['id']['enum']==['C1']
+    schema=calls[0]['schema']
+    answer,fallback=schema['oneOf']
+    assert answer['properties']['status']['enum']==['answer']
+    assert fallback['properties']['status']['enum']==['clarify','no_evidence','out_of_scope']
+    assert answer['properties']['citations']['minItems']==1 and answer['properties']['citations']['maxItems']==6
+    assert fallback['properties']['citations']['maxItems']==0
+    for branch in (answer,fallback):
+        assert set(branch['required'])=={'status','text','citations'} and branch['additionalProperties'] is False
+        assert branch['properties']['text']['minLength']==1 and branch['properties']['text']['maxLength']==3000
+        assert branch['properties']['citations']['items']=={'$ref':'#/$defs/Citation'}
+    citation=schema['$defs']['Citation']
+    assert citation['properties']['id']['enum']==['C1'] and citation['additionalProperties'] is False
+    assert set(citation['required'])=={'id','quote'} and citation['properties']['quote']['maxLength']==1600
     assert result['evidence'][0]['chunk_id']=='source:1'
 
 

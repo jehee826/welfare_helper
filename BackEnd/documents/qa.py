@@ -2,6 +2,7 @@
 
 import math
 import time
+from copy import deepcopy
 from pydantic import ValidationError
 
 from BackEnd.documents.contracts import DocumentError
@@ -173,6 +174,15 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         checkpoint()
         schema = WelfareAnswer.model_json_schema()
         schema['$defs']['Citation']['properties']['id']['enum'] = list(references)
+        # 비답변 상태와 인용이 함께 생성되지 않도록 상태별 인용 개수를 제한한다.
+        definitions = schema.pop('$defs')
+        answer_schema = deepcopy(schema)
+        answer_schema['properties']['status'] = {'type': 'string', 'enum': ['answer']}
+        answer_schema['properties']['citations']['minItems'] = 1
+        fallback_schema = deepcopy(schema)
+        fallback_schema['properties']['status'] = {'type': 'string', 'enum': ['clarify', 'no_evidence', 'out_of_scope']}
+        fallback_schema['properties']['citations']['maxItems'] = 0
+        schema = {'$defs': definitions, 'oneOf': [answer_schema, fallback_schema]}
         raw_answer = llm.chat(ANSWER_SYSTEM, prompt, schema=schema)
         checkpoint()
         if not isinstance(raw_answer, dict) or not raw_answer:

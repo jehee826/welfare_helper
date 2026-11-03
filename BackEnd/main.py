@@ -109,7 +109,7 @@ class ChatRequest(BaseModel):
             result["history"] = [message.model_dump() for message in self.history]
         if self.conversation_context is not None:
             context = self.conversation_context
-            absent = {"userMessages", "documentIds"} - context.model_fields_set
+            absent = {"userMessages", "documentIds", "supportsTopicBoundary"} - context.model_fields_set
             result["conversation_context"] = context.model_dump(exclude=absent)
         return result
 

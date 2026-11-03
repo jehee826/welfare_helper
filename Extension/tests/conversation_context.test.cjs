@@ -11,6 +11,79 @@ function seed(count=6,custom={}){
 const update=(input,status='updated',text='사용자는 합성 서비스의 신청처를 찾고 있음')=>({status,text:status==='updated'?text:input.text,coveredThroughMessageId:status==='updated'?input.batch.at(-1).id:input.coveredThroughMessageId,profileRevision:input.profileRevision});
 async function begin(f,state,id=pairId(100),rev=1){return f.action('begin',{...expected(state),pairId:id,profileRevision:rev});}
 
+test('새 주제 표식은 저장과 worker 재생성 뒤 이전 맥락을 제외하고 화면 기록은 보존한다',async()=>{
+  const f=worker(seed(2)),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
+  assert.equal(ctx.supportsTopicBoundary,true);
+  const u={status:'unchanged',text:ctx.text,coveredThroughMessageId:ctx.coveredThroughMessageId,profileRevision:1,resetTopic:true};
+  const saved=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'방과후 수업비가 부담돼요',answer:{...answer,context_update:u}});
+  assert.equal(saved.ok,true);assert.equal(saved.state.conversations[0].messages.length,6);
+  assert.equal(saved.state.conversations[0].messages.at(-1).topicStart,true);
+  const restored=worker(f.data),read=await restored.action('get'),next=await begin(restored,read.state,pairId(101)),n=next.input.conversation_context;
+  assert.deepEqual(next.input.history.map(m=>m.content),['방과후 수업비가 부담돼요',answer.text]);
+  assert.deepEqual(n.userMessages.map(m=>m.content),['방과후 수업비가 부담돼요']);
+  assert.equal(n.text,'');assert.equal(n.coveredThroughMessageId,null);
+});
+
+test('주제 표식은 오래된 요약 경계 유실 뒤에도 보존된다',()=>{
+  const data=seed(2),c=data[key].conversations[0],m=c.messages;
+  m.at(-1).topicStart=true;m.at(-1).contextUpdate={status:'updated',text:'이전 요약',coveredThroughMessageId:pairId(99)+':assistant',profileRevision:1};
+  policy.retain(c);
+  assert.equal(c.messages.at(-1).contextUpdate,undefined);assert.equal(c.messages.at(-1).topicStart,true);
+  const ctx=policy.requestContext(c,1);
+  assert.deepEqual(ctx.history.map(x=>x.content),[m.at(-2).content,m.at(-1).content]);
+});
+
+test('주제 경계 capability와 응답 표식의 형식 및 지원 여부를 검증한다',()=>{
+  const input=policy.requestContext(seed()[key].conversations[0],1).conversation_context;
+  assert.throws(()=>protocol.conversationContext({...input,supportsTopicBoundary:'true'}));
+  const base={status:'unchanged',text:input.text,coveredThroughMessageId:input.coveredThroughMessageId,profileRevision:1};
+  assert.throws(()=>protocol.contextUpdate({...base,resetTopic:'true'}));
+  assert.throws(()=>protocol.documentReply({...answer,context_update:{...base,resetTopic:true}},{...input,supportsTopicBoundary:false}));
+});
+
+test('주제 전환 저장 실패와 삭제 뒤 늦은 응답은 표식을 저장하지 않는다',async()=>{
+  const f=worker(seed(2)),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
+  const fields={...expected(state),pairId:pairId(100),profileRevision:1,question:'새 주제',answer:{...answer,context_update:{status:'unchanged',text:ctx.text,coveredThroughMessageId:ctx.coveredThroughMessageId,profileRevision:1,resetTopic:true}}};
+  const before=JSON.stringify(f.data[key]);f.failure.quota=true;
+  assert.equal((await f.action('append',fields)).ok,false);assert.equal(JSON.stringify(f.data[key]),before);
+  f.failure.quota=false;await f.action('clear',{expectedRevision:state.revision,generation:state.generation});
+  assert.equal((await f.action('append',fields)).ok,false);assert.equal(f.data[key].conversations.length,0);
+});
+
+test('30쌍 유지로 주제 표식이 잘리면 남은 최근 메시지만 사용한다',()=>{
+  const messages=[];for(let i=1;i<=31;i++)messages.push(...policy.pair(pairId(i),'주제 '+i,answer,1,date));
+  messages[1].topicStart=true;const c={messages};policy.retain(c);
+  assert.equal(c.messages.length,60);assert.ok(!c.messages.some(m=>m.topicStart));
+  const result=policy.requestContext(c,1);assert.ok(result.conversation_context.userMessages.every(m=>m.id!==pairId(1)+':user'));
+});
+
+test('이전 요약과 메모가 있어도 전환 뒤 후속 저장은 새 주제 범위만 재구성한다',async()=>{
+  const data=seed(6),old=data[key].conversations[0];
+  old.summary={text:'이전 산모 요약',coveredThroughMessageId:pairId(3)+':assistant',profileRevision:1};
+  old.messages.at(-1).contextUpdate={status:'unchanged',...old.summary,userMessageIds:[pairId(1)+':user']};
+  old.messages.at(-1).evidence=[{document_id:'old-doc',chunk_id:'old-chunk',quote:'',source_url:'',pages:[],source_blocks:[]}];
+  const f=worker(data);let state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
+  const u={status:'unchanged',text:ctx.text,coveredThroughMessageId:ctx.coveredThroughMessageId,profileRevision:1,resetTopic:true};
+  let saved=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'학교 지원',answer:{...answer,context_update:u}});
+  assert.equal(saved.ok,true);state=saved.state;
+  const school={...answer,evidence:[{document_id:'new-doc',chunk_id:'new-chunk',quote:'',context:'학교 자료',source_url:'',pages:[],source_blocks:[]}]};
+  for(let i=101;i<=105;i++){saved=await append(f,state,pairId(i),'학교 후속 '+i,school);assert.equal(saved.ok,true);state=saved.state;}
+  const restored=worker(f.data),read=await restored.action('get'),next=await begin(restored,read.state,pairId(106)),n=next.input.conversation_context;
+  assert.equal(n.text,'');assert.equal(n.coveredThroughMessageId,null);assert.deepEqual(n.documentIds,['new-doc']);
+  assert.ok(n.userMessages.every(m=>m.content.startsWith('학교')));
+  assert.equal(n.batch.length,6);assert.equal(next.input.history.length,6);
+  assert.ok(n.batch.every(m=>m.content.includes('학교')||m.content===answer.text));
+  assert.ok(next.input.history.every(m=>m.content.includes('학교')||m.content===answer.text));
+  assert.equal(read.state.conversations[0].messages.length,24);
+});
+
+test('주제 표식은 assistant의 불리언만 저장할 수 있다',()=>{
+  for(const [index,value] of [[0,true],[1,'true']]){
+    const c=seed(1)[key];c.conversations[0].messages[index].topicStart=value;
+    assert.throws(()=>policy.record(c));
+  }
+});
+
 test('전송 원문 목록은 사용자 메시지만 포함하며 구형 자유문 요약을 보존한다',async()=>{
   const data=seed(),old={text:'이전 자유문 요약',coveredThroughMessageId:pairId(3)+':assistant',profileRevision:1};data[key].conversations[0].summary=old;
   const f=worker(data),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;

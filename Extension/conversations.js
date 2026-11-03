@@ -64,6 +64,10 @@
         const content=cleanText(message.content);
         if(!content.trim())fail();
         const value={id:message.id,pairId:message.pairId,role,content,createdAt:message.createdAt,profileRevision:message.profileRevision,redacted:message.redacted===true||content!==message.content};
+        if(!legacy&&Object.hasOwn(message,'topicStart')){
+          if(role!=='assistant'||typeof message.topicStart!=='boolean')fail();
+          value.topicStart=message.topicStart;
+        }
         if(role==='assistant'){
           if(!['answer','fallback'].includes(message.kind))fail();
           const refs=evidence(message.evidence);
@@ -123,13 +127,16 @@
     const user=cleanText(question),assistant=cleanText(reply.text);
     if(!user.trim()||!assistant.trim())throw new Error('conversation_invalid_request');
     return [{id:pairId+':user',pairId,role:'user',content:user,createdAt,profileRevision,redacted:user!==question},
-      {id:pairId+':assistant',pairId,role:'assistant',content:assistant,createdAt,profileRevision,redacted:assistant!==answer.text||refs.redacted,kind:reply.kind,evidence:refs.values,evidenceTruncated:refs.truncated,...(reply.contacts!==undefined?{contacts:reply.contacts}:{}),...(reply.context_update?{contextUpdate:reply.context_update}:{}),...(reply.context_usage?{contextUsage:reply.context_usage}:{})}];
+      {id:pairId+':assistant',pairId,role:'assistant',content:assistant,createdAt,profileRevision,redacted:assistant!==answer.text||refs.redacted,kind:reply.kind,evidence:refs.values,evidenceTruncated:refs.truncated,...(reply.contacts!==undefined?{contacts:reply.contacts}:{}),...(reply.context_update?{contextUpdate:reply.context_update}:{}),...(reply.context_update?.resetTopic===true?{topicStart:true}:{}),...(reply.context_usage?{contextUsage:reply.context_usage}:{})}];
   }
   function requestContext(conversation,profileRevision){
-    const all=conversation?.messages||[];let start=all.length;
+    // 화면 기록은 보존하고 마지막 새 주제의 질문부터 자동 맥락을 구성한다.
+    const full=conversation?.messages||[];let topicStart=0;
+    for(let i=1;i<full.length;i+=2)if(full[i].topicStart===true)topicStart=i-1;
+    const all=full.slice(topicStart);let start=all.length;
     while(start>=2&&all[start-1].profileRevision===profileRevision&&all[start-2].profileRevision===profileRevision)start-=2;
     const messages=all.slice(start),stored=conversation?.summary;
-    const summary=stored?.profileRevision===profileRevision?stored:null;
+    const summary=stored?.profileRevision===profileRevision&&(!topicStart||messages.some(m=>m.id===stored.coveredThroughMessageId))?stored:null;
     const through=summary?messages.findIndex(m=>m.id===summary.coveredThroughMessageId):-1;
     if(summary&&through<0)fail();
     const pending=messages.slice(through+1),batch=[];let batchSize=0;
@@ -165,7 +172,7 @@
     const references=all.at(-1)?.role==='assistant'?all.at(-1).evidence.map(e=>e.document_id):[];
     const documentIds=[...new Set(references)].slice(0,3);
     sourceOmitted=sourceOmitted||new Set(references).size>3;
-    return {history:result,conversation_context:{text:summary?.text||'',coveredThroughMessageId:summary?.coveredThroughMessageId||null,profileRevision,batch,omitted:sourceOmitted,userMessages,documentIds}};
+    return {history:result,conversation_context:{text:summary?.text||'',coveredThroughMessageId:summary?.coveredThroughMessageId||null,profileRevision,batch,omitted:sourceOmitted,userMessages,documentIds,supportsTopicBoundary:true}};
   }
   function applyUpdate(conversation,input,update,profileRevision){
     if(!update)return;
@@ -177,6 +184,7 @@
     }catch{throw new Error('conversation_context_conflict');}
     if(JSON.stringify(normalized)!==JSON.stringify(requestContext(conversation,profileRevision)))throw new Error('conversation_context_conflict');
     const checked=GyeoteProtocol.contextUpdate(update),submitted=input.conversation_context;
+    if(checked.resetTopic===true&&submitted.supportsTopicBoundary!==true)throw new Error('conversation_context_conflict');
     if(checked.profileRevision!==profileRevision)throw new Error('conversation_context_conflict');
     if(checked.userMessageIds!==undefined){
       const ids=submitted.userMessages?.map(m=>m.id);

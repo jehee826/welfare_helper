@@ -21,11 +21,57 @@ postgres_data/
 
 .CLAUDE.md
 
-# 개인 지침과 로컬 스킬
-/AGENTS.md
-/CLAUDE.md
-/.agents/
-/.claude/
+# 공유 프로젝트 지침·스킬만 허용, 개인 설정·백업은 제외
+!/AGENTS.md
+!/CLAUDE.md
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/backend-pytest/
+/.agents/skills/backend-pytest/*
+!/.agents/skills/backend-pytest/SKILL.md
+!/.agents/skills/docker-workflow/
+/.agents/skills/docker-workflow/*
+!/.agents/skills/docker-workflow/SKILL.md
+!/.agents/skills/extension-workflow/
+/.agents/skills/extension-workflow/*
+!/.agents/skills/extension-workflow/SKILL.md
+!/.agents/skills/git-workflow/
+/.agents/skills/git-workflow/*
+!/.agents/skills/git-workflow/SKILL.md
+!/.agents/skills/project-design/
+/.agents/skills/project-design/*
+!/.agents/skills/project-design/SKILL.md
+!/.agents/skills/supabase-workflow/
+/.agents/skills/supabase-workflow/*
+!/.agents/skills/supabase-workflow/SKILL.md
+!/.agents/skills/vercel-workflow/
+/.agents/skills/vercel-workflow/*
+!/.agents/skills/vercel-workflow/SKILL.md
+/.claude/*
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/backend-pytest/
+/.claude/skills/backend-pytest/*
+!/.claude/skills/backend-pytest/SKILL.md
+!/.claude/skills/docker-workflow/
+/.claude/skills/docker-workflow/*
+!/.claude/skills/docker-workflow/SKILL.md
+!/.claude/skills/extension-workflow/
+/.claude/skills/extension-workflow/*
+!/.claude/skills/extension-workflow/SKILL.md
+!/.claude/skills/git-workflow/
+/.claude/skills/git-workflow/*
+!/.claude/skills/git-workflow/SKILL.md
+!/.claude/skills/project-design/
+/.claude/skills/project-design/*
+!/.claude/skills/project-design/SKILL.md
+!/.claude/skills/supabase-workflow/
+/.claude/skills/supabase-workflow/*
+!/.claude/skills/supabase-workflow/SKILL.md
+!/.claude/skills/vercel-workflow/
+/.claude/skills/vercel-workflow/*
+!/.claude/skills/vercel-workflow/SKILL.md
 
 # 파이썬 패키지 빌드 산출물 제외
 *.egg-info/
@@ -43,8 +89,9 @@ postgres_data/
 /docs/design/database/*
 !/docs/design/database/복지챗봇.erd
 
-# 협업·실행 계획은 확정된 공개 범위가 정해질 때까지 로컬 보관
+# 협업 계획 한 개만 공유, 다른 개인 계획은 로컬 보관
 /docs/plan/*
+!/docs/plan/collaboration-plan.md
 
 # 과거 문서는 기본 로컬 보관, 기존 공유 문서의 이동본만 추적
 /docs/archive/*
@@ -86,5 +133,6 @@ welfare_helper__key.pem
 /.local/t10c-*/
 
 # 문서 재정리 복구본·원문 대조 결과는 개인 기록
+/.local/
 /.local/docs-cleanup-*/
 /.local/docs-structure-*/

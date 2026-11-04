@@ -33,24 +33,38 @@ postgres_data/
 .vercel
 .env*
 
-# 설계는 기본 로컬 보관, 기존 공유 설계만 명시적으로 추적
+# 현재 공유 설계만 명시적으로 추적
 /docs/design/*
-!/docs/design/rag-accuracy-design.md
-!/docs/design/welfare-rag-pipeline-design.md
-!/docs/design/welfare-rag-features.md
-!/docs/design/implementation-gap-analysis.md
-!/docs/design/specs/
-/docs/design/specs/*
-!/docs/design/specs/2026-10-21-welfare-mockup-design.md
-!/docs/design/specs/2026-10-21-welfare-rag-mvp-design.md
+!/docs/design/architecture.md
+!/docs/design/rag.md
+!/docs/design/extension.md
+!/docs/design/admin.md
 !/docs/design/database/
 /docs/design/database/*
 !/docs/design/database/복지챗봇.erd
-!/docs/design/database/복지챗봇-mockup.erd
 
-# 실행 계획은 로컬 보관, 기존 공유 개선 로드맵만 추적
+# 협업·실행 계획은 확정된 공개 범위가 정해질 때까지 로컬 보관
 /docs/plan/*
-!/docs/plan/roadmap-p0-solutions.md
+
+# 과거 문서는 기본 로컬 보관, 기존 공유 문서의 이동본만 추적
+/docs/archive/*
+!/docs/archive/README.md
+!/docs/archive/designs/
+/docs/archive/designs/*
+!/docs/archive/designs/rag-accuracy-design.md
+!/docs/archive/designs/welfare-rag-pipeline-design.md
+!/docs/archive/designs/welfare-rag-features.md
+!/docs/archive/designs/implementation-gap-analysis.md
+!/docs/archive/designs/specs/
+/docs/archive/designs/specs/*
+!/docs/archive/designs/specs/2026-10-21-welfare-mockup-design.md
+!/docs/archive/designs/specs/2026-10-21-welfare-rag-mvp-design.md
+!/docs/archive/designs/database/
+/docs/archive/designs/database/*
+!/docs/archive/designs/database/복지챗봇-mockup.erd
+!/docs/archive/plans/
+/docs/archive/plans/*
+!/docs/archive/plans/roadmap-p0-solutions.md
 
 # 개인 수동 평가·결과·개발일지·인계
 /docs/tests/
@@ -70,3 +84,7 @@ welfare_helper__key.pem
 /.local/t5-*.jsonl
 /.local/t5-*.zip
 /.local/t10c-*/
+
+# 문서 재정리 복구본·원문 대조 결과는 개인 기록
+/.local/docs-cleanup-*/
+/.local/docs-structure-*/

@@ -33,7 +33,7 @@
 
 ## 현재 기준과 운영 시 주의
 
-실행은 [프로젝트 README](../../README.md)와 [확장 README](../../Extension/README.md)를 따른다. 현재 제품 화면 안내는 Extension이며 Desktop/Electron은 이전 구현 참고다. 상세 계획·실행·검증·테스트 설명은 로컬 태스크 계획에 통합했고 날짜순 이력은 development, 현재 상태는 handoff에 둔다. 원시 측정 자료는 tests/results에 보존한다.
+실행은 [프로젝트 README](../../../README.md)와 [확장 README](../../../Extension/README.md)를 따른다. 현재 제품 화면 안내는 Extension이며 Desktop/Electron은 이전 구현 참고다. 상세 계획·실행·검증·테스트 설명은 로컬 태스크 계획에 통합했고 날짜순 이력은 development, 현재 상태는 handoff에 둔다. 원시 측정 자료는 tests/results에 보존한다.
 
 공개 요청 사용량은 단일 프로세스 IP 예산이며 공통 실행1/대기0 gate와 역할이 다르다. proxy 주소는 명시된 신뢰 홉만 사용한다. CORS·확장 ID·IP 제한은 관리자 인증이나 다중 서버 공통 제한을 대신하지 않는다. 의존성 잠금·로컬 설치/빌드 검증은 완료했으나 원격 CI·GPU 적재는 별도다.
 

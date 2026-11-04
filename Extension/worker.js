@@ -4,7 +4,7 @@ const documentManagerUrl='https://welfare-helper-iota.vercel.app/admin/documents
 let creating;
 let authChanges=Promise.resolve();
 const profileKey='gyeote.profile';
-let localChanges=Promise.resolve(),invalidProfile=null,conversationStore;
+let localChanges=Promise.resolve(),conversationChanges=Promise.resolve(),invalidProfile=null,conversationStore;
 const conversationOwners=new Map();
 let ownerWrites=Promise.resolve();
 const ownerKey=tabId=>'gyeote.conversation-owner:'+tabId;
@@ -31,6 +31,7 @@ try{profileReady=Promise.all([chrome.storage.local.setAccessLevel({accessLevel:'
 catch{profileReady=Promise.reject(new Error('profile_storage_failed'));}
 profileReady.catch(()=>{});
 function changeLocal(action){const pending=localChanges.then(()=>profileReady).then(action);localChanges=pending.catch(()=>{});return pending;}
+function changeConversations(action){const pending=conversationChanges.then(()=>profileReady).then(action);conversationChanges=pending.catch(()=>{});return pending;}
 async function storedProfile(){
   const data=await chrome.storage.local.get(profileKey),raw=data[profileKey];
   if(raw===undefined)return {state:{schemaVersion:1,revision:0,onboardingCompleted:false,profile:null}};
@@ -103,7 +104,6 @@ chrome.storage.onChanged?.addListener((changes,area)=>{
     let revision=null;try{revision=GyeoteProtocol.profileRecord(changes[profileKey].newValue).revision;}catch{}
     (async()=>{
       // 프로필 값은 통지에 싣지 않는다. 수신기는 worker에서 최신 revision을 다시 확인한다.
-      await chrome.runtime.sendMessage({target:'gyeote:offscreen',type:'gyeote:profile-changed',revision}).catch(()=>{});
       const tabs=await chrome.tabs.query({});
       await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,{type:'gyeote:profile-changed',revision},{frameId:0})));
     })().catch(()=>{});
@@ -152,9 +152,9 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
     if(message.type==='gyeote:conversations-begin'&&GyeoteProtocol.id(message.pairId))conversationOwners.set(sender.tab.id,{...Object.fromEntries(['pairId','accessId','profileRevision','expectedRevision','generation','conversationId'].map(key=>[key,message[key]])),tabId:sender.tab.id,url:sender.url,documentId:sender.documentId??null,expiresAt:Date.now()+1830000,input:null});
     const initialOwner=conversationOwners.get(sender.tab.id);
-    // local 변경과 인증 전환을 함께 직렬화해 프로필/권한 확인과 쓰기 사이의 경쟁을 막는다.
-    changeLocal(()=>changeAuth(async()=>{
-      conversationStore??=GyeoteConversationStore.create({storage:chrome.storage.local,profile:storedProfile,newId:()=>crypto.randomUUID()});
+    // 대화 저장과 인증 전환은 직렬화하고 프로필 저장 대기와는 분리한다.
+    changeConversations(()=>changeAuth(async()=>{
+      conversationStore??=GyeoteConversationStore.create({storage:chrome.storage.local,newId:()=>crypto.randomUUID()});
       const owner=message.type==='gyeote:conversations-append'?await restoreOwner(sender.tab.id):initialOwner;
       const owns=()=>ownerMatches(owner,message,sender)&&conversationOwners.get(sender.tab.id)===owner&&(message.type==='gyeote:conversations-begin'||owner.committed===true);
       const result=await conversationStore.action(message,await readAuth(),owns,owner?.input);

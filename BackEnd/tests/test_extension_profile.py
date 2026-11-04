@@ -8,11 +8,11 @@ UNKNOWN = {"age": None, "income": "unknown", "household": None, "region": None, 
 
 
 @pytest.mark.parametrize("profile", [LEGACY, UNKNOWN, {}, None, {**LEGACY, "region": "서울"}])
-def test_existing_and_unknown_profile_contract_is_forwarded_to_qa(api, profile):
+def test_existing_and_unknown_profile_contract_is_accepted_but_not_forwarded_to_qa(api, profile):
     response = api.client.post("/api/v1/chat", json={"query": "가상 문서 질문", "profile": profile})
     assert response.status_code == 200 and response.json() == api.result
     parsed = api.main.ChatRequest(query="질문", profile=profile)
-    api.rag.assert_called_once_with(api.service.repo, api.service, "가상 문서 질문", **({"profile":parsed.profile.model_dump()} if parsed.profile is not None else {}))
+    api.rag.assert_called_once_with(api.service.repo, api.service, "가상 문서 질문")
     assert parsed.profile is None if profile is None else parsed.profile.model_dump() == (UNKNOWN if profile == {} else profile)
 
 

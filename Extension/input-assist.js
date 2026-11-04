@@ -1,6 +1,8 @@
 (() => {
-  const initial=['내 조건에 맞는 복지서비스를 찾아줘.','지원 대상을 확인하려면 어떤 정보가 필요해?','복지서비스를 신청하려면 무엇을 확인해야 해?'];
+  const initial=['등록된 복지서비스를 알려줘.','복지서비스의 지원 대상과 지원 내용을 알려줘.','복지서비스를 신청하려면 어디에서 무엇을 준비해야 해?'];
   const followup=['그 서비스의 지원 대상을 알려줘.','그 서비스의 지원 내용을 알려줘.','그 서비스는 어떻게 신청해?'];
+  const incomeLabels={under50:'기준중위소득 50% 이하',under100:'기준중위소득 50~100%',under150:'기준중위소득 100~150%',over150:'기준중위소득 150% 초과'};
+  const householdLabels={single:'1인 가구',couple:'부부',withChildren:'자녀동거',singleParent:'한부모 가구',grandparent:'조손 가구',other:'기타 가구'};
   const errors={'not-allowed':'마이크 권한이 거부됐습니다. 브라우저 권한을 확인하거나 직접 입력해 주세요.',
     'service-not-allowed':'브라우저가 음성 인식 서비스를 허용하지 않습니다. 직접 입력해 주세요.',
     'audio-capture':'마이크를 사용할 수 없습니다. 연결 상태를 확인하거나 직접 입력해 주세요.',
@@ -38,17 +40,21 @@
       start.disabled=blocked||listening||!supported;start.setAttribute('aria-pressed',String(listening));cancel.hidden=!listening;voice.setAttribute('aria-busy',String(listening));
       onListening(listening);
       suggestions.hidden=current.mode!=='document';
-      const key=JSON.stringify([current.key,current.mode,current.hasHistory,blocked,listening]);
+      const profile=current.profile||{};
+      const knownConditions=[Number.isInteger(profile.age)?profile.age+'세':'',profile.region||'',incomeLabels[profile.income]||'',householdLabels[profile.household]||'',typeof profile.disability==='boolean'?(profile.disability?'장애 있음':'장애 없음'):''].filter(Boolean).join(' · ');
+      const key=JSON.stringify([current.key,current.mode,current.hasHistory,knownConditions,blocked,listening]);
       if(key===viewKey)return;
       viewKey=key;const owner=++recommendationVersion;suggestions.replaceChildren();
       if(current.mode!=='document')return;
-      for(const question of current.hasHistory?followup:initial){
+      const questions=[...(current.hasHistory?followup:initial)];
+      if(knownConditions)questions[0]=current.hasHistory?`그 서비스에서 이 조건(${knownConditions})의 대상자가 확인할 내용은?`:`이 조건(${knownConditions})의 대상자에게 관련된 복지서비스를 알려줘.`;
+      for(const question of questions){
         const button=document.createElement('button');button.type='button';button.textContent=question;button.disabled=blocked||listening;
         button.addEventListener('click',()=>{
           const latest=state();
           if(disposed||owner!==recommendationVersion||latest.key!==current.key||latest.mode!=='document'||!latest.available||latest.blocked||recognition)return;
           if(input.value.length){status.textContent='작성 중인 질문을 유지했습니다. 입력란을 비운 뒤 추천 질문을 선택해 주세요.';input.focus();return;}
-          input.value=question;input.focus();status.textContent='추천 질문을 초안에 넣었습니다. 확인·수정 후 직접 전송하세요.';
+          input.value=question;input.focus();status.textContent='추천 질문을 초안에 넣었습니다. 안내받을 대상과 조건을 확인·수정 후 직접 전송하세요.';
         });
         suggestions.append(button);
       }

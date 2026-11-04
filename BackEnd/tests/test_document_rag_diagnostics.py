@@ -34,14 +34,14 @@ def components(settings, *, private=False):
                      document_name="비공개 가상 문서", text="가상 계좌번호: 321-00-000001")
     snapshot = CatalogSnapshot([], [public, hidden] if private else [public], "snapshot-9913991234567")
     repo = SimpleNamespace(document_scope=None, include_local_documents=private, snapshot=Mock(return_value=snapshot),
-                           dense_search=Mock(return_value=[replace(c, score=.01) for c in snapshot.chunks]))
+                           dense_search=Mock(return_value=[replace(c, score=.99) for c in snapshot.chunks]))
     def generate(system, user):
         if system == PREPARE_SYSTEM:
-            return json.dumps({"query":json.loads(user)["current_question"],"summary":None,"needs_clarification":False})
+            payload=json.loads(user)
+            return json.dumps({'search_query':payload['current_question'],'source_ids':[item['id'] for item in payload['sources']][:8], 'document_ids':[], 'needs_clarification':False})
         sources = json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
         documents = [chunk for source in sources for chunk in source['chunks']]
-        return json.dumps({'status':'answer','text':('관리자' if private else '공개') + ' 답변. 가상 991399-1234567. 2026년 129/1355 안내',
-                           'citations':[{'id':doc['id'],'quote':doc['text']} for doc in documents]}, ensure_ascii=False)
+        return json.dumps({'status':'answer','text':('관리자' if private else '공개') + ' 답변. 가상 991399-1234567. 2026년 129/1355 안내'}, ensure_ascii=False)
     llm = SimpleNamespace(model_digest=Mock(return_value=DIGEST), embed=Mock(return_value=[[.1] * 1024]),
                           context_limit=lambda:32768, input_cost=lambda system,user:len((system+user).encode()),
                           chat_text=Mock(side_effect=generate),
@@ -107,7 +107,7 @@ def test_chat_and_debug_execute_identical_document_qa_once_per_request(diagnosti
     assert api.qa.call_count == 2
     for call in api.qa.call_args_list:
         assert call.args == (service.repo, service, "현재 질문")
-        assert call.kwargs == {"profile":body["profile"],"history":body["history"]}
+        assert call.kwargs == {"history":body["history"]}
     assert service.llm.embed.call_count == 2 and service.llm.chat.call_count == 4
     service.llm.chat_text.assert_not_called()
     assert service.answer_with_diagnostics.call_count == service.answer.call_count == 0
@@ -124,9 +124,9 @@ def test_chat_and_debug_execute_identical_document_qa_once_per_request(diagnosti
     assert public_evidence["source_blocks"] == ["block:9913991234567"]
     assert any(item["document_id"] == PRIVATE_DOC for item in chat.json()["evidence"]) is private
     for prompt in (call for call in service.llm.chat.call_args_list if call.args[0] == PREPARE_SYSTEM):
-        assert "과거 질문" in prompt.args[1] and "부산광역시" in prompt.args[1]
+        assert "과거 질문" in prompt.args[1] and "부산광역시" not in prompt.args[1]
     for prompt in (call for call in service.llm.chat.call_args_list if call.args[0] == ANSWER_SYSTEM):
-        assert "과거 질문" not in prompt.args[1] and "부산광역시" in prompt.args[1]
+        assert "과거 질문" in prompt.args[1] and "부산광역시" not in prompt.args[1]
     assert api.repository.call_count == (2 if private else 0)
     if private:
         assert all(call.kwargs == {"documents_enabled": True, "include_local_documents": True} for call in api.repository.call_args_list)
@@ -189,11 +189,34 @@ def test_no_evidence_has_matching_fallback_and_no_generation(diagnostic_api, emp
     debug = api.client.post("/debug/rag", headers={"X-Rag-Debug-Token": TOKEN}, json=body)
     assert chat.status_code == debug.status_code == 200
     assert chat.json() == debug.json()["response"] and chat.json()["kind"] == "fallback"
+    assert chat.json()['contacts'][0]['phone']=='129' and chat.json()['contacts'][0]['kind']=='general'
     assert debug.json()["diagnostics"]["reason"] == "no_document_evidence"
     assert "generation" not in debug.json()["diagnostics"]["timings_ms"]
     api.public.llm.chat_text.assert_not_called()
     if empty == "snapshot":
         api.public.llm.embed.assert_not_called()
+
+
+def test_actual_synthetic_api_contact_dto_is_rendered_and_restored(diagnostic_api):
+    import subprocess
+    from pathlib import Path
+    api=diagnostic_api
+    api.public.repo.snapshot.return_value=CatalogSnapshot([],[],'empty')
+    response=api.client.post('/api/v1/chat',json={'query':'합성 질문'})
+    assert response.status_code==200 and response.json()['reason']=='no_document_evidence'
+    script=r"""
+const assert=require('node:assert/strict');
+const {worker,ui}=require('./Extension/tests/conversation_fixture.cjs');
+let text='';process.stdin.setEncoding('utf8');process.stdin.on('data',x=>text+=x);process.stdin.on('end',async()=>{
+  const body=JSON.parse(text),server=worker(),f=ui(server);
+  try{await f.ready();await f.question('합성 질문');await f.answer(body);assert.ok(f.root.querySelector('.conversation a[href="tel:129"]'));assert.match(f.root.querySelector('.conversation').textContent,/공식 안내 검토일/);}finally{f.close();}
+  const restored=ui(server);try{await restored.ready();assert.ok(restored.root.querySelector('.conversation a[href="tel:129"]'));}finally{restored.close();}
+  process.stdout.write('API_DTO_RENDER_RESTORE_OK');
+});
+"""
+    completed=subprocess.run(['node','-e',script],input=response.content,capture_output=True,cwd=Path(__file__).resolve().parents[2],timeout=20)
+    assert completed.returncode==0,completed.stderr.decode('utf-8',errors='replace')
+    assert completed.stdout==b'API_DTO_RENDER_RESTORE_OK'
 
 
 @pytest.mark.parametrize("failure,code", [
@@ -276,6 +299,16 @@ def test_document_query_retains_scope_and_search_does_not_generate(diagnostic_ap
     assert api.qa.call_count == 1
 
 
+def test_runtime_policy_directly_reports_reference_validation_disabled(monkeypatch):
+    from BackEnd import main
+    settings=Settings(_env_file=None)
+    monkeypatch.setattr(main,'get_settings',lambda:settings)
+    monkeypatch.setattr(main,'get_chat_service',lambda:pytest.fail('외부 서비스 호출 금지'))
+    qa=main.runtime_settings()['qa']
+    assert qa['source_span_validation_enabled'] is False
+    assert qa['strict_citation_validation_enabled'] is False
+    assert qa['semantic_entailment_verified'] is False
+
 def test_runtime_reports_effective_document_policy_without_external_calls(diagnostic_api, monkeypatch):
     api = diagnostic_api
     blocked = Mock(side_effect=AssertionError("설정 조회에서 실행 의존성을 사용했습니다."))
@@ -284,16 +317,16 @@ def test_runtime_reports_effective_document_policy_without_external_calls(diagno
     assert response.status_code == 200
     body = response.json()
     assert body["configuration_only"] is True and body["readiness_checked"] is False
-    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": True,
+    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": False,
                           "history_supported": True, "conversation_summary_supported": True,
                           "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
-                          "source_span_validation_enabled": True, "semantic_entailment_verified": False}
+                          "source_span_validation_enabled": False, "semantic_entailment_verified": False}
     assert body["retrieval"]["candidate_limit"] == api.public.top_n == 40 < api.settings.retrieve_top_n
     assert body["retrieval"]["dense_limit"] == api.public.dense_k
     assert body["retrieval"]["keyword_limit"] == api.public.keyword_k
     assert body["retrieval"]["core_evidence_limit"] == api.public.core_k
     assert body["retrieval"]["min_dense_similarity"] == body["retrieval"]["dense_threshold"]["configured"] == .99
-    assert body["retrieval"]["dense_threshold"]["enabled"] is False and body["retrieval"]["dense_threshold"]["effective"] is None
+    assert body['retrieval']['dense_threshold']=={'configured':.99,'enabled':True,'effective':.99,'stage':'hybrid_union'}
     assert body["reranker"]["min_score"] == body["reranker"]["score_threshold"]["configured"] == .99
     assert body["reranker"]["score_threshold"]["enabled"] is False and body["reranker"]["score_threshold"]["effective"] is None
     for dependency in (api.qa, api.repository, api.factory, api.public.llm.embed, api.public.llm.chat_text, blocked):
@@ -308,8 +341,8 @@ def test_chat_and_diagnostics_share_summary_input_and_safe_failure_update(diagno
     chat = api.client.post("/api/v1/chat", json=payload)
     debug = api.client.post("/debug/rag", headers={"X-Rag-Debug-Token":TOKEN}, json=payload)
     assert chat.status_code == debug.status_code == 200 and chat.json() == debug.json()["response"]
-    assert chat.json()["context_update"]["status"] == "failed"
-    assert debug.json()["diagnostics"]["context"]["summary_status"] == "failed"
+    assert chat.json()['context_update']['status'] in ('unchanged','omitted')
+    assert chat.json()['context_update']['coveredThroughMessageId'] is None
     assert all(call.kwargs["conversation_context"] == context for call in api.qa.call_args_list)
     api.public.llm.chat_text.assert_not_called()
     assert api.public.llm.chat.call_count == 4

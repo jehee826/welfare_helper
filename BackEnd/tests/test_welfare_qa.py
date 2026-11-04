@@ -9,73 +9,122 @@ import pytest
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.qa import answer_document
 from BackEnd.documents.context import ANSWER_SYSTEM,answer_prompt,fit_answer
-from BackEnd.documents.welfare import complete_sources, validate_answer
+from BackEnd.documents.welfare import complete_sources, WelfareAnswer, validate_answer
+from BackEnd.documents import contacts as contact_policy
 from BackEnd.rag.repository import CatalogSnapshot
 from BackEnd.tests.test_document_qa import components
 
 
 def packet(**values):
-    return json.dumps({'status':'answer','text':'연 168,000원 지원',
-                       'citations':[{'id':'a','quote':'연 168,000원 지원. 단, 조건 확인 필요.'}], **values}, ensure_ascii=False)
+    return json.dumps({'status':'answer','text':'연 168,000원 지원', **values}, ensure_ascii=False)
 
 
 SOURCE = {'id':'a','text':'연 168,000원 지원. 단, 조건 확인 필요.', 'source_url':'https://example.invalid'}
 
+def test_confirmed_official_contact_requires_included_matching_source_and_deduplicates():
+    repo,_,_=components();original=repo.snapshot().chunks[0]
+    chunk=replace(original,heading_context='문의처',text='합성 기관 02-123-4567',source_url='https://www.example.go.kr/help')
+    record=SimpleNamespace(service_id=chunk.service_id,name='합성 복지 서비스',contacts=[{'label':'합성 기관','phone':'02-123-4567'}])
+    snapshot=CatalogSnapshot([record],[chunk],'fixed');docs=[{'document_id':chunk.document_id}]
+    found=contact_policy.fallback_contacts(snapshot,docs,query='합성 복지 서비스 문의')
+    assert len(found)==1 and found[0]['kind']=='service' and found[0]['phone']=='02-123-4567'
+    assert found[0]['source_url']==chunk.source_url and found[0]['checked_at']
+    assert contact_policy.fallback_contacts(snapshot,[],query='합성 복지 서비스 문의')[0]['phone']=='129'
+    assert contact_policy.fallback_contacts(snapshot,docs,query='다른 서비스')[0]['phone']=='129'
 
-@pytest.mark.parametrize('change', [
-    {'citations':[]}, {'citations':[{'id':'fake','quote':SOURCE['text']}]},
-    {'citations':[{'id':'a','quote':'조건 없음'}]}, {'text':'연 999999원 지원'},
-    {'text':'https://invented.invalid 에서 신청'}, {'text':'연락처 010-1234-5678'},
+def test_missing_contacts_safe_fallback_and_technical_failures_stay_distinct(monkeypatch):
+    repo,service,calls=components();repo.dense_search=lambda *args,**kwargs:[replace(repo.snapshot().chunks[0],score=.1)]
+    response,trace=answer_document(repo,service,'질문')
+    assert trace['reason']=='low_similarity' and response['contacts'][0]['phone']=='129' and calls['prompts']==[]
+    monkeypatch.setattr(contact_policy,'GENERAL_CONTACT',{})
+    response,_=answer_document(repo,service,'질문')
+    assert response['contacts']==[] and '연락처를 제공하지 못했습니다' in response['text']
+    repo.dense_search=lambda *_args,**_kwargs: (_ for _ in ()).throw(RuntimeError('합성 오류'))
+    with pytest.raises(DocumentError,match='document_embedding_failed'):answer_document(repo,service,'질문')
+
+def test_unselected_old_document_never_selects_service_contact():
+    repo,service,_=components();snapshot=repo.snapshot();base=snapshot.chunks[0]
+    chunk=replace(base,heading_context='문의처',text='합성 기관 02-123-4567',source_url='https://www.example.go.kr/help')
+    record=SimpleNamespace(service_id=chunk.service_id,name='옛 합성 서비스',contacts=[{'label':'합성 기관','phone':'02-123-4567'}])
+    repo.document_scope=None;repo.snapshot=lambda:replace(snapshot,services=[record],chunks=[chunk])
+    repo.dense_search=lambda *_args,**_kwargs:[replace(chunk,score=.8)]
+    from BackEnd.documents.context import PREPARE_SYSTEM
+    def chat(system,user,**kwargs):
+        if system==PREPARE_SYSTEM:return {'source_ids':[],'document_ids':[],'needs_clarification':False}
+        return {'status':'no_evidence','text':'확인할 근거가 없습니다.'}
+    service.llm.chat=chat
+    submitted={'text':'','coveredThroughMessageId':None,'profileRevision':0,'batch':[],'omitted':False,'userMessages':[],'documentIds':[chunk.document_id]}
+    result,_=answer_document(repo,service,'새 서비스 해외배송은?',conversation_context=submitted)
+    assert result['reason']=='no_evidence' and result['contacts'][0]['phone']=='129'
+
+def test_malformed_service_contacts_metadata_does_not_break_fallback():
+    repo,_,_=components();chunk=replace(repo.snapshot().chunks[0],heading_context='본문',text='연락처 정보 없음',source_url='https://www.example.go.kr/help')
+    record=SimpleNamespace(service_id=chunk.service_id,name='합성 복지 서비스',contacts=None)
+    snapshot=CatalogSnapshot([record],[chunk],'fixed')
+    assert contact_policy.fallback_contacts(snapshot,[{'document_id':chunk.document_id}],query='합성 복지 서비스')[0]['phone']=='129'
+
+@pytest.mark.parametrize(('label','phone','url'),[
+    (' ','129','https://www.example.go.kr/help'),
+    ('합성 기관',' ','https://www.example.go.kr/help'),
+    ('<script>기관</script>','129','https://www.example.go.kr/help'),
+    ('token=secret','129','https://www.example.go.kr/help'),
+    ('합성 기관','129','https://www.example.go.kr/help?token=secret'),
+    ('합성 기관','129','https://www.example.invalid/help'),
+    ('합성 기관','010-1234-5678','https://www.example.go.kr/help'),
 ])
-def test_unmatched_citation_numbers_and_contact_are_rejected(change):
-    with pytest.raises(ValueError):
-        validate_answer(packet(**change), [SOURCE])
+def test_invalid_service_contact_fields_are_dropped(label,phone,url):
+    assert contact_policy._contact(label,phone,url,'service','2026-11-03') is None
 
 
-def test_literal_amount_normalization_is_not_a_qualification_judgement():
-    assert validate_answer(packet(text='연 16.8만원 지원'), [SOURCE]).status == 'answer'
+@pytest.mark.parametrize('status',['answer','clarify','no_evidence','out_of_scope'])
+def test_status_and_plain_text_contract_preserves_model_text(status):
+    text='출산한 지 20일인 조건을 말씀하셨습니다.'
+    answer=WelfareAnswer.model_validate({'status':status,'text':text})
+    assert answer.status==status and answer.text==text
 
+@pytest.mark.parametrize('value',[
+    {'status':'answer','text':' '}, {'status':'invalid','text':'안내'},
+    {'status':'answer','text':'안내','citations':[{'id':'forged','quote':'가짜'}]},
+    {'status':'answer'}, {'status':'answer','text':'가'*3001},
+])
+def test_invalid_structured_answer_is_rejected(value):
+    with pytest.raises(ValueError): validate_answer(value)
 
-@pytest.mark.parametrize('status', ['no_evidence','out_of_scope','clarify'])
-def test_relatedness_and_missing_conditions_do_not_attach_unrelated_sources(status):
-    repo, service, _ = components()
-    service.llm.chat_text = lambda *args:packet(status=status,text='대상과 거주지를 알려주세요.',citations=[])
-    result, trace = answer_document(repo, service, '질문')
-    assert result['kind'] == 'fallback' and result['reason'] == status and result['evidence'] == []
-    assert trace['reason'] == status
+@pytest.mark.parametrize('status',['answer','clarify','no_evidence','out_of_scope'])
+def test_normal_generation_preserves_text_and_returns_server_references(status):
+    repo,service,_=components()
+    text='출산한 지 20일입니다. 합성 안내입니다.'
+    seen=[]
+    def generate(system,user,**kwargs):
+        seen.append(kwargs['schema']);return {'status':status,'text':text}
+    service.llm.chat=generate
+    result,trace=answer_document(repo,service,'질문')
+    assert result['text']==text and len(seen)==1
+    assert result['kind']==('answer' if status=='answer' else 'fallback')
+    assert result['evidence'][0]['chunk_id']==repo.snapshot().chunks[0].chunk_id
+    assert result['evidence'][0]['role']=='retrieved' and result['evidence'][0]['quote']==''
+    assert trace['answer_validation']=='accepted'
+    schema=seen[0]
+    assert set(schema['required'])=={'status','text'} and schema['additionalProperties'] is False
+    assert set(schema['properties'])=={'status','text'}
 
+def test_extra_forged_citation_is_technical_failure_not_a_source():
+    repo,service,_=components()
+    service.llm.chat=lambda *a,**k:{'status':'answer','text':'합성 답변','citations':[{'id':'forged','quote':'가짜'}]}
+    result,trace=answer_document(repo,service,'질문')
+    assert result['kind']=='fallback' and result['evidence']==[]
+    assert trace['answer_validation'] in ('invalid_schema','invalid_answer')
 
-def test_invalid_factual_answer_is_a_withheld_result_not_success():
-    repo, service, _ = components()
-    service.llm.chat_text = lambda *args:packet()
-    result, trace = answer_document(repo, service, '질문')
-    assert result['kind'] == 'fallback' and result['reason'] == 'invalid_evidence_answer'
-    assert result['evidence'] == [] and trace['citation_validation'] == 'exact_source_span_and_literal_values_only'
-    assert trace['answer_validation'] == 'citation_not_in_source'
+def test_model_contact_text_does_not_become_structured_official_contact():
+    repo,service,_=components()
+    service.llm.chat=lambda *a,**k:{'status':'no_evidence','text':'문의 02-999-9999, https://invented.invalid'}
+    result,_=answer_document(repo,service,'질문')
+    assert result['text']=='문의 02-999-9999, https://invented.invalid'
+    assert all(c['phone']!='02-999-9999' and c['source_url']!='https://invented.invalid' for c in result['contacts'])
+    assert all(e['document_id']==repo.snapshot().chunks[0].document_id for e in result['evidence'])
 
-
-def test_final_answer_uses_existing_structured_transport_with_answer_schema():
-    repo, service, _ = components()
-    snapshot=repo.snapshot()
-    first=snapshot.chunks[0]
-    repo.document_scope=None
-    repo.snapshot=lambda:replace(snapshot,chunks=[first,replace(first,chunk_id='omitted',document_id='other')])
-    repo.dense_search=lambda *args,**kwargs:[first]
-    calls=[]
-    original=service.llm.chat
-    def structured(system,user,**options):
-        calls.append(options)
-        return original(system,user,**options)
-    service.llm.chat=structured
-    result,_=answer_document(repo,service,'원문 내용')
-    assert result['kind']=='answer' and len(calls)==1
-    assert calls[0]['schema']['properties']['status']['enum']==['answer','clarify','no_evidence','out_of_scope']
-    assert 'citations' in calls[0]['schema']['required']
-    assert calls[0]['schema']['$defs']['Citation']['properties']['id']['enum']==['C1']
-    assert result['evidence'][0]['chunk_id']=='source:1'
-
-
-def test_whole_document_expansion_preserves_exception_and_ignores_other_document():
+@pytest.mark.parametrize('identity_change',[{'version':'v2'},{'service_id':'other-service'}])
+def test_whole_document_expansion_preserves_exception_and_ignores_other_document(identity_change):
     repo, _, _ = components()
     first = replace(repo.snapshot().chunks[0],version='v1',text='지원 대상',parent_id='p1')
     exception = replace(first,chunk_id='source:2',ordinal=1,text='단, 재학 조건이 필요하다.')
@@ -83,7 +132,7 @@ def test_whole_document_expansion_preserves_exception_and_ignores_other_document
     snapshot = CatalogSnapshot([], [first, exception, other], 'fixed')
     assert complete_sources(snapshot,[first]) == [first, exception]
     with pytest.raises(DocumentError, match='version_mismatch'):
-        complete_sources(CatalogSnapshot([], [first,replace(exception,version='v2')], 'fixed'),[first])
+        complete_sources(CatalogSnapshot([], [first,replace(exception,**identity_change)], 'fixed'),[first])
 
 
 def test_whole_document_over_budget_does_not_drop_exception_to_generate():
@@ -91,7 +140,7 @@ def test_whole_document_over_budget_does_not_drop_exception_to_generate():
     first = replace(repo.snapshot().chunks[0],version='v1',parent_id='p1')
     exception = replace(first,chunk_id='source:2',ordinal=1,text='필수 예외' * 10000)
     repo.snapshot = lambda:CatalogSnapshot([], [first,exception], 'fixed')
-    repo.dense_search = lambda *a,**k:[first]
+    repo.dense_search = lambda *a,**k:[replace(first,score=.65),replace(exception,score=.65)]
     service.llm.context_limit = lambda:6000
     result, _ = answer_document(repo,service,'지원 조건')
     assert result['reason'] == 'document_input_budget' and calls['prompts'] == []
@@ -103,11 +152,13 @@ def test_large_unrelated_parent_does_not_block_small_complete_related_scope():
     condition = replace(first,chunk_id='condition',parent_id='p2',parent_index=1,text='단, 재학 중인 경우에 한함.')
     unrelated = replace(first,chunk_id='unrelated',parent_id='p3',parent_index=2,heading_context='부록 일반서식',text='무관한 부록' * 10000)
     repo.snapshot = lambda:CatalogSnapshot([], [first,condition,unrelated], 'fixed')
-    repo.dense_search = lambda *a,**k:[first]
+    repo.dense_search = lambda *a,**k:[replace(first,score=.65),replace(condition,score=.65),replace(unrelated,score=.1)]
+    service.dense_k = 1
     service.llm.context_limit = lambda:6000
-    result, _ = answer_document(repo,service,'지원 조건')
+    result, trace = answer_document(repo,service,'지원 조건')
     assert result['kind'] == 'answer'
     assert {c['chunk_id'] for c in result['evidence']} == {first.chunk_id,condition.chunk_id}
+    assert trace['evidence_expansion']=={'core_chunks':1,'expanded_chunks':2,'added_chunks':1}
     assert '무관한 부록' not in calls['prompts'][0][1]
 
 
@@ -167,29 +218,61 @@ def test_missing_required_parent_does_not_allow_partial_factual_context():
         complete_sources(CatalogSnapshot([], [anchor], 'fixed'),[anchor],'지원 내용')
 
 
-@pytest.mark.parametrize('case',['unknown','duplicate_citation','duplicate_alias','duplicate_original','wrong_quote'])
-def test_short_references_reject_forgery_duplication_and_cross_source_quotes(case):
-    source={**SOURCE,'reference_id':'C1'}
-    other={'id':'other','reference_id':'C2','text':'별개의 다른 원문'}
-    citation={'id':'C1','quote':SOURCE['text']}
-    citations=[citation]
-    if case=='unknown':citations=[{**citation,'id':'C99'}]
-    if case=='duplicate_citation':citations=[citation,citation]
-    if case=='duplicate_alias':other['reference_id']='C1'
-    if case=='duplicate_original':other['id']=SOURCE['id']
-    if case=='wrong_quote':citations=[{**citation,'quote':other['text']}]
-    with pytest.raises(ValueError):
-        validate_answer(packet(citations=citations),[source,other])
+@pytest.mark.parametrize('query',['합성 서비스','집에서 도움을 받을 수 있나요?',''])
+def test_basic_sources_reach_prompt_for_short_indirect_or_empty_query(query):
+    repo,service,calls=components()
+    anchor=replace(repo.snapshot().chunks[0],version='v1',parent_id='base',heading_context='서비스 요약',text='합성 서비스 안내')
+    benefit=replace(anchor,chunk_id='benefit',parent_id='benefit',parent_index=1,heading_context='급여서비스 내용',text='돌봄 이용권을 제공합니다.')
+    continuation=replace(benefit,chunk_id='benefit:2',ordinal=1,text='지원 내용의 나머지 원문입니다.')
+    application=replace(anchor,chunk_id='application',parent_id='application',parent_index=2,heading_context='신청방법 내용',text='주민센터에서 신청합니다.')
+    exception=replace(anchor,chunk_id='exception',parent_id='exception',parent_index=3,heading_context='예외',text='단, 별도 조건을 확인합니다.')
+    appendix=replace(anchor,chunk_id='appendix',parent_id='appendix',parent_index=4,heading_context='일반서식 부록',text='무관한 부록 원문')
+    other=replace(benefit,chunk_id='other',document_id='other',text='다른 문서의 원문')
+    snapshot=CatalogSnapshot([], [anchor,benefit,continuation,application,exception,appendix,other], 'fixed')
+    selected=complete_sources(snapshot,[anchor,anchor],query)
+    assert [c.chunk_id for c in selected]==['source:1','benefit','benefit:2','application','exception']
+    repo.document_scope=None
+    repo.snapshot=lambda:snapshot
+    repo.dense_search=lambda *a,**k:[replace(c,score=.65 if c.chunk_id=='source:1' else .1) for c in snapshot.chunks]
+    service.dense_k=1
+    result,_=answer_document(repo,service,query)
+    assert result['kind']=='answer'
+    prompt=calls['prompts'][0][1]
+    for chunk in (benefit,continuation,application,exception): assert chunk.text in prompt
+    assert appendix.text not in prompt and other.text not in prompt
+
+
+def test_incomplete_newly_required_source_is_rejected():
+    repo,_,_=components()
+    anchor=replace(repo.snapshot().chunks[0],version='v1',parent_id='base')
+    incomplete=replace(anchor,chunk_id='incomplete',parent_id='benefit',heading_context='급여서비스 내용',complete=False)
+    with pytest.raises(DocumentError,match='document_evidence_incomplete'):
+        complete_sources(CatalogSnapshot([], [anchor,incomplete], 'fixed'),[anchor],'')
+
+
+def test_expanded_extra_document_is_omitted_whole_when_over_budget():
+    repo,service,calls=components()
+    first=replace(repo.snapshot().chunks[0],version='v1',parent_id='first')
+    second=replace(first,chunk_id='extra',document_id='second',parent_id='second',text='추가 원문'*10000)
+    repo.document_scope=None
+    repo.snapshot=lambda:CatalogSnapshot([], [first,second], 'fixed')
+    repo.dense_search=lambda *a,**k:[replace(first,score=.8),replace(second,score=.7)]
+    service.core_k=2
+    service.llm.context_limit=lambda:10000
+    result,trace=answer_document(repo,service,'질문')
+    assert result['kind']=='answer' and len(result['evidence'])==1
+    assert result['evidence'][0]['context']==first.text
+    assert trace['budget']['evidence_omitted']==1 and '추가 원문' not in calls['prompts'][-1][1]
 
 
 def test_short_references_reduce_prompt_cost_and_preserve_original_response_ids():
     repo,service,calls=components()
     snapshot=repo.snapshot(); original=replace(snapshot.chunks[0],chunk_id='original:'+'a'*200)
     repo.snapshot=lambda:replace(snapshot,chunks=[original])
-    repo.dense_search=lambda *args,**kwargs:[original]
+    repo.dense_search=lambda *args,**kwargs:[replace(original,score=.65)]
     result,trace=answer_document(repo,service,'지원 내용')
     assert result['kind']=='answer' and result['evidence'][0]['chunk_id']==original.chunk_id
-    assert result['evidence'][0]['quote']==original.text
+    assert result['evidence'][0]['quote']==''
     assert trace['source_references']=={'C1':original.chunk_id}
     prompt=calls['prompts'][0][1]
     assert original.chunk_id not in prompt and '"id": "C1"' in prompt

@@ -1,5 +1,35 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,ui,key,profileKey,profile,answer,settle}=require('./conversation_fixture.cjs');
+test('빈 발췌 참고자료는 저장과 재열기 뒤 다음 요청의 문서 ID로 유지된다',async()=>{
+ const server=worker(),f=ui(server);
+ const ref={document_id:'doc',chunk_id:'chunk',quote:'',context:'<b>합성 자료</b>',source_url:'https://example.invalid',pages:[1],source_blocks:['block']};
+ try{
+  await f.ready();await f.question('첫 질문');await f.answer({kind:'answer',text:'합성 답변',evidence:[ref]});
+  assert.equal(server.data[key].conversations[0].messages.at(-1).evidence[0].quote,'');
+  assert.match(f.root.querySelector('.conversation').textContent,/참고자료/);
+  assert.equal(f.root.querySelector('.conversation b'),null);
+ }finally{f.close();}
+ const restored=ui(server);try{
+  await restored.ready();assert.match(restored.root.querySelector('.conversation').textContent,/참고자료/);
+  await restored.question('후속 질문');assert.deepEqual(Array.from(restored.ports.at(-1).packet.payload.conversation_context.documentIds),['doc']);
+ }finally{restored.close();}
+});
+test('근거 없는 안내의 공식 일반 연락처는 표시하고 새 패널에 복원한다',async()=>{
+  const server=worker(),f=ui(server);
+  const contact={label:'보건복지상담센터',phone:'129',kind:'general',source_url:'https://www.129.go.kr/counsel/counsel01.do',checked_at:'2026-11-03',hours:'평일 09:00~18:00'};
+  try{
+    await f.ready();await f.question('합성 질문');await f.answer({kind:'fallback',reason:'no_evidence',text:'자료에서 확인하지 못했습니다.',evidence:[],contacts:[contact]});
+    const conversation=f.root.querySelector('.conversation'),link=conversation.querySelector('a[href="tel:129"]');
+    assert.ok(link);assert.match(conversation.textContent,/보건복지상담센터/);assert.match(conversation.textContent,/2026-11-03/);assert.match(conversation.textContent,/09:00/);
+    assert.equal(server.data[key].conversations[0].messages.at(-1).contacts[0].phone,'129');
+  }finally{f.close();}
+  const restored=ui(server);try{await restored.ready();assert.ok(restored.root.querySelector('.conversation a[href="tel:129"]'));}finally{restored.close();}
+});
+test('서비스 연락처는 공식 안내 검토일이 아닌 자료 대조일로 표시한다',async()=>{
+  const f=ui(worker());try{await f.ready();await f.question('합성 질문');await f.answer({kind:'fallback',reason:'no_evidence',text:'자료에서 확인하지 못했습니다.',evidence:[],contacts:[{label:'합성 기관',phone:'02-123-4567',kind:'service',source_url:'https://www.example.go.kr/help',checked_at:'2026-11-03'}]});
+    const conversation=f.root.querySelector('.conversation');assert.ok(conversation.querySelector('a[href="tel:021234567"]'));assert.match(conversation.textContent,/자료 대조일/);assert.doesNotMatch(conversation.textContent,/공식 안내 검토일/);
+  }finally{f.close();}
+});
 
 test('요청 빈도 제한은 질문 옆에 안전하게 표시하고 다시 보낼 수 있다',async()=>{
  const server=worker(),f=ui(server);try{
@@ -25,7 +55,7 @@ test('맥락 불일치 저장 오류는 전용 안내와 미저장 답변을 보
 test('서버 fallback DTO는 저장 뒤 새 패널에 복원된다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('합성 질문');
-    await f.answer({kind:'fallback',reason:'out_of_scope',text:'복지 관련 질문을 알려주세요.',services:[],contacts:[],suggestions:[],evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:1}});
+    await f.answer({kind:'fallback',reason:'out_of_scope',text:'복지 관련 질문을 알려주세요.',services:[],contacts:[],suggestions:[],evidence:[],context_usage:{omitted:false},context_update:{status:'unchanged',text:'',coveredThroughMessageId:null,profileRevision:0}});
     assert.equal(server.data[key].conversations[0].messages.length,2);
     assert.equal(f.root.querySelector('.status').textContent,'');
   }finally{f.close();}
@@ -166,11 +196,11 @@ test('동일 revision 늦은 통지는 새 질문을 취소하지 않는다',asy
     await f.answer({kind:'fallback',text:'근거가 부족합니다.',evidence:[]},port);assert.equal(server.data[key].conversations[0].messages.length,4);
   }finally{f.close();}
 });
-test('프로필 변경은 이전 요청만 중지하고 저장 대화는 보존하며 후속 이력을 비운다',async()=>{
+test('프로필 변경은 진행 요청과 저장 대화 및 후속 이력을 보존한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('이전 조건 질문');await f.answer(answer);await f.question('곧 바뀔 조건');const old=f.ports.at(-1);
     await server.send({type:'gyeote:profile-save',expectedRevision:1,profile:{age:60}});await settle();await f.answer({kind:'answer',text:'이전 조건 답변',evidence:[]},old);
-    assert.equal(server.data[key].conversations[0].messages.length,2);await f.question('새 조건 질문');assert.deepEqual(f.ports.at(-1).packet.payload.history,[]);
+    assert.equal(server.data[key].conversations[0].messages.length,4);await f.question('새 조건 질문');assert.equal(f.ports.at(-1).packet.payload.history.length,4);
     f.root.querySelector('button[type=submit]').click();
   }finally{f.close();}
 });

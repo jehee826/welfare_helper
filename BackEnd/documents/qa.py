@@ -2,13 +2,15 @@
 
 import math
 import time
+from dataclasses import replace
 from pydantic import ValidationError
 
 from BackEnd.documents.contracts import DocumentError
+from BackEnd.documents.contacts import fallback_contacts
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
 from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
-from BackEnd.documents.context import prepare_context, fit_answer, ANSWER_SYSTEM
+from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
 
 MAX_CACHED_CHUNKS = 2000
@@ -53,8 +55,11 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         service._document_bm25 = None
         trace["reason"] = "no_document_evidence"
         trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-        return {"kind": "fallback", "text": "등록된 문서에서 검색할 원문을 찾지 못했습니다.",
-                "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": []}, trace
+        contacts = fallback_contacts(snapshot)
+        text = "등록된 문서에서 검색할 원문을 찾지 못했습니다."
+        text += " 아래 문의처에서 확인해 주세요." if contacts else " 확인된 연락처를 제공하지 못했습니다."
+        return {"kind": "fallback", "text": text,
+                "reason": "no_document_evidence", "services": [], "contacts": contacts, "suggestions": [], "evidence": []}, trace
 
     qa_stage("context")
     try:
@@ -67,21 +72,30 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         raise
     except Exception:
         raise DocumentError("document_input_budget") from None
+    submitted_context = ConversationContext.model_validate(conversation_context) if conversation_context is not None else None
+    names = {chunk.document_id: chunk.document_name for chunk in snapshot.chunks}
+    requested_documents = submitted_context.documentIds if submitted_context else []
+    context_documents = [{"id": identifier, "name": names[identifier]} for identifier in requested_documents if identifier in names]
     search_query, conversation, context_update, context_trace = prepare_context(
-        llm, query, profile, history, conversation_context, capacity, output)
+        llm, query, profile, history, submitted_context, capacity, output, documents=context_documents)
+    if len(context_documents) < len(requested_documents):
+        context_trace["context_omitted"] = True
+        if context_update and context_update["status"] == "unchanged":
+            context_update["status"] = "omitted"
     trace["context"] = context_trace
-    trace["context"]["profile_used"] = bool(conversation["profile"])
-    trace["context"]["history_used"] = bool(conversation["history"])
+    trace["context"]["profile_used"] = False
+    trace["context"]["history_used"] = context_trace["preparation"] == "used" and bool(
+        context_trace["selected_user_messages"] or context_trace["preparation_dialogue_messages"])
     trace["context"]["summary_used"] = bool(conversation["summary"])
     trace["context"]["summary_status"] = context_update["status"] if context_update else "none"
     trace["context"]["generation_context_policy"] = "resolved_intent_only"
-    if conversation["needs_clarification"]:
-        trace["reason"] = "conversation_clarification_required"
-        trace["timings_ms"]["total"] = round((time.monotonic()-started)*1000, 2)
-        return {"kind":"fallback", "text":"이어서 확인할 서비스 이름과 현재 조건을 구체적으로 알려주세요.",
-                "reason":"conversation_clarification_required", "services":[], "contacts":[], "suggestions":[], "evidence":[],
-                "context_usage":{"omitted":context_trace["context_omitted"]},
-                **({"context_update":context_update} if context_update is not None else {})}, trace
+    if conversation.get("clarification_documents"):
+        trace["reason"] = "clarify"
+        return {"kind": "fallback", "reason": "clarify",
+                "text": "어느 서비스를 말씀하시나요? " + ", ".join(conversation["clarification_documents"]),
+                "services": [], "contacts": [], "suggestions": [], "evidence": [],
+                "context_usage": {"omitted": context_trace["context_omitted"]},
+                **({"context_update": context_update} if context_update is not None else {})}, trace
     qa_stage("retrieval")
     retrieval_started = time.monotonic()
     try:
@@ -92,7 +106,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             raise DocumentError("embedding_digest_changed")
         vector = llm.embed([search_query])[0]
         checkpoint()
-        dense = repo.dense_search(vector, service.dense_k, sorted(allowed), snapshot=snapshot)
+        # 저장소가 이미 계산한 전체 코사인을 받아 BM25 전용 후보에도 재사용한다.
+        scored = repo.dense_search(vector, len(allowed), sorted(allowed), snapshot=snapshot)
         checkpoint()
     except (ExecutionTimeoutError, ExecutionCancelledError):
         raise
@@ -104,18 +119,43 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     checkpoint()
     keyword = index.search(search_query, service.keyword_k, allowed)
     checkpoint()
-    fused = reciprocal_ranks([dense, [chunk for chunk, _ in keyword]])
+    by_id = {chunk.chunk_id: chunk for chunk in snapshot.chunks if chunk.chunk_id in allowed}
+    if (len({c.chunk_id for c in scored}) != len(scored)
+            or any(c.chunk_id not in by_id or type(c.score) not in (int, float)
+                   or not math.isfinite(c.score) or not -1 <= c.score <= 1 for c in scored)):
+        raise DocumentError("document_embedding_failed")
+    cosines = {c.chunk_id: c.score for c in scored}
+    dense = [replace(by_id[c.chunk_id], score=c.score) for c in scored[:service.dense_k]]
+    keyword = [(by_id[c.chunk_id], score) for c, score in keyword if c.chunk_id in by_id]
+    union = {c.chunk_id: c for c in [*dense, *(c for c, _ in keyword)]}
+    if any(identifier not in cosines for identifier in union):
+        raise DocumentError("document_embedding_failed")
+    passing = {identifier for identifier in union if cosines[identifier] >= service.min_similarity}
+    filtered_dense = [c for c in dense if c.chunk_id in passing]
+    filtered_keyword = [c for c, _ in keyword if c.chunk_id in passing]
+    fused = reciprocal_ranks([filtered_dense, filtered_keyword])
     candidates = [chunk for chunk, _ in fused[:service.top_n]]
+    dense_ids = {c.chunk_id for c in dense}
+    keyword_ids = {c.chunk_id for c, _ in keyword}
     trace["retrieval"] = [{"intent_id": "document",
         "dense": [{"chunk_id": c.chunk_id, "rank": i + 1, "similarity": c.score} for i, c in enumerate(dense)],
         "keyword": [{"chunk_id": c.chunk_id, "rank": i + 1, "bm25": score} for i, (c, score) in enumerate(keyword)],
+        "dense_threshold": {"configured": service.min_similarity, "enabled": True,
+                            "effective": service.min_similarity, "stage": "hybrid_union"},
+        "candidates": [{"chunk_id": identifier, "cosine": cosines[identifier],
+                        "sources": [name for name, ids in (("dense", dense_ids), ("keyword", keyword_ids)) if identifier in ids],
+                        "passed": identifier in passing} for identifier in union],
         "rrf": [{"chunk_id": c.chunk_id, "rank": i + 1, "score": score} for i, (c, score) in enumerate(fused)]}]
     trace["timings_ms"]["retrieval"] = round((time.monotonic() - retrieval_started) * 1000, 2)
     if not candidates:
-        trace["reason"] = "no_document_evidence"
+        reason = "low_similarity" if union else "no_document_evidence"
+        trace["reason"] = reason
         trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-        return {"kind": "fallback", "text": "등록된 문서에서 질문에 사용할 원문을 찾지 못했습니다.",
-                "reason": "no_document_evidence", "services": [], "contacts": [], "suggestions": [], "evidence": [],
+        contacts = fallback_contacts(snapshot)
+        text = "질문과 충분히 가까운 문서 근거를 찾지 못했습니다." if union else "등록된 문서에서 질문에 사용할 원문을 찾지 못했습니다."
+        text += " 아래 문의처에서 확인해 주세요." if contacts else " 확인된 연락처를 제공하지 못했습니다."
+        return {"kind": "fallback", "text": text,
+                "reason": reason, "services": [], "contacts": contacts, "suggestions": [], "evidence": [],
                 "context_usage": {"omitted": context_trace["context_omitted"]},
                 **({"context_update": context_update} if context_update is not None else {})}, trace
 
@@ -136,7 +176,10 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     trace["rerank"] = [{"chunk_id": c.chunk_id, "score": score, "selected": i < service.core_k}
                        for i, (c, score) in enumerate(ordered)]
     trace["timings_ms"]["rerank"] = round((time.monotonic() - rerank_started) * 1000, 2)
+    core_ids = {chunk.chunk_id for chunk in selected}
     selected = complete_sources(snapshot, selected, query+' '+conversation['search_intent'])
+    trace['evidence_expansion'] = {'core_chunks': len(core_ids), 'expanded_chunks': len(selected),
+                                 'added_chunks': sum(c.chunk_id not in core_ids for c in selected)}
     trace['evidence_policy'] = 'related_parents_and_conditions_within_document_version'
     documents = [{"id": c.chunk_id, "name": c.document_name, "pages": list(c.page_refs),
                   "heading": c.heading_context, "text": c.text, 'document_id':c.document_id,
@@ -164,11 +207,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     selected = [chunk for chunk in selected if chunk.chunk_id in included_ids]
     trace["context"]["generation_history_messages"] = len(fitted["history"])
     trace["context"]["generation_summary_used"] = bool(fitted["summary"])
-    prepared_history = context_trace["preparation"] == "used" and bool(
-        context_trace.get("preparation_history_messages", 0) + context_trace["batch_messages"])
-    fallback_questions = context_trace["preparation"] not in {"used", "skipped"} and any(
-        message["role"] == "user" for message in conversation["history"])
-    trace["context"]["history_used"] = bool(fitted["history"]) or prepared_history or fallback_questions
     trace["context"]["summary_used"] = context_trace["preparation_summary_used"] or bool(fitted["summary"])
     evidence = [{"chunk_id": c.chunk_id, "document_id": c.document_id, "role": "retrieved", "quote": "",
                  "text": c.text, "context": c.text, "pages": list(c.page_refs), "source_blocks": list(c.source_blocks),
@@ -179,7 +217,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     try:
         checkpoint()
         schema = WelfareAnswer.model_json_schema()
-        schema['$defs']['Citation']['properties']['id']['enum'] = list(references)
         raw_answer = llm.chat(ANSWER_SYSTEM, prompt, schema=schema)
         checkpoint()
         if not isinstance(raw_answer, dict) or not raw_answer:
@@ -206,7 +243,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         service._document_bm25 = None
         raise DocumentError("embedding_digest_changed")
     try:
-        answer = validate_answer(raw_answer, included)
+        answer = validate_answer(raw_answer)
         trace['answer_validation'] = 'accepted'
     except ValidationError:
         answer = None
@@ -214,11 +251,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     except (ValueError, TypeError) as exc:
         answer = None
         code = str(exc)
-        trace['answer_validation'] = code if code in {
-            'empty_answer','unsupported_citations','unsupported_clarification_quantity',
-            'missing_or_duplicate_citation','citation_not_in_source','unsupported_quantity','unsupported_contact','invalid_source_references'
-        } else 'invalid_answer'
-    trace['citation_validation'] = 'exact_source_span_and_literal_values_only'
+        trace['answer_validation'] = code if code == 'empty_answer' else 'invalid_answer'
+    trace['citation_validation'] = 'not_performed_server_references'
     # 새 인덱스는 요청의 마지막 원문/digest 확인과 취소 점검이 끝난 뒤에만 게시한다.
     checkpoint()
     if pending_index is not None:
@@ -226,17 +260,16 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     status = answer.status if answer else 'invalid_evidence_answer'
     trace["reason"] = status
     trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-    if status != 'answer':
-        messages = {'out_of_scope':'복지서비스의 대상·지원 내용·신청 방법을 안내하고 있습니다. 복지 관련 질문을 알려주세요.',
-                    'no_evidence':'복지서비스의 대상·지원 내용·신청 방법을 안내하고 있습니다. 이번 자료에서 관련 근거를 확인하지 못했습니다. 복지서비스명이나 확인할 조건을 알려주세요.',
-                    'invalid_evidence_answer':'답변과 원문 근거의 대응을 확인하지 못해 답변을 보류했습니다. 담당 기관의 공식 안내를 확인해 주세요.'}
-        return {'kind':'fallback', 'reason':status, 'text':messages.get(status, answer.text if answer else messages['invalid_evidence_answer']),
-                'services':[], 'contacts':[], 'suggestions':[], 'evidence':[],
-                'context_usage':{'omitted':context_trace['context_omitted']},
-                **({'context_update':context_update} if context_update is not None else {})}, trace
-    quotes = {references[citation.id]:citation.quote for citation in answer.citations}
-    for item in evidence:
-        item['quote'] = quotes.get(item['chunk_id'], '')
-    return {"kind": "answer", "text": answer.text.strip(), "services": [], "suggestions": [], "evidence": evidence,
+    contacts = []
+    if status == 'no_evidence':
+        confirmed_ids = list(conversation['document_ids'])
+        if repo.document_scope:
+            confirmed_ids.append(str(repo.document_scope))
+        contact_query = search_query if context_trace['preparation'] in {'used', 'skipped'} else query
+        contacts = fallback_contacts(snapshot, included, query=contact_query, confirmed_document_ids=confirmed_ids)
+    return {"kind": "answer" if status == 'answer' else 'fallback',
+            **({'reason': status, 'contacts': contacts} if status != 'answer' else {}),
+            "text": answer.text.strip() if answer else '답변 형식을 확인하지 못했습니다. 잠시 후 다시 질문해 주세요.',
+            "services": [], "suggestions": [], "evidence": evidence if answer else [],
             "context_usage": {"omitted": context_trace["context_omitted"]},
             **({"context_update": context_update} if context_update is not None else {})}, trace

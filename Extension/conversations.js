@@ -64,10 +64,15 @@
         const content=cleanText(message.content);
         if(!content.trim())fail();
         const value={id:message.id,pairId:message.pairId,role,content,createdAt:message.createdAt,profileRevision:message.profileRevision,redacted:message.redacted===true||content!==message.content};
+        if(!legacy&&Object.hasOwn(message,'topicStart')){
+          if(role!=='assistant'||typeof message.topicStart!=='boolean')fail();
+          value.topicStart=message.topicStart;
+        }
         if(role==='assistant'){
           if(!['answer','fallback'].includes(message.kind))fail();
           const refs=evidence(message.evidence);
           Object.assign(value,{kind:message.kind,evidence:refs.values,evidenceTruncated:message.evidenceTruncated===true||refs.truncated,redacted:value.redacted||refs.redacted});
+          if(message.contacts!==undefined)value.contacts=GyeoteProtocol.documentContacts(message.contacts);
           if(!legacy&&message.contextUpdate!==undefined){
             const update=GyeoteProtocol.contextUpdate({...message.contextUpdate,text:cleanText(message.contextUpdate.text)});
             if(update.profileRevision!==message.profileRevision||update.coveredThroughMessageId!==null&&!conversation.messages.slice(0,index-1).some(m=>m.id===update.coveredThroughMessageId&&m.role==='assistant'&&m.profileRevision===message.profileRevision))fail();
@@ -122,20 +127,23 @@
     const user=cleanText(question),assistant=cleanText(reply.text);
     if(!user.trim()||!assistant.trim())throw new Error('conversation_invalid_request');
     return [{id:pairId+':user',pairId,role:'user',content:user,createdAt,profileRevision,redacted:user!==question},
-      {id:pairId+':assistant',pairId,role:'assistant',content:assistant,createdAt,profileRevision,redacted:assistant!==answer.text||refs.redacted,kind:reply.kind,evidence:refs.values,evidenceTruncated:refs.truncated,...(reply.context_update?{contextUpdate:reply.context_update}:{}),...(reply.context_usage?{contextUsage:reply.context_usage}:{})}];
+      {id:pairId+':assistant',pairId,role:'assistant',content:assistant,createdAt,profileRevision,redacted:assistant!==answer.text||refs.redacted,kind:reply.kind,evidence:refs.values,evidenceTruncated:refs.truncated,...(reply.contacts!==undefined?{contacts:reply.contacts}:{}),...(reply.context_update?{contextUpdate:reply.context_update}:{}),...(reply.context_update?.resetTopic===true?{topicStart:true}:{}),...(reply.context_usage?{contextUsage:reply.context_usage}:{})}];
   }
   function requestContext(conversation,profileRevision){
-    const all=conversation?.messages||[];let start=all.length;
+    // 화면 기록은 보존하고 마지막 새 주제의 질문부터 자동 맥락을 구성한다.
+    const full=conversation?.messages||[];let topicStart=0;
+    for(let i=1;i<full.length;i+=2)if(full[i].topicStart===true)topicStart=i-1;
+    const all=full.slice(topicStart);let start=all.length;
     while(start>=2&&all[start-1].profileRevision===profileRevision&&all[start-2].profileRevision===profileRevision)start-=2;
     const messages=all.slice(start),stored=conversation?.summary;
-    const summary=stored?.profileRevision===profileRevision?stored:null;
+    const summary=stored?.profileRevision===profileRevision&&(!topicStart||messages.some(m=>m.id===stored.coveredThroughMessageId))?stored:null;
     const through=summary?messages.findIndex(m=>m.id===summary.coveredThroughMessageId):-1;
     if(summary&&through<0)fail();
-    const pending=messages.slice(through+1),batch=[];let batchSize=0,omitted=false;
+    const pending=messages.slice(through+1),batch=[];let batchSize=0;
     if(pending.length>=12){
       for(let i=0;i<Math.min(6,pending.length);i+=2){
         const pair=pending.slice(i,i+2),cost=pair.reduce((n,m)=>n+m.content.length,0);
-        if(batchSize+cost>6000){omitted=true;break;}
+        if(batchSize+cost>6000)break;
         batch.push(...pair.map(({id,role,content})=>({id,role,content})));batchSize+=cost;
       }
     }
@@ -146,8 +154,25 @@
       size+=pair[0].content.length+pair[1].content.length;
       result.unshift(...pair.map(({role,content})=>({role,content})));
     }
-    omitted=omitted||result.length<recent.length;
-    return {history:result,conversation_context:{text:summary?.text||'',coveredThroughMessageId:summary?.coveredThroughMessageId||null,profileRevision,batch,omitted}};
+    // 자유문 요약 대신 저장된 사용자 원문 ID를 해석하며 프로필 태그는 조건 경계로 쓰지 않는다.
+    let memoIndex=-1;
+    for(let i=all.length-1;i>=0;i--)if(all[i].role==='assistant'&&all[i].contextUpdate?.userMessageIds!==undefined){memoIndex=i;break;}
+    const memo=memoIndex>=0?all[memoIndex].contextUpdate:null;
+    const retainedIds=new Set(memo?.userMessageIds||[]);
+    let sourceOmitted=!!memo&&(['omitted','failed'].includes(memo.status)||[...retainedIds].some(id=>!all.slice(0,memoIndex-1).some(m=>m.id===id&&m.role==='user')));
+    const originals=all.filter(m=>m.role==='user');
+    const selected=new Set();let userSize=0;
+    const priority=[...originals.filter(m=>retainedIds.has(m.id)),...originals.filter(m=>!retainedIds.has(m.id)).reverse()];
+    for(const message of priority){
+      if(userSize+message.content.length>6000){sourceOmitted=true;continue;}
+      userSize+=message.content.length;
+      selected.add(message.id);
+    }
+    const userMessages=originals.filter(m=>selected.has(m.id)).map(({id,role,content})=>({id,role,content}));
+    const references=all.at(-1)?.role==='assistant'?all.at(-1).evidence.map(e=>e.document_id):[];
+    const documentIds=[...new Set(references)].slice(0,3);
+    sourceOmitted=sourceOmitted||new Set(references).size>3;
+    return {history:result,conversation_context:{text:summary?.text||'',coveredThroughMessageId:summary?.coveredThroughMessageId||null,profileRevision,batch,omitted:sourceOmitted,userMessages,documentIds,supportsTopicBoundary:true}};
   }
   function applyUpdate(conversation,input,update,profileRevision){
     if(!update)return;
@@ -159,7 +184,12 @@
     }catch{throw new Error('conversation_context_conflict');}
     if(JSON.stringify(normalized)!==JSON.stringify(requestContext(conversation,profileRevision)))throw new Error('conversation_context_conflict');
     const checked=GyeoteProtocol.contextUpdate(update),submitted=input.conversation_context;
+    if(checked.resetTopic===true&&submitted.supportsTopicBoundary!==true)throw new Error('conversation_context_conflict');
     if(checked.profileRevision!==profileRevision)throw new Error('conversation_context_conflict');
+    if(checked.userMessageIds!==undefined){
+      const ids=submitted.userMessages?.map(m=>m.id);
+      if(!ids||checked.userMessageIds.some(id=>!ids.includes(id))||JSON.stringify(ids.filter(id=>checked.userMessageIds.includes(id)))!==JSON.stringify(checked.userMessageIds))throw new Error('conversation_context_conflict');
+    }
     if(checked.status==='updated'){
       if(!submitted.batch.length||checked.coveredThroughMessageId!==submitted.batch.at(-1).id||!checked.text.trim())throw new Error('conversation_context_conflict');
       conversation.summary={text:checked.text,coveredThroughMessageId:checked.coveredThroughMessageId,profileRevision};

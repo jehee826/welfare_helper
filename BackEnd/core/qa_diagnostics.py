@@ -1,4 +1,4 @@
-"""문서 QA의 처리 단계만 기록한다. HTTP 전송 완료나 원문은 기록하지 않는다."""
+"""문서 QA 단계와 허용된 메타데이터만 기록한다. HTTP 전송 완료나 원문은 기록하지 않는다."""
 
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -22,11 +22,14 @@ logger.propagate = False
 
 STAGES = frozenset({"snapshot", "context", "retrieval", "rerank", "generation", "validation"})
 CODES = frozenset({
-    "ok", "answer", "clarify", "no_evidence", "out_of_scope", "no_document_evidence",
+    "ok", "answer", "clarify", "no_evidence", "out_of_scope", "no_document_evidence", "low_similarity",
     "conversation_clarification_required", "document_input_budget", "invalid_evidence_answer",
     "document_scope_mismatch", "embedding_digest_changed", "document_embedding_failed",
     "document_reranker_failed", "document_generation_failed", "document_changed_during_search",
     "document_evidence_version_mismatch", "document_evidence_incomplete", "timeout", "cancelled", "error",
+})
+ANSWER_VALIDATION_CODES = frozenset({
+    "accepted", "invalid_schema", "empty_answer", "invalid_answer",
 })
 
 
@@ -50,12 +53,14 @@ def _safe_code(value):
     return value if type(value) is str and value in CODES else "error"
 
 
-def _emit(state, event, code, *, stage=None, started=None):
+def _emit(state, event, code, *, stage=None, started=None, completion=None):
     record = {"request_id": state.request_id, "event": event,
               "elapsed_ms": round(max(0, monotonic() - (state.started if started is None else started)) * 1000, 2),
               "code": _safe_code(code)}
     if stage is not None:
         record["stage"] = stage
+    if completion:
+        record.update(completion)
     logger.info("%s", json.dumps(record, separators=(",", ":")))
 
 
@@ -82,10 +87,24 @@ def diagnose_qa(function):
         state = Diagnostic()
         token = _current.set(state)
         code = "error"
+        completion = {}
         try:
             _emit(state, "qa_start", "ok")
             result = function(*args, **kwargs)
             code = _safe_code(result[1].get("reason"))
+            # 원문이 섞인 trace 전체 대신 허용된 값만 완료 로그에 전달한다.
+            validation = result[1].get("answer_validation")
+            if type(validation) is str and validation in ANSWER_VALIDATION_CODES:
+                completion["answer_validation"] = validation
+            metadata = result[1].get("generation_metadata")
+            if isinstance(metadata, dict):
+                reason = metadata.get("done_reason")
+                if type(reason) is str and reason in {"stop", "length"}:
+                    completion["done_reason"] = reason
+                for key in ("prompt_eval_count", "eval_count"):
+                    value = metadata.get(key)
+                    if type(value) is int and value >= 0:
+                        completion[key] = value
             return result
         except ExecutionTimeoutError:
             code = "timeout"
@@ -99,7 +118,7 @@ def diagnose_qa(function):
         finally:
             try:
                 _finish_stage(state, code)
-                _emit(state, "qa_end", code)
+                _emit(state, "qa_end", code, completion=completion)
             finally:
                 _current.reset(token)
     return wrapped

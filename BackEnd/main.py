@@ -98,19 +98,19 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=1, max_length=300)
     timeout_seconds: int | None = Field(default=None, ge=1, le=1800, strict=True)
-    profile: ProfileIn | None = Field(default=None, description="모르는 조건은 제외하고 현재 상담 조건으로 사용합니다.")
+    profile: ProfileIn | None = Field(default=None, description="구형 클라이언트 호환용이며 문서 검색·생성에는 사용하지 않습니다.")
     history: list[HistoryMessage] = Field(default_factory=list, max_length=12,
                                         description="검색 의도와 답변 맥락에 참고하며 공식 근거로 취급하지 않습니다.")
     conversation_context: ConversationContext | None = None
 
     def qa_options(self):
         result = {}
-        if self.profile is not None:
-            result["profile"] = self.profile.model_dump()
         if self.history:
             result["history"] = [message.model_dump() for message in self.history]
         if self.conversation_context is not None:
-            result["conversation_context"] = self.conversation_context.model_dump()
+            context = self.conversation_context
+            absent = {"userMessages", "documentIds", "supportsTopicBoundary"} - context.model_fields_set
+            result["conversation_context"] = context.model_dump(exclude=absent)
         return result
 
     @model_validator(mode="before")
@@ -182,9 +182,9 @@ def runtime_settings():
         "readiness_checked": False,
         "qa": {
             "mode": "document_rag", "policy": "welfare_document_evidence",
-            "profile_supported": True, "history_supported": True, "conversation_summary_supported": True,
+            "profile_supported": False, "history_supported": True, "conversation_summary_supported": True,
             "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
-            "source_span_validation_enabled": True, "semantic_entailment_verified": False,
+            "source_span_validation_enabled": False, "semantic_entailment_verified": False,
         },
         "llm": {
             "model": settings.ollama_llm,
@@ -201,7 +201,8 @@ def runtime_settings():
             "core_evidence_limit": settings.core_evidence_k,
             "min_dense_similarity": settings.min_dense_sim,
             "dense_prefilter_enabled": False,
-            "dense_threshold": {"configured": settings.min_dense_sim, "enabled": False, "effective": None},
+            "dense_threshold": {"configured": settings.min_dense_sim, "enabled": True,
+                                "effective": settings.min_dense_sim, "stage": "hybrid_union"},
         },
         "reranker": {
             "model": settings.rerank_model,

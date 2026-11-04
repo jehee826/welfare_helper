@@ -4,7 +4,7 @@ chrome.runtime.onMessage.addListener((packet,sender)=>{
     if(active?.conversationContext&&(packet.revision!==active.conversationContext.revision||packet.generation!==active.conversationContext.generation))active.controller.abort();
     return;
   }
-  if(packet?.target==='gyeote:offscreen'&&['gyeote:auth-changed','gyeote:profile-changed'].includes(packet.type)&&sender.id===chrome.runtime.id&&!sender.tab){if(active?.documentMode&&(packet.type==='gyeote:auth-changed'||active.profileRevision===undefined||packet.revision!==active.profileRevision))active.controller.abort();return;}
+  if(packet?.target==='gyeote:offscreen'&&packet.type==='gyeote:auth-changed'&&sender.id===chrome.runtime.id&&!sender.tab){if(active?.documentMode)active.controller.abort();return;}
 });
 chrome.runtime.onConnect.addListener(port=>{
   const sender=port.sender;
@@ -28,9 +28,7 @@ chrome.runtime.onConnect.addListener(port=>{
       if(!documentMode&&Object.keys(packet).some(key=>!['requestId','mode','payload','deadlineAt'].includes(key)))throw new Error('invalid_reply');
       active.documentMode=documentMode;
       if(documentMode&&packet.profileRevision!==undefined&&(!Number.isSafeInteger(packet.profileRevision)||packet.profileRevision<0))throw new Error('invalid_profile');
-      active.profileRevision=documentMode?packet.profileRevision:undefined;
       payload=documentMode?GyeoteProtocol.documentRequest(packet.payload):GyeoteProtocol.remoteScreenRequest(packet.payload);
-      if(documentMode&&payload.conversation_context&&payload.conversation_context.profileRevision!==packet.profileRevision)throw new Error('invalid_reply');
       if(documentMode){
         const auth=await chrome.runtime.sendMessage({type:'gyeote:document-auth'});
         if(!auth||!['admin','anonymous'].includes(auth.mode))throw new Error('connection_failed');

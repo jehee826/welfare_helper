@@ -32,6 +32,16 @@ test('추천 3개는 초안과 포커스만 작성하고 전송·네트워크를
     f.start();assert.equal(f.instances.length,0);assert.equal(f.input.value,button.textContent);
   }finally{f.close();}
 });
+test('알려진 조건에 따라 개인 추천과 첫 질문의 조건 표시를 갱신한다',()=>{
+  const f=fixture();try{
+    const texts=()=>f.buttons().map(button=>button.textContent);
+    const ordinary=texts();f.state.profile={age:null,income:'unknown',region:null};f.assist.update();assert.deepEqual(texts(),ordinary);
+    const stale=f.buttons()[1];f.state.profile={age:70,region:'서울특별시',income:'under50',household:'single',disability:false};f.assist.update();assert.equal(f.buttons().length,3);assert.match(texts()[0],/70세 · 서울특별시 · 기준중위소득 50% 이하 · 1인 가구 · 장애 없음/);assert.ok(texts().slice(1).every(text=>!text.includes('70')));stale.click();assert.equal(f.input.value,'');
+    const old=f.buttons()[0];f.state.profile={age:71,region:'서울특별시'};f.assist.update();assert.match(texts()[0],/71세/);old.click();assert.equal(f.input.value,'');
+    f.state.hasHistory=true;f.assist.update();assert.ok(texts().every(text=>text.includes('그 서비스')));assert.match(texts()[0],/이 조건/);
+    f.state.profile={age:null,income:'unknown'};f.assist.update();assert.ok(texts().every(text=>!text.includes('이 조건')));assert.deepEqual(f.counts(),{submits:0,fetches:0});
+  }finally{f.close();}
+});
 test('추천은 현재 상담·모드·제한 상태로 재구성하고 분리된 이전 버튼은 무효다',()=>{
   const f=fixture();try{
     const old=f.buttons()[0];f.state.key='other';f.state.hasHistory=true;f.assist.update();old.click();assert.equal(f.input.value,'');

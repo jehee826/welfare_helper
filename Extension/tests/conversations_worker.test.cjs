@@ -1,6 +1,17 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {worker,key,profileKey,profile,expected,answer,append}=require('./conversation_fixture.cjs');
 require('../protocol.js');const policy=require('../conversations.js');
+test('조건 조회가 지연 중이어도 상담 저장은 진행되고 저장 프로필 변경은 소유권을 무효화하지 않는다',async()=>{
+  let release,entered;const ready=new Promise(ok=>{entered=ok;});
+  const f=worker(undefined,{beforeGet:name=>name===profileKey?new Promise(ok=>{release=ok;entered();}):undefined});
+  const pending=f.send({type:'gyeote:profile-get'});await ready;
+  const state=(await f.action('get')).state,fields={...expected(state),pairId:'A'.repeat(20),profileRevision:0};
+  assert.equal((await f.action('begin',fields)).ok,true);
+  f.data[profileKey]={...profile,revision:2};
+  const saved=await f.action('append',{...fields,question:'합성 질문',answer});
+  assert.equal(saved.ok,true);assert.equal(saved.state.conversations[0].messages.length,2);
+  release();await pending;
+});
 test('세션 객체 키 순서만 달라져도 재생성 후 자동 저장한다',async()=>{
   const f=worker(),state=(await f.action('get')).state,pairId='6'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
   assert.equal((await f.action('begin',fields)).ok,true);
@@ -111,13 +122,12 @@ test('만료·다른 문서·탭 소유권은 재생성 뒤 append를 거절한�
     const result=await restarted.send({type:'gyeote:conversations-append',accessId:'public-1',...fields,question:'질문',answer},sender);assert.equal(result.ok,false,kind);
   }
 });
-test('새 요청과 접근·프로필·revision 변경 뒤 이전 소유권은 거절한다',async()=>{
-  for(const kind of ['new-pair','access','profile','revision','url']){
+test('새 요청과 접근·revision 변경 뒤 이전 소유권은 거절한다',async()=>{
+  for(const kind of ['new-pair','access','revision','url']){
     const f=worker(),state=(await f.action('get')).state,pairId='F'.repeat(20),fields={...expected(state),pairId,profileRevision:1};
     assert.equal((await f.action('begin',fields)).ok,true);
     if(kind==='new-pair')assert.equal((await f.action('begin',{...fields,pairId:'1'.repeat(20)})).ok,true);
     if(kind==='access')f.session.documentAccessId='changed';
-    if(kind==='profile')f.data[profileKey]={...profile,revision:2};
     if(kind==='revision')assert.equal((await append(f,state,'2'.repeat(20),'다른 탭 질문',answer,2)).ok,true);
     const restarted=worker(f.data,{},f.source,undefined,f.session),sender=restarted.sender(1);
     if(kind==='url'){sender.url='https://www.bokjiro.go.kr/other';sender.tab.url=sender.url;}
@@ -162,21 +172,21 @@ test('실제 관리자 권한과 accessId·profileRevision·취소 소유권을 
   const f=worker(),state=(await f.action('get')).state;
   f.session.documentAccess='admin';assert.equal((await f.action('get')).error,'conversation_access_changed');assert.equal(f.data[key],undefined);
   f.session.documentAccess='anonymous';assert.equal((await f.action('get',{accessId:'stale'})).error,'conversation_access_changed');
-  assert.equal((await f.action('begin',{...expected(state),pairId:'A'.repeat(20),profileRevision:0})).error,'conversation_profile_changed');
+  assert.equal((await f.action('begin',{...expected(state),pairId:'A'.repeat(20),profileRevision:-1})).ok,false);
   await f.action('begin',{...expected(state),pairId:'A'.repeat(20),profileRevision:1});await f.send({type:'gyeote:conversation-cancel',pairId:'A'.repeat(20)});
   assert.equal((await f.action('append',{...expected(state),pairId:'A'.repeat(20),profileRevision:1,question:'질문',answer})).error,'conversation_request_stopped');assert.equal(f.data[key],undefined);
 });
-test('프로필 변경과 append 경쟁에서 바뀐 조건의 옛 답변은 저장하지 않는다',async()=>{
+test('프로필 변경과 append 경쟁에서도 기존 소유권의 답변을 저장한다',async()=>{
   const f=worker(),state=(await f.action('get')).state;const fields={...expected(state),pairId:'A'.repeat(20),profileRevision:1};await f.action('begin',fields);
   await f.send({type:'gyeote:profile-save',expectedRevision:1,profile:null});
-  assert.equal((await f.action('append',{...fields,question:'질문',answer})).error,'conversation_profile_changed');assert.equal(f.data[key],undefined);
+  assert.equal((await f.action('append',{...fields,question:'질문',answer})).ok,true);assert.equal(f.data[key].conversations[0].messages.length,2);
 });
 test('대기 중 append도 취소 소유권을 다시 확인하고 권한 전환은 쓰기와 직렬화된다',async()=>{
   const f=worker(),state=(await f.action('get')).state,fields={...expected(state),pairId:'A'.repeat(20),profileRevision:1};await f.action('begin',fields);
   let entered,release;const atProfile=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
-  f.failure.beforeGet=async name=>{if(name===profileKey){entered();await gate;}};
+  f.failure.beforeGet=async name=>{if(name===key){entered();await gate;}};
   const committing=f.action('append',{...fields,question:'합성 공개 질문',answer});await atProfile;
-  const switching=f.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600}},{id:'x',url:'chrome-extension://x/options.html'});
+  const switching=f.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:globalThis.GyeoteProtocol.documentOrigin()}},{id:'x',url:'chrome-extension://x/options.html'});
   await f.send({type:'gyeote:conversation-cancel',pairId:fields.pairId});release();
   assert.equal((await committing).error,'conversation_request_stopped');assert.equal((await switching).mode,'admin');assert.equal(f.data[key],undefined);
   assert.equal((await f.action('get')).error,'conversation_access_changed');

@@ -1,6 +1,6 @@
 # 협업·후속 개발 계획
 
-작성: 2026-11-04. 최신 업데이트: 2026-11-04 16:13 KST
+작성: 2026-11-04. 최신 업데이트: 2026-11-05 15:43 KST
 
 **현재 단계: 개발 착수용 상세 계획 정리만. 아래 작업 폴더·브랜치 생성, 기능 구현, 실제 시험, DB 업로드, 운영 반영은 아직 시작하지 않았다.** 역할/예정 경로와 기능별 절차는 이 문서에 배정하며 실제 담당 세션·기준 SHA는 준비 단계에서 확인한다. 문서 관리 지침 갱신과 기능 개발을 구분한다.
 
@@ -44,7 +44,7 @@
 - 메시지에는 `createdAt`이 있고 주제 경계 `topicStart`도 있지만, 경과 시간으로 오래된 자동 맥락을 제외하는 정책은 없다. 화면에 보관하는 최근30문답과 모델에 보내는 문맥은 별개다.
 - 음성 입력은 있으나 이번 코드 검토에서 답변 읽어주기와 상담 요약 버튼은 확인되지 않았다. 기존 내부 맥락 처리와 사용자용 요약 기능은 다르다.
 - 서버에는 `out_of_scope` 상태가 있지만 요청한 고정 안내문을 항상 반환하는 계약은 아니다. 문의처 생성과 일반129 fallback은 있으나 서비스별 누락·표시 조건의 실제 확인이 필요하다.
-- 자료는 원본3개에서 제도별로 나눈 **`.local/elderly-upload-split` MD10개**다. 임의로3개를 선정하거나 원본3개를 새로 요구하지 않는다. 지난 서버 직접 적재 성공과 이번 관리자 화면 업로드 시험은 별도다.
+- 자료는 원본3개에서 제도별로 나눈 **[공유 문서 모음](../data/문서모음/)의 MD 10개**다. 임의로3개를 선정하거나 원본3개를 새로 요구하지 않는다. 지난 서버 직접 적재 성공과 이번 관리자 화면 업로드 시험은 별도다.
 
 ## 2. 목표와 진행 순서
 
@@ -227,7 +227,7 @@ python -c "import os; from BackEnd.core.settings import Settings; names={n.casef
 - **담당/브랜치:** Codex `codex/co-w02-admin-upload`, backend-pytest/vercel-workflow; 실제 적재 시 supabase-workflow. 검증만으로 끝나면 빈 브랜치/커밋을 만들지 않는다.
 - **허용 파일:** `FrontEnd/src/pages/DocumentsPage.tsx`, `components/admin/DocumentProgress.tsx`, `api/documentApi.ts`, 대응 `DocumentsPage.test.tsx`, `DocumentsPage.replacement.test.tsx`, `api/documentApi.test.ts`; 서버 결함일 때만 `BackEnd/documents/api.py`, `store.py`, `worker.py`와 `test_documents.py`, `test_document_replacement_boundaries.py`. schema/Auth/모델/DB 테이블 변경은 제외.
 - **읽기/구현 순서:** 제도 선택→metadata·파일→202/jobID→poll→succeeded/active 교체의 실제 함수 연결을 읽는다. UI가 접수를 게시 완료로 표시하거나 실패 때 옛 active를 숨기면 그 지점만 수정한다. poll unmount/cancel·재시도 중복·세션 만료를 구분하며 worker 전체 재작성은 하지 않는다.
-- **자료 준비:** 기준 폴더 `.local/elderly-upload-split`은 설계 폴더의 로컬 원본이다. Codex clone에 자동 복사하지 않고 필요한10파일만 해시/제도ID/출처/활성문서 버전 목록으로 지정한다. 운영 전송·DB 교체는 해당 범위를 별도 승인받는다. 동일파일 거절이면 우회용으로 본문을 바꾸거나 전체삭제하지 않는다.
+- **자료 준비:** 담당자들은 [공유 문서 모음](../data/문서모음/)의 같은 Git 버전을 사용한다. 기존 로컬 원본은 `.local/elderly-upload-split`에 보존한다. 업로드할 10파일의 해시·제도 ID·출처·활성 문서 버전을 대조한다. 운영 전송·DB 교체는 해당 범위를 별도 승인받는다. 동일파일 거절이면 우회용으로 본문을 바꾸거나 전체삭제하지 않는다.
 - **내부검사:** `DocumentsPage.replacement.test.tsx`, `api/documentApi.test.ts`, `test_document_replacement_boundaries.py` 중심으로 성공게시/후보실패기존유지/401/중복 제출을 확인한다. 기존 검사가 만족하면 추가 미러링 테스트는 만들지 않는다.
 - **실제 순서:** 대상이 확정된 기초연금1개로 관리자 UI→worker→active→검색 확인 후 남은9개. 각 파일의 최종결과를 적고 중간 실패는 원인 해결 전 나머지 적재를 멈춘다. 10건 전체초기화는 하지 않는다. 대표 RAG1건은 W01의 같은 자료버전 결과를 재사용 가능하다.
 

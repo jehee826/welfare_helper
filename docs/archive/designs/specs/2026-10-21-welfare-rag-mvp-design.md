@@ -8,4 +8,4 @@ FastAPI·Supabase·Docling·Ollama/LangChain·bge-m3·BM25/RRF·ONNX리랭커를
 
 상담은 조건·최근 대화·제한된 요약으로 의도를 준비하고 실제 검색 원문·관련 조건/예외로 생성한다. 인용 범위·숫자/연락처 대응을 검사하되 운영 자격 판정·완전한 환각 방지·다중 턴 의미 정확도를 보장하지 않는다. Qwen1.5B 실제 서비스9문항 유효0건이며 이후 모델0회 보완의 실제 품질은 재평가하지 않았다. 기본 생성 모델은 기존 LLM이며 VLM은 선택적 시험 경로다.
 
-세부 기준은 [파이프라인](../welfare-rag-pipeline-design.md), [정확도 설계](../rag-accuracy-design.md), [현재 ERD](../database/복지챗봇.erd)를 따른다. 실행은 [프로젝트 README](../../../README.md), 시험 기록은 로컬 docs/tests/results에서 관리한다.
+세부 기준은 [파이프라인](../welfare-rag-pipeline-design.md), [정확도 설계](../rag-accuracy-design.md), [현재 ERD](../../../design/database/복지챗봇.erd)를 따른다. 실행은 [프로젝트 README](../../../../README.md), 시험 기록은 로컬 docs/tests/results에서 관리한다.

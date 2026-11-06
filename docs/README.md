@@ -1,33 +1,77 @@
 # 프로젝트 문서
 
+작성: 2026-11-04. 최신 업데이트: 2026-11-06 15:16 KST
+
 ## 목차
 
-- [태스크와 개발일지](#태스크와-개발일지)
-- [공유 설계](#공유-설계)
-- [입력과 원시 결과](#입력과-원시-결과)
+- [읽는 순서](#읽는-순서)
+- [고정 구조](#고정-구조)
+- [각 문서의 역할](#각-문서의-역할)
+- [업데이트 원칙](#업데이트-원칙)
+- [원자료와 Git 공개 범위](#원자료와-git-공개-범위)
 
-설계는 `design/`, 실행 계획과 태스크별 결과는 `plan/`, 개발일지는 `log/`, 시험 원자료는 `tests/`에 둔다.
+## 읽는 순서
 
-## 태스크와 개발일지
+1. **현재 구현을 이해하려면:** [전체 구조](design/architecture.md) → [RAG](design/rag.md) / [확장](design/extension.md) / [관리자](design/admin.md).
+2. **앞으로 할 일을 보려면:** [협업·후속 개발 계획](plan/collaboration-plan.md). 담당자·순서·완료 기준을 이 문서에서 정한다. [교차검증 기록](plan/collaboration-plan-review.md)은 검토 근거이며 별도 개발 지시서가 아니다.
+3. **왜 이렇게 바뀌었는지 보려면:** 설계 담당의 로컬 개발일지(`docs/log/development.md`)와 [과거 문서](archive/README.md). 실패·수정 이력은 삭제하지 않는다.
 
-- **[통합 태스크 목차](plan/extension-product-delivery-plan.md)**: 초기 개선/T1~T10/P1~P11/L1~L6의 진입점. 각 기존 태스크 문서에 계획·실행·검증·테스트와 날짜별 결과를 합쳤다.
-- **[개발일지](log/development.md)**: 기존 날짜순 변경·실패·검토 이력.
-- [현재 인계](log/handoff.md): 지금 상태와 다음 행동만 유지한다.
-- [후속 배포·품질 계획](plan/post-verification-delivery-plan.md): 실제 연결/모델 품질/관리자 교체의 선행 관계.
+4. **복지 자료를 준비하려면:** [수집 방법](data/수집방법.md) → [문서 포맷](data/문서포맷.md) → [실제 문서 모음](data/문서모음/).
 
-개인 계획·일지·시험 자료는 Git에서 제외되므로 새 clone에 없을 수 있다. 기존 공유 개선 로드맵만 `plan/roadmap-p0-solutions.md`로 위치를 옮겨 추적하며 공개 문서의 범위를 늘리지 않는다. 중복 결과 MD는 관련 태스크 본문으로 통합했으며 원래 작성일과 당시 실패를 보존한다.
+## 고정 구조
 
-## 공유 설계
+```text
+docs/
+├─ README.md
+├─ data/                     # Git으로 공유하는 복지서비스 자료
+│  ├─ 문서포맷.md
+│  ├─ 수집방법.md
+│  └─ 문서모음/              # 제도별 업로드 자료
+├─ design/                   # 현재 구조·기능·데이터 계약
+│  ├─ architecture.md
+│  ├─ rag.md
+│  ├─ extension.md
+│  ├─ admin.md
+│  └─ database/              # 현재 ERD·기존 DB 작업 SQL
+├─ plan/
+│  ├─ collaboration-plan.md  # 앞으로 할 일·담당·선행 관계·결과
+│  └─ collaboration-plan-review.md # 순차 교차검증·최종 판정 이력
+├─ log/
+│  ├─ development.md         # 날짜별 개발·실패·수정 기록
+│  └─ handoff.md             # 현재 작업·환경·복구 메모
+├─ archive/                  # 과거 원문·현행 설명과 분리
+│  ├─ README.md
+│  ├─ plans/                 # 이전 통합계획·후속계획·로드맵
+│  ├─ designs/               # 이전 설계·초기 specs·목업 ERD
+│  └─ tasks/                 # 초기/T/P/L 태스크 전문 5개 묶음
+├─ tests/
+│  ├─ fixtures/              # 시험 자료·격리 정답표
+│  └─ results/               # 질문·답변·측정·복구 원자료
+└─ 한국사회보장정보원_복지서비스정보_20250722.csv
+```
 
-- [RAG 파이프라인](design/welfare-rag-pipeline-design.md), [정확도 설계](design/rag-accuracy-design.md), [데이터 필드](design/welfare-rag-features.md).
-- [구현 현황](design/implementation-gap-analysis.md), [개선 방향](plan/roadmap-p0-solutions.md).
-- [현재 ERD](design/database/복지챗봇.erd), [이전 목업 ERD](design/database/복지챗봇-mockup.erd).
-- [RAG 범위](design/specs/2026-10-21-welfare-rag-mvp-design.md), [웹 초기 설계](design/specs/2026-10-21-welfare-mockup-design.md).
+## 각 문서의 역할
 
-실행 안내는 [프로젝트 README](../README.md), [확장 README](../Extension/README.md)를 따른다. 앱 README·지침·공유 설계의 위치는 유지한다.
+- **design:** 현재 코드의 동작과 경계. 앞으로 만들 기능이나 당시 실패 일지를 섞지 않는다.
+- **plan:** 앞으로 할 작업의 이유·범위·담당·선행 관계·완료 기준과 그 실행 결과. 별도 경쟁 로드맵을 늘리지 않는다.
+- **log:** 날짜별 실제 진행과 실패→수정→검증 경과. 과거 실패를 후속 성공으로 덮어쓰지 않는다.
+- **archive:** 기존 문서의 날짜와 전문을 보존한다. 옛 “현재/대기/완료”는 당시 상태다.
+- **tests:** 판단 근거인 원자료. 대역·실제 모델·HTTP·사용자 UI 결과를 구분하고 정답표를 적재 원문에 섞지 않는다.
 
-## 입력과 원시 결과
+운영 실행은 [프로젝트 README](../README.md), [확장 README](../Extension/README.md), [배포 README](../deploy/README.md)를 따른다. 로컬 인계(`docs/log/handoff.md`)는 실제 환경·복구 위치의 보조 메모이며 미래 계획의 별도 기준 문서가 아니다.
 
-- `tests/fixtures/`: 평가 입력과 정답표. 정답표는 적재·임베딩·모델 프롬프트에 넣지 않는다.
-- `tests/results/`: JSON/JSONL/CSV 등 원시 측정 결과. 사람이 읽는 설명은 해당 태스크 계획으로 병합했다.
-- DOC/DOCX·CSV 원본과 SQL/ERD는 기존 위치에 보존한다. Word·개인 기록·지침·비밀을 새로 Git에 올리지 않는다.
+## 업데이트 원칙
+
+기본은 **기존 문서의 해당 절 갱신**이다. 최초 작성일을 보존하고 수정한 문서 상단에 `최신 업데이트: YYYY-MM-DD HH:mm KST`를 남긴다. 계획·실행·검증·테스트를 구분하며 새 계획을 구현 완료로 적지 않는다.
+
+태스크마다 새로운 계획서·요약본·결과 보고서를 만들지 않는다. 기존 문서로 수용하기 어려운 독립된 용도나 별도 보존할 원자료만 필요한 위치에 추가하고 이 목차 또는 해당 문서에서 연결한다. archive와 과거 실패·수정·원출력은 최신 상태로 덮어쓰지 않는다.
+
+Codex·Claude는 같은 계획을 읽고 지정된 작성자만 갱신한다. 협업 계획에는 작업·담당·계약·완료 기준을, 개발일지에는 실제 날짜별 경과를 기록한다. 문서 수를 줄이기 위해 실패 기록을 삭제하지 않는다.
+
+## 원자료와 Git 공개 범위
+
+루트 CSV는 기존 CSV 로더가 경로를 참조하므로 유지했다. DB 작업 SQL도 실행 파일이므로 이번 문서 정리에서 이동·수정하지 않았다. 현재 ERD 파일은 [복지챗봇.erd](design/database/복지챗봇.erd)에 있다.
+
+자료 가이드와 공개 복지 문서는 `docs/data/`에서 Git으로 공유한다. 현재 설계4개·기존 공유 보관본, `docs/plan/collaboration-plan.md`와 `collaboration-plan-review.md`를 공유한다. 루트 AGENTS.md·CLAUDE.md와 공통 스킬7개·Claude 진입점7개도 Git으로 전달한다. 교차검증은 협업 계획의 시작 안내를 따른다. 개인 개발일지·인계·태스크 원기록·시험 원자료·다른 계획은 계속 제외하며 새 clone에 없어도 된다.
+
+명시적으로 공유한 프로젝트 지침/스킬 외의 개인 설정·백업·Word·실제 `.env`·키·모델/DB 데이터는 공개하거나 삭제하지 않는다. 문서 경로가 바뀐 것만으로 코드·DB·배포를 변경하지 않는다.

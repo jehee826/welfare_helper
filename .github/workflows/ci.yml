@@ -94,3 +94,12 @@ jobs:
           Extension/tests/consultation_summary.test.cjs
           Extension/tests/profile_usage.test.cjs
           Extension/tests/referral_notice.test.cjs
+          Extension/tests/stale_extra.test.cjs
+          Extension/tests/profile_offscreen.test.cjs
+          Extension/tests/options_extra.test.cjs
+          Extension/tests/offscreen.test.cjs
+          Extension/tests/lifecycle_extra.test.cjs
+          Extension/tests/document_timeout.test.cjs
+          Extension/tests/document_manager.test.cjs
+          Extension/tests/admin_content.test.cjs
+          Extension/tests/admin_auth.test.cjs

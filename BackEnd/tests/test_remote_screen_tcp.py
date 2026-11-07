@@ -7,7 +7,7 @@ import httpx
 
 from BackEnd import desktop_guidance as guide, screen_guidance as screen
 from BackEnd.core import execution
-from BackEnd.tests.test_chat_http_recovery import server, assert_no_disconnect_watcher  # noqa: F401
+from BackEnd.tests.test_chat_http_recovery import server, assert_no_disconnect_watcher, assert_available_slots  # noqa: F401
 
 
 def prepare(server, monkeypatch):
@@ -54,9 +54,7 @@ def test_remote_tcp_disconnect_cancels_and_preserves_gate_until_native_exit(serv
         sock.sendall(b'POST /api/v1/screen/guide HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '+str(len(encoded)).encode()+b'\r\n\r\n'+encoded)
         assert server.entered.wait(3)
         sock.close();assert server.cancelled.wait(3)
-        acquired=execution.inference_gate.acquire(blocking=False)
-        if acquired:execution.inference_gate.release()
-        assert not acquired
+        assert_available_slots(2)
     finally:sock.close();server.release.set()
     assert server.completed[first_port].wait(3)
     assert 200 not in server.statuses[first_port]

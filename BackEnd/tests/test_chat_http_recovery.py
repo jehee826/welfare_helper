@@ -25,7 +25,7 @@ def server(monkeypatch):
     rate_clock=[100.0]
     limiter=chat_rate.ChatRateLimiter(clock=lambda:rate_clock[0])
     monkeypatch.setattr(chat_rate,'chat_rate_limiter',limiter)
-    entered,release,cancelled=threading.Event(),threading.Event(),threading.Event()
+    entered,release,cancelled,all_entered=(threading.Event() for _ in range(4))
     calls=[]; factory=[]; forbidden=[]; loops=[]; statuses={}; completed={}; records_lock=threading.Lock()
     def unexpected(*args,**kwargs):
         forbidden.append('external')
@@ -42,6 +42,7 @@ def server(monkeypatch):
         calls.append(question)
         if question=='대기':
             budget=execution.current_budget();entered.set()
+            if calls.count('대기')==3:all_entered.set()
             while not release.wait(.01):
                 if budget.cancelled.is_set(): cancelled.set()
             execution.checkpoint()
@@ -69,7 +70,7 @@ def server(monkeypatch):
         deadline=time.monotonic()+4
         while not app.started and time.monotonic()<deadline:time.sleep(.01)
         assert app.started
-        yield SimpleNamespace(port=port,entered=entered,release=release,cancelled=cancelled,
+        yield SimpleNamespace(port=port,entered=entered,all_entered=all_entered,release=release,cancelled=cancelled,
                               calls=calls,factory=factory,settings=settings,limiter=limiter,loops=loops,
                               rate_clock=rate_clock,statuses=statuses,completed=completed,forbidden=forbidden)
     finally:
@@ -104,14 +105,25 @@ def assert_no_disconnect_watcher(server):
     pytest.fail('disconnect watcher가 정리되지 않았습니다')
 
 
+def assert_available_slots(expected):
+    acquired=0
+    try:
+        while execution.inference_gate.acquire(blocking=False):acquired+=1
+        assert acquired==expected
+    finally:
+        for _ in range(acquired):execution.inference_gate.release()
+
+
 def test_tcp_disconnect_gate_busy_rate_and_manual_recovery(server,monkeypatch):
-    server.settings.chat_rate_limit_per_minute=2
+    server.settings.chat_rate_limit_per_minute=4
     data=json.dumps({'query':'대기'}).encode()
-    sock=socket.create_connection(('127.0.0.1',server.port),timeout=2)
+    sockets=[socket.create_connection(('127.0.0.1',server.port),timeout=2) for _ in range(3)]
+    sock=sockets[0]
     first_port=sock.getsockname()[1]
     try:
-        sock.sendall(b'POST /api/v1/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '+str(len(data)).encode()+b'\r\n\r\n'+data)
-        assert server.entered.wait(3)
+        for active in sockets:
+            active.sendall(b'POST /api/v1/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '+str(len(data)).encode()+b'\r\n\r\n'+data)
+        assert server.all_entered.wait(3)
         busy=post(server,{'query':'다음 질문'});assert_safe(busy,'inference_busy')
         assert busy.headers['retry-after']=='1'
         sock.close();assert server.cancelled.wait(3)
@@ -120,11 +132,10 @@ def test_tcp_disconnect_gate_busy_rate_and_manual_recovery(server,monkeypatch):
         assert 1<=int(limited.headers['retry-after'])<=60
         assert (len(server.factory),len(server.calls))==before
         assert server.forbidden == []
-        acquired=execution.inference_gate.acquire(blocking=False)
-        if acquired:execution.inference_gate.release()
-        assert not acquired
+        assert_available_slots(0)
     finally:
-        sock.close();server.release.set()
+        for active in sockets:active.close()
+        server.release.set()
     deadline=time.monotonic()+3
     while time.monotonic()<deadline:
         if execution.inference_gate.acquire(blocking=False):execution.inference_gate.release();break
@@ -144,9 +155,7 @@ def test_tcp_short_deadline_and_manual_recovery(server):
     try:
         assert server.entered.wait(3)
         time.sleep(1.15)
-        acquired=execution.inference_gate.acquire(blocking=False)
-        if acquired:execution.inference_gate.release()
-        assert not acquired
+        assert_available_slots(2)
     finally:
         server.release.set();thread.join(4)
     assert not thread.is_alive() and len(responses)==1

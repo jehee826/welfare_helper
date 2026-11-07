@@ -154,8 +154,10 @@ def test_cancelled_endpoint_is_499_and_gate_is_released(monkeypatch):
     transport = Request({'type': 'http', 'headers': [(b'authorization', ('Bearer ' + 'x'*40).encode())]})
     with pytest.raises(HTTPException) as error: guide.desktop_guide(request, transport)
     assert error.value.status_code == 499
-    assert guide._gate.acquire(blocking=False)
-    guide._gate.release()
+    for _ in range(3):
+        assert guide._gate.acquire(blocking=False)
+    for _ in range(3):
+        guide._gate.release()
 
 
 def test_rag_text_without_deadline_keeps_langchain_path(monkeypatch):
@@ -310,13 +312,15 @@ def test_endpoint_timeout_releases_gate_and_preserves_busy(monkeypatch):
     with pytest.raises(HTTPException) as error:
         guide.desktop_guide(request, transport)
     assert error.value.status_code == 504 and deadlines == [120]
-    assert guide._gate.acquire(blocking=False)
+    for _ in range(3):
+        assert guide._gate.acquire(blocking=False)
     try:
         with pytest.raises(HTTPException) as busy:
             guide.desktop_guide(request, transport)
         assert busy.value.status_code == 429
     finally:
-        guide._gate.release()
+        for _ in range(3):
+            guide._gate.release()
 
 
 def test_legacy_request_uses_90_second_deadline(monkeypatch):

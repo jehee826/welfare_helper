@@ -482,20 +482,21 @@
     const preferences=currentPreferences(),editVersion=uiEditVersion;
     const pending=uiQueue.then(async()=>{
       if(!uiState)await uiInitialRead;
-      if(!uiState)return;
-      if(uiInvalid&&!reset){setStatus('저장된 화면 설정을 읽지 못해 이번 조절을 저장하지 않았어요. 내 정보의 화면 설정에서 기본값으로 되돌려 주세요.');return;}
+      if(!uiState)return false;
+      if(uiInvalid&&!reset){setStatus('저장된 화면 설정을 읽지 못해 이번 조절을 저장하지 않았어요. 내 정보의 화면 설정에서 기본값으로 되돌려 주세요.');return false;}
       let result;
       try{result=await chrome.runtime.sendMessage(reset?{type:'gyeote:ui-preferences-reset',expectedRevision:uiState.revision}:{type:'gyeote:ui-preferences-set',expectedRevision:uiState.revision,preferences});}
       catch{result=null;}
       if(result?.ok){uiInvalid=false;if(reset&&editVersion===uiEditVersion)applyUi(result.state);else{uiState=result.state;showUi();}return;}
       if(result?.error==='ui_preferences_conflict'){await refreshUi();setStatus('다른 탭에서 화면 설정이 바뀌어 최신 설정을 적용했어요. 필요하면 다시 조절해 주세요.');return;}
       setStatus('화면 설정을 저장하지 못했어요. 지금 화면에서는 그대로 쓸 수 있어요.');
+      return false;
     });
     uiQueue=pending.catch(()=>{});return pending;
   }
   function settleUi(changed){
     const saved=changed?saveUi():Promise.resolve();
-    void saved.finally(()=>{if(uiDeferred){uiDeferred=false;void refreshUi();}});
+    void saved.then(result=>{if(uiDeferred){uiDeferred=false;if(result!==false)void refreshUi();}});
   }
   function resizeTo(width,height){
     uiEditVersion++;

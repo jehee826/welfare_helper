@@ -88,6 +88,18 @@ for(const endBeforeRead of [false,true])test(`초기 설정 읽기가 조절 ${e
   }finally{release();f.close();}
 });
 
+test('초기 읽기를 미룬 조절의 저장 실패는 현재 크기를 옛 저장값으로 되돌리지 않는다',async()=>{
+  let release,entered=false;
+  const pending=new Promise(resolve=>{release=resolve;});
+  const f=panelFixture(undefined,{set:true,beforeGet:async name=>{if(name===uiKey&&!entered){entered=true;await pending;}}});
+  try{
+    await f.ready();f.pointer('pointerdown',100,100);f.pointer('pointermove',20,100);
+    release();await settle();f.pointer('pointerup',20,100);await settle();
+    assert.equal(f.server.data[uiKey],undefined);assert.equal(size(f.panel)[0],'480px');
+    assert.match(f.root.querySelector('.status').textContent,/저장하지 못했어요/);
+  }finally{release();f.close();}
+});
+
 test('새로고침 뒤 저장된 크기·투명도·직접 옮긴 위치를 복원한다',async()=>{
   const f=panelFixture({[uiKey]:stored(2,{width:480,height:600,backgroundOpacity:90,dock:'free',left:500,top:200})});
   try{

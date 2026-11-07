@@ -26,7 +26,7 @@ test('완료된 답변은 자동 재생하지 않고 로컬 한국어 음성으�
     button.click();await settle();
     assert.ok(h.spoken.length>0);assert.ok(h.spoken.every(item=>item.voice===local&&item.lang==='ko-KR'));
     const text=h.spoken.map(item=>item.text).join(' ');
-    assert.match(text,/합성 복지 안내입니다\..*신청은 주민센터에서 합니다\./);assert.match(text,/0 2, 1 2 3, 4 5 6 7/);assert.match(text,/평일 9시~18시/);
+    assert.match(text,/합성 복지 안내입니다\..*신청은 주민센터에서 합니다\./);assert.match(text,/0 2, 1 2 3, 4 5 6 7/);assert.match(text,/평일 9시부터 18시/);
     assert.doesNotMatch(text,/https?:|example\.go\.kr|출처|참고자료/);
     assert.equal(button.textContent,'정지');assert.equal(button.getAttribute('aria-pressed'),'true');
     h.finish();assert.equal(button.textContent,'읽기');assert.equal(button.getAttribute('aria-pressed'),'false');
@@ -105,7 +105,7 @@ test('긴 본문은 순서를 지키며 나눠 읽고 내용을 빠뜨리지 않
   try{
     await f.ready();await f.question('합성 질문');await f.answer({...answer,text:long});speakButtons(f)[0].click();await settle();
     assert.ok(h.spoken.length>2);assert.ok(h.spoken.every(item=>item.text.length<=180));
-    assert.equal(h.spoken.map(item=>item.text).join(' ').replace(/\s+/g,' '),long.replace(/\s+/g,' '));
+    assert.equal(h.spoken.map(item=>item.text).join(' ').replace(/\s+/g,' '),long.replace('예외:','예외').replace(/\s+/g,' '));
   }finally{f.close();}
 });
 
@@ -136,5 +136,21 @@ test('나눈 조각은 구분점이 180번째 글자여도 180자를 넘지 않�
     assert.ok(parts.every(part=>part.length<=180),JSON.stringify(parts.map(part=>part.length)));
     assert.equal(parts.join(' ').replace(/\s+/g,' '),(edge+' '+sentence).replace(/\s+/g,' '));
     assert.ok(parts.includes('라'.repeat(99)+'.'));
+  }finally{f.close();}
+});
+
+test('읽기는 특수문자를 읽지 않고 표시 번호·범위는 말로 바꾸며 숫자 표기는 유지한다',async()=>{
+  const h=speechHarness(),f=fixture(h);
+  try{
+    await f.ready();await f.question('합성 질문');
+    await f.answer({...answer,text:'※ 신청 기한: 2026-11-30(토)까지 → 주민센터 / 온라인\n• 소득 2.5% 이하, 금액 1,000,000원 · 시간 09:30~18:00 「안내」'});
+    speakButtons(f)[0].click();await settle();const text=h.spoken.map(item=>item.text).join(' ');
+    assert.doesNotMatch(text,/[※→\/•·()「」~]|[^\d]:|:[^\d]/u);
+    assert.match(text,/신청 기한 2026-11-30 토 까지 주민센터 온라인/);assert.match(text,/소득 2\.5% 이하, 금액 1,000,000원 시간 09:30부터 18:00 안내/);
+    assert.match(f.root.querySelector('.conversation').textContent,/※ 신청 기한: 2026-11-30\(토\)까지/);
+    h.finish();await f.mode('screen');await f.question('공개 메뉴는 어디 있어?');const payload=f.ports.at(-1).packet.payload;
+    await f.answer({reply:{snapshot_id:payload.snapshot_id,kind:'안내',answer:'공개 메뉴를 확인하세요.',targets:[{target_id:payload.candidates[0].id,meaning:'공개 메뉴'}]}});
+    const before=h.spoken.length;speakButtons(f).at(-1).click();await settle();const screen=h.spoken.slice(before).map(item=>item.text).join(' ');
+    assert.match(screen,/1번 파랑 테두리의/);assert.doesNotMatch(screen,/[①‘’·]/u);
   }finally{f.close();}
 });

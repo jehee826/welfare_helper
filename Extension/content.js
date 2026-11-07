@@ -244,6 +244,15 @@
   function speechVoice(){try{return synth.getVoices().find(voice=>voice.localService===true&&/^ko([-_]|$)/i.test(voice.lang||''))||null;}catch{return null;}}
   function speechIdle(button){button.textContent='읽기';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','이 답변 읽어주기');}
   function stopSpeech(){speechVersion++;const prior=speaking;speaking=null;if(prior){speechIdle(prior);if(speechSupported){try{synth.cancel();}catch{}}}}
+  function speechText(text){
+    return String(text||'').split('\n').map(line=>line
+      .replace(/[①-⑳]/g,mark=>` ${mark.charCodeAt(0)-0x245f}번 `)
+      .replace(/\s*~\s*/g,'부터 ')
+      .replace(/(\d)([.,:-])(?=\d)/g,'$1\u0000$2')
+      .replace(/\u0000([.,:-])|[^\p{L}\p{N}\s.,?!%]|(?<!\S)[.,:-](?!\S)/gu,(match,kept)=>kept||' ')
+      .replace(/\s+([.,?!%])/g,'$1').replace(/([.,?!])[.,?!]+/g,'$1').replace(/\s+/g,' ').trim()
+    ).filter(line=>line&&!/^[.,?!%\s]+$/.test(line)).join('\n');
+  }
   function speechChunks(text){
     const parts=[];
     for(const line of text.split(/\n+/)){
@@ -265,7 +274,7 @@
     if(!voice&&!synth.getVoices().length)voice=await new Promise(resolve=>{const done=()=>{clearTimeout(timer);synth.removeEventListener?.('voiceschanged',done);resolve(speechVoice());};const timer=setTimeout(done,1500);synth.addEventListener?.('voiceschanged',done);});
     if(version!==speechVersion)return;
     if(!voice){setStatus('이 기기에 한국어 기기 내 음성이 없어 읽어줄 수 없어요. 외부 음성 서비스로는 보내지 않습니다.');return;}
-    const parts=speechChunks(read());if(!parts.length)return;
+    const parts=speechChunks(speechText(read()));if(!parts.length)return;
     speaking=button;button.textContent='정지';button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','읽어주기 정지');
     parts.forEach((part,index)=>{
       const utterance=new window.SpeechSynthesisUtterance(part);utterance.voice=voice;utterance.lang=voice.lang;

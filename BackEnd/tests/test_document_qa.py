@@ -58,13 +58,15 @@ def components(*, empty=False, failure=None):
     return repo, service, calls
 
 
-def test_model_selected_reference_retains_same_document_conditions_and_omits_other_sources():
+@pytest.mark.parametrize('include_other', [False, True])
+def test_model_selected_reference_retains_conditions_and_contacts_for_only_used_sources(include_other):
     repo, service, _ = components()
     first = replace(repo.snapshot().chunks[0], text="사업 조건입니다.\n- 문의: 테스트 담당 기관 1355",
                     source_url="https://www.bokjiro.go.kr/selected-source")
     condition = replace(first, chunk_id="source:condition", text="이 사업의 제외 조건입니다.", heading_context="제외·예외")
     other = replace(first, chunk_id="source:other", document_id="00000000-0000-0000-0000-000000000002",
-                    service_id="PROGRAM_2", document_name="다른 사업", text="다른 사업 원문입니다.")
+                    service_id="PROGRAM_2", document_name="다른 사업", text="다른 사업 원문입니다.\n- 문의: 다른 담당 기관 1523",
+                    source_url="https://www.bokjiro.go.kr/other-source")
     snapshot = replace(repo.snapshot(), chunks=[first, condition, other])
     repo.document_scope = None
     repo.snapshot = lambda: snapshot
@@ -75,13 +77,16 @@ def test_model_selected_reference_retains_same_document_conditions_and_omits_oth
         ids = {chunk['id'] for item in sources for chunk in item['chunks']}
         assert set(kwargs['schema']['properties']['source_ids']['items']['enum']) == ids
         assert 'source_ids' in kwargs['schema']['required']
-        return {'status': 'answer', 'text': '선택 원문의 조건을 안내합니다.', 'source_ids': [source['chunks'][0]['id']]}
+        selected = [source['chunks'][0]['id']]
+        if include_other:
+            selected.extend(item['chunks'][0]['id'] for item in sources if item['document_id'] != DOC_ID)
+        return {'status': 'answer', 'text': '선택 원문의 조건을 안내합니다.', 'source_ids': selected}
     service.llm.chat = generate
     answer, trace = answer_document(repo, service, "선택 자료의 조건을 알려주세요")
     assert answer['kind'] == 'answer'
-    assert {item['chunk_id'] for item in answer['evidence']} == {first.chunk_id, condition.chunk_id}
-    assert {item['document_id'] for item in answer['evidence']} == {DOC_ID}
-    assert [item['phone'] for item in answer['contacts']] == ['1355']
+    assert {item['chunk_id'] for item in answer['evidence']} == {first.chunk_id, condition.chunk_id} | ({other.chunk_id} if include_other else set())
+    assert {item['document_id'] for item in answer['evidence']} == {DOC_ID} | ({other.document_id} if include_other else set())
+    assert {item['phone'] for item in answer['contacts']} == ({'1355', '1523'} if include_other else {'1355'})
     assert trace['source_reference_selection'] == 'model_selected_document_versions'
 
 

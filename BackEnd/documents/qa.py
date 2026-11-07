@@ -310,6 +310,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         trace['selected_contacts'] = [{key: candidate[key] for key in (
             'label', 'phone', 'source_url', 'document_id', 'document_version', 'contact_version')}
             for candidate in chosen]
+    elif status == 'answer' and answer.source_ids is not None:
+        contacts = [candidate['contact'] for candidate in contact_candidates(snapshot, referenced)]
     elif status in {'answer', 'no_evidence'}:
         confirmed_ids = ([document['document_id'] for document in referenced]
                          if status == 'answer' else list(conversation['document_ids']))

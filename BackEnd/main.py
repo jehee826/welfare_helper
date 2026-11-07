@@ -30,6 +30,9 @@ from BackEnd.documents.api import DocumentBodyLimit, router as document_router
 from BackEnd.documents.auth import bearer, require_document_admin
 from BackEnd.admin.session import router as admin_session_router
 from BackEnd.admin.credentials import router as admin_credentials_router
+from BackEnd.admin.referrals import router as admin_referrals_router
+from BackEnd.admin.referral_store import record_public
+from uuid import uuid4
 from BackEnd.documents.qa import answer_document
 from BackEnd.documents.context import ConversationContext
 from BackEnd.documents.contracts import DocumentError
@@ -48,6 +51,7 @@ app.include_router(document_router)
 app.include_router(program_router)
 app.include_router(admin_session_router)
 app.include_router(admin_credentials_router)
+app.include_router(admin_referrals_router)
 app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_origins,
                    allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                    allow_headers=["Content-Type", "Authorization"])
@@ -255,7 +259,20 @@ def chat(request: ChatRequest, http_request: Request, service: ChatService = Dep
     try:
         with inference_request(http_request, get_settings().ollama_timeout, request.timeout_seconds):
             service = document_chat_service(http_request, service, credentials)
-            return redact_document(answer_document(service.repo, service, request.query.strip(), **request.qa_options())[0])
+            recording = (get_settings().referral_records_enabled and credentials is None
+                         and not getattr(service.repo, 'include_local_documents', False)
+                         and not getattr(service.repo, 'document_scope', None))
+            response, trace = answer_document(service.repo, service, request.query.strip(), **request.qa_options(),
+                                              **({'select_contacts': True} if recording else {}))
+            response = redact_document(response)
+            if recording and response.get('kind') == 'answer' and response.get('contacts'):
+                from BackEnd.core.execution import checkpoint
+                checkpoint()
+                selected = trace.get('selected_contacts', [])
+                displayed = {(item.get('label'), item.get('phone'), item.get('source_url')) for item in response['contacts']}
+                if selected and {(item.get('label'), item.get('phone'), item.get('source_url')) for item in selected} == displayed:
+                    record_public(str(uuid4()), selected)
+            return response
     except HTTPException:
         raise
     except DocumentError as exc:

@@ -28,6 +28,7 @@ export function Header() {
       <nav className="header__nav" aria-label="주 메뉴">
         <NavLink className="btn btn--soft btn--sm" to="/admin/documents">문서 관리</NavLink>
         <NavLink className="btn btn--soft btn--sm" to="/admin/programs">제도 관리</NavLink>
+        <NavLink className="btn btn--soft btn--sm" to="/admin/referrals">연락처 기록</NavLink>
         {session && <button type="button" className="btn btn--soft btn--sm" onClick={() => void logout()}>로그아웃</button>}
         {logoutError && <span role="alert">{logoutError}</span>}
         <button type="button" className="btn btn--soft btn--sm" aria-pressed={large} onClick={() => setLarge((v) => !v)}>

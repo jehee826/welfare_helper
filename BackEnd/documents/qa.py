@@ -6,7 +6,8 @@ from dataclasses import replace
 from pydantic import ValidationError
 
 from BackEnd.documents.contracts import DocumentError
-from BackEnd.documents.contacts import fallback_contacts
+from BackEnd.documents.contacts import (fallback_contacts, contact_candidates, ContactSelectionAnswer,
+                                       CONTACT_SELECTION_SYSTEM)
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
 from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
@@ -37,7 +38,8 @@ def _document_keyword_index(repo, service, snapshot, digest):
 
 
 @diagnose_qa
-def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None):
+def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None,
+                    select_contacts=False):
     qa_stage("snapshot")
     checkpoint()
     budget = current_budget()
@@ -181,6 +183,14 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
 
     empty_evidence = not documents
     generation_system = EMPTY_EVIDENCE_SYSTEM if empty_evidence else ANSWER_SYSTEM
+    contact_options = contact_candidates(snapshot, documents) if select_contacts and not empty_evidence else []
+    if select_contacts:
+        generation_system += CONTACT_SELECTION_SYSTEM
+        for document in documents:
+            document['contact_candidates'] = [
+                {key: candidate[key] for key in ('id', 'label', 'phone', 'source_url')}
+                for candidate in contact_options if candidate['document_id'] == document['document_id']
+                and candidate['document_version'] == document['version']]
     qa_stage("generation")
     prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output, system=generation_system)
     trace["context"]["context_omitted"] |= omitted
@@ -209,7 +219,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     generation_started = time.monotonic()
     try:
         checkpoint()
-        schema = WelfareAnswer.model_json_schema()
+        schema = (ContactSelectionAnswer if select_contacts else WelfareAnswer).model_json_schema()
         if empty_evidence:
             schema['properties']['status']['enum'] = ['out_of_scope', 'no_evidence']
         raw_answer = llm.chat(generation_system, prompt, schema=schema)
@@ -239,7 +249,16 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             service._document_bm25 = None
             raise DocumentError("embedding_digest_changed")
     try:
-        answer = validate_answer(raw_answer)
+        answer = ContactSelectionAnswer.model_validate(raw_answer) if select_contacts else validate_answer(raw_answer)
+        if not answer.text.strip():
+            raise ValueError('empty_answer')
+        allowed_contacts = {candidate['id']: candidate for candidate in contact_options
+                            if any(d['document_id'] == candidate['document_id'] and d['version'] == candidate['document_version']
+                                   for d in included)}
+        if select_contacts and (len(set(answer.contact_ids)) != len(answer.contact_ids)
+                                or any(identifier not in allowed_contacts for identifier in answer.contact_ids)
+                                or answer.status != 'answer' and answer.contact_ids):
+            raise ValueError('invalid_contact_selection')
         if empty_evidence and answer.status not in {'out_of_scope', 'no_evidence'}:
             raise ValueError('invalid_scope_answer')
         trace['answer_validation'] = 'accepted'
@@ -263,7 +282,14 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     trace["reason"] = status
     trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
     contacts = []
-    if status in {'answer', 'no_evidence'}:
+    if select_contacts:
+        chosen = [allowed_contacts[identifier] for identifier in answer.contact_ids] if answer and status == 'answer' else []
+        contacts = [candidate['contact'] for candidate in chosen]
+        # HTTP 필드가 아닌 서버 내부 전달값이다. 본문·질문·프로필을 저장 경로에 넘기지 않는다.
+        trace['selected_contacts'] = [{key: candidate[key] for key in (
+            'label', 'phone', 'source_url', 'document_id', 'document_version', 'contact_version')}
+            for candidate in chosen]
+    elif status in {'answer', 'no_evidence'}:
         confirmed_ids = ([document['document_id'] for document in included]
                          if status == 'answer' else list(conversation['document_ids']))
         if repo.document_scope:

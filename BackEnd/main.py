@@ -259,7 +259,7 @@ def chat(request: ChatRequest, http_request: Request, service: ChatService = Dep
     try:
         with inference_request(http_request, get_settings().ollama_timeout, request.timeout_seconds):
             service = document_chat_service(http_request, service, credentials)
-            recording = (get_settings().referral_records_enabled and credentials is None
+            recording = (getattr(get_settings(), 'referral_records_enabled', False) and credentials is None
                          and not getattr(service.repo, 'include_local_documents', False)
                          and not getattr(service.repo, 'document_scope', None))
             response, trace = answer_document(service.repo, service, request.query.strip(), **request.qa_options(),

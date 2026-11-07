@@ -118,3 +118,44 @@ test('질문 응답의 실제 ID 세 개와 색상·번호·요소명을 함께 
     assert.doesNotMatch(panelRoot.querySelector('.conversation article:nth-child(2)').textContent,/①|②|③/);
   }finally{f.close();}
 });
+
+function laidOut(f,selector){
+  const nodes=[...f.w.document.querySelectorAll(selector)];
+  nodes.forEach((node,i)=>{node.getBoundingClientRect=()=>({left:10,right:200,top:i*30,bottom:i*30+20,width:190,height:20});});
+  f.w.innerHeight=2000;f.w.document.elementFromPoint=(_x,y)=>nodes[Math.floor(y/30)];
+  return nodes;
+}
+const menuPage='<header><form role="search"><input aria-label="복지서비스 검색"><button>검색</button></form><nav aria-label="주 메뉴"><a href="/svc">복지서비스</a><a href="/report">복지신고</a></nav></header><main><h2>안내</h2><button>복지서비스 자세히 보기</button></main>';
+
+test('메뉴 이름 전체가 질문에 있으면 앞 글자만 같은 검색창보다 먼저 보내고 위치 문맥을 붙인다',()=>{
+  const f=fixture(menuPage);
+  try{
+    laidOut(f,'input,button,a');
+    const menu=f.api.collect('복지서비스 메뉴 어디 있어?').payload.candidates;
+    assert.equal(menu[0].label,'복지서비스');assert.match(menu[0].context,/주 메뉴/);
+    assert.match(menu.find(c=>c.label==='복지서비스 검색').context,/검색/);
+    assert.equal(f.api.collect('복지신고 어디 있어?').payload.candidates[0].label,'복지신고');
+    assert.match(f.api.collect('검색창 어디 있어?').payload.candidates[0].context,/검색/);
+  }finally{f.close();}
+});
+
+test('이름표 없이 안내 문구만 있는 검색 입력도 입력값 없이 후보로 수집한다',()=>{
+  const f=fixture('<main><input type="search" placeholder="검색어를 입력하세요"><button>조회</button></main>');
+  try{
+    const [input]=laidOut(f,'input,button');Object.defineProperty(input,'value',{get(){throw new Error('입력값 읽기 금지');}});
+    const snapshot=f.api.collect('검색창 어디 있어?');const found=snapshot.payload.candidates.find(c=>c.label==='검색어를 입력하세요');
+    assert.ok(found);assert.equal(found.role,'Input');assert.equal(snapshot.refs.get(found.id),input);assert.equal(f.api.currentCandidate(snapshot,found),true);
+  }finally{f.close();}
+});
+
+test('위치 문맥을 붙여도 후보 60개와 전체 4000자 예산을 넘지 않는다',()=>{
+  const f=fixture('<header><nav aria-label="전체 메뉴"></nav></header><main></main>');
+  try{
+    const nav=f.w.document.querySelector('nav');
+    for(let i=0;i<70;i++){const a=f.w.document.createElement('a');a.href='/m'+i;a.textContent='공개메뉴'+String.fromCharCode(65+i%26).repeat(60);nav.append(a);}
+    laidOut(f,'a');const {payload}=f.api.collect('공개메뉴 어디 있어?');
+    assert.ok(payload.candidates.length<=60);assert.equal(payload.partial,true);
+    assert.ok(payload.candidates.reduce((n,c)=>n+c.label.length+c.context.length,0)+payload.screen_context.reduce((n,c)=>n+c.text.length,0)<=4000);
+    assert.ok(payload.candidates.every(c=>c.context.length<=100));
+  }finally{f.close();}
+});

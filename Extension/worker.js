@@ -64,6 +64,32 @@ async function profileAction(message){
   invalidProfile=null;
   return {ok:true,state};
 }
+const uiKey='gyeote.uiPreferences';
+let uiChanges=Promise.resolve();
+function changeUi(action){const pending=uiChanges.then(()=>profileReady).then(action);uiChanges=pending.catch(()=>{});return pending;}
+async function storedUi(){
+  const raw=(await chrome.storage.local.get(uiKey))[uiKey];
+  if(raw===undefined)return {state:{schemaVersion:1,revision:0,...GyeoteProtocol.uiDefaults}};
+  try{return {state:GyeoteProtocol.uiPreferenceRecord(raw)};}
+  catch{
+    const revision=Number.isSafeInteger(raw?.revision)&&raw.revision>=0&&raw.revision<Number.MAX_SAFE_INTEGER?raw.revision:0;
+    return {invalid:true,state:{schemaVersion:1,revision,...GyeoteProtocol.uiDefaults}};
+  }
+}
+async function uiAction(message){
+  const allowed={'gyeote:ui-preferences-get':'type','gyeote:ui-preferences-set':'expectedRevision,preferences,type','gyeote:ui-preferences-reset':'expectedRevision,type'};
+  if(Object.keys(message).sort().join(',')!==allowed[message.type])throw new Error('invalid_ui_preferences');
+  const current=await storedUi();
+  if(message.type==='gyeote:ui-preferences-get')return {ok:true,state:current.state,...(current.invalid?{invalid:true}:{})};
+  if(!Number.isSafeInteger(message.expectedRevision)||message.expectedRevision<0)throw new Error('invalid_ui_preferences');
+  if(message.type==='gyeote:ui-preferences-set'&&current.invalid)throw new Error('ui_preferences_invalid');
+  if(message.expectedRevision!==current.state.revision)throw new Error('ui_preferences_conflict');
+  if(current.state.revision===Number.MAX_SAFE_INTEGER)throw new Error('ui_preferences_revision_limit');
+  const values=message.type==='gyeote:ui-preferences-set'?GyeoteProtocol.uiPreferences(message.preferences):GyeoteProtocol.uiDefaults;
+  const state={schemaVersion:1,revision:current.state.revision+1,...values};
+  await chrome.storage.local.set({[uiKey]:state});
+  return {ok:true,state};
+}
 function changeAuth(action){const pending=authChanges.then(action);authChanges=pending.catch(()=>{});return pending;}
 function authSummary(auth){return {mode:auth.mode,status:auth.mode==='admin'?(auth.session?'ready':'expired'):'anonymous',accessId:auth.accessId,origin:auth.origin};}
 async function readAuth(){
@@ -106,6 +132,14 @@ chrome.storage.onChanged?.addListener((changes,area)=>{
       // 프로필 값은 통지에 싣지 않는다. 수신기는 worker에서 최신 revision을 다시 확인한다.
       const tabs=await chrome.tabs.query({});
       await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,{type:'gyeote:profile-changed',revision},{frameId:0})));
+    })().catch(()=>{});
+    return;
+  }
+  if(area==='local'&&uiKey in changes){
+    const value=changes[uiKey].newValue,revision=Number.isSafeInteger(value?.revision)&&value.revision>=0?value.revision:null;
+    (async()=>{
+      const tabs=await chrome.tabs.query({});
+      await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,{type:'gyeote:ui-preferences-changed',revision},{frameId:0})));
     })().catch(()=>{});
     return;
   }
@@ -173,6 +207,11 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(['gyeote:profile-get','gyeote:profile-save','gyeote:profile-clear','gyeote:profile-reset'].includes(message?.type)){
     if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
     changeLocal(()=>profileAction(message)).then(sendResponse).catch(error=>sendResponse({ok:false,error:['invalid_profile','profile_conflict','profile_data_invalid','profile_revision_limit'].includes(error.message)?error.message:'profile_storage_failed'}));
+    return true;
+  }
+  if(['gyeote:ui-preferences-get','gyeote:ui-preferences-set','gyeote:ui-preferences-reset'].includes(message?.type)){
+    if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
+    changeUi(()=>uiAction(message)).then(sendResponse).catch(error=>sendResponse({ok:false,error:['invalid_ui_preferences','ui_preferences_conflict','ui_preferences_invalid','ui_preferences_revision_limit'].includes(error.message)?error.message:'ui_preferences_storage_failed'}));
     return true;
   }
   if(message?.type==='gyeote:document-auth'&&internal){if(Object.keys(message).join(',')!=='type')return;documentAuth().then(sendResponse).catch(()=>sendResponse(null));return true;}

@@ -91,3 +91,4 @@ jobs:
           Extension/tests/visibility_document.test.cjs
           Extension/tests/conversations_worker.test.cjs
           Extension/tests/context_expiry.test.cjs
+          Extension/tests/consultation_summary.test.cjs

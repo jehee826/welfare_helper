@@ -22,6 +22,7 @@
       const operation=message.type.slice('gyeote:conversations-'.length);
       const fields={get:[],clear:['expectedRevision','generation'],reset:['resetToken'],begin:['expectedRevision','generation','conversationId','pairId','profileRevision'],append:['expectedRevision','generation','conversationId','pairId','question','answer','profileRevision']};
       fields.resume=fields.begin;
+      fields.summary=['expectedRevision','generation','conversationId'];
       if(!Object.hasOwn(fields,operation)||Object.keys(message).sort().join(',')!==['type','accessId',...fields[operation]].sort().join(','))throw new Error('conversation_invalid_request');
       if(auth.mode!=='anonymous'||message.accessId!==auth.accessId)throw new Error('conversation_access_changed');
       const current=await read();
@@ -65,6 +66,12 @@
         }
       }
       if(state.revision!==message.expectedRevision||state.generation!==message.generation)throw new Error('conversation_conflict');
+      if(operation==='summary'){
+        if(state.lastActiveConversationId!==message.conversationId)throw new Error('conversation_conflict');
+        const conversation=state.conversations[0],last=Date.parse(conversation?.contextBoundary.lastUserSubmittedAt),timestamp=now();
+        const active=Number.isFinite(last)&&last<=timestamp&&timestamp-last<GyeoteConversations.limits.contextAge;
+        return {ok:true,state,input:active?GyeoteConversations.summaryInput(conversation):{messages:[],partial:false}};
+      }
       if(operation==='resume'){
         const conversation=state.conversations[0];
         if(state.lastActiveConversationId!==message.conversationId||!conversation||conversation.contextBoundary.startedAt!==requestBoundary)throw new Error('conversation_context_conflict');

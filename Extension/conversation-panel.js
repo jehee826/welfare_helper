@@ -137,6 +137,12 @@
       if(ownedPair)void chrome.runtime.sendMessage({type:'gyeote:conversation-cancel',pairId:ownedPair}).catch(()=>{});
       ownedPair=null;
     }
+    async function summaryRequest(){
+      const value=context();
+      const response=await send('summary',{expectedRevision:value.expectedRevision,generation:value.generation,conversationId:value.conversationId});
+      if(!matches(value)||pending)throw new Error('conversation_conflict');
+      return {context:value,...response.input};
+    }
     function changed(revision,generation){
       if(!access||access.mode!=='anonymous'||disposed||state&&Number.isSafeInteger(revision)&&revision<=state.revision&&generation===state.generation)return;
       if(changing){notification={revision,generation};return;}
@@ -151,7 +157,7 @@
       version++;cancelRequest();access=value;state=null;pending=null;resetToken=null;changing=false;unsaved.hidden=true;warning.textContent='';notification=null;readOnly=false;
       if(value?.mode==='anonymous'&&visible)await load();else show();
     }
-    return {context,begin,save,changed,setAccess,cancelRequest,get state(){return state;},get ready(){return !!state&&!changing&&!resetToken&&!readOnly;},get hasUnsaved(){return !!pending;},history:revision=>GyeoteConversations.history(current(),revision),dispose(){disposed=true;version++;cancelRequest();},resume(){disposed=false;void load();}};
+    return {context,begin,save,changed,setAccess,cancelRequest,summaryRequest,get state(){return state;},get ready(){return !!state&&!changing&&!resetToken&&!readOnly;},get hasUnsaved(){return !!pending;},history:revision=>GyeoteConversations.history(current(),revision),dispose(){disposed=true;version++;cancelRequest();},resume(){disposed=false;void load();}};
   }
   globalThis.GyeoteConversationPanel=Object.freeze({create});
 })();

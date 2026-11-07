@@ -183,8 +183,9 @@ def test_body_replay_has_one_consumer_and_cleans_watcher():
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("path", [PATHS[0], "/api/v1/conversation/summary"])
 @pytest.mark.parametrize("case,status", [("limit", 413), ("body_timeout", 504)])
-def test_body_limits_reject_before_application_without_env(case, status):
+def test_body_limits_reject_before_application_without_env(case, status, path):
     async def run():
         app = Mock()
         messages = []
@@ -194,7 +195,7 @@ def test_body_limits_reject_before_application_without_env(case, status):
             await asyncio.sleep(1)
         async def send(message):
             messages.append(message)
-        await execution.InferenceBodyLimit(app, timeout_seconds=lambda: .01)({"type": "http", "method": "POST", "path": PATHS[0]}, receive, send)
+        await execution.InferenceBodyLimit(app, timeout_seconds=lambda: .01)({"type": "http", "method": "POST", "path": path}, receive, send)
         assert messages[0]["status"] == status
         app.assert_not_called()
     asyncio.run(run())

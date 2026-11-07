@@ -142,15 +142,27 @@
     return [{id:pairId+':user',pairId,role:'user',content:user,createdAt,profileRevision,redacted:user!==question},
       {id:pairId+':assistant',pairId,role:'assistant',content:assistant,createdAt,profileRevision,redacted:assistant!==answer.text||refs.redacted,kind:reply.kind,evidence:refs.values,evidenceTruncated:refs.truncated,...(reply.contacts!==undefined?{contacts:reply.contacts}:{}),...(reply.context_update?{contextUpdate:reply.context_update}:{}),...(reply.context_update?.resetTopic===true?{topicStart:true}:{}),...(reply.context_usage?{contextUsage:reply.context_usage}:{})}];
   }
-  function requestContext(conversation,profileRevision){
+  function contextMessages(conversation){
     // 화면 기록은 보존하고 마지막 새 주제의 질문부터 자동 맥락을 구성한다.
     const full=conversation?.messages||[],boundary=conversation?.contextBoundary;let topicStart=0;
     if(boundary?.startAfterPairId){const index=full.findIndex(m=>m.pairId===boundary.startAfterPairId&&m.role==='assistant');if(index>=0)topicStart=index+1;}
     for(let i=topicStart+1;i<full.length;i+=2)if(full[i].topicStart===true)topicStart=i-1;
-    const all=full.slice(topicStart);let start=all.length;
+    return full.slice(topicStart);
+  }
+  function summaryInput(conversation){
+    const all=contextMessages(conversation),messages=[];let size=0;
+    for(let index=all.length-2;index>=0;index-=2){
+      const pair=all.slice(index,index+2),cost=pair.reduce((sum,message)=>sum+message.content.length,0);
+      if(size+cost>12000)break;
+      messages.unshift(...pair.map(({id,role,content})=>({id,role,content})));size+=cost;
+    }
+    return {messages,partial:all.length>=limits.messages||messages.length<all.length};
+  }
+  function requestContext(conversation,profileRevision){
+    const all=contextMessages(conversation);let start=all.length;
     while(start>=2&&all[start-1].profileRevision===profileRevision&&all[start-2].profileRevision===profileRevision)start-=2;
     const messages=all.slice(start),stored=conversation?.summary;
-    const summary=stored?.profileRevision===profileRevision&&(!topicStart||messages.some(m=>m.id===stored.coveredThroughMessageId))?stored:null;
+    const summary=stored?.profileRevision===profileRevision&&messages.some(m=>m.id===stored.coveredThroughMessageId)?stored:null;
     const through=summary?messages.findIndex(m=>m.id===summary.coveredThroughMessageId):-1;
     if(summary&&through<0)fail();
     const pending=messages.slice(through+1),batch=[];let batchSize=0;
@@ -210,6 +222,6 @@
     }else if(checked.text!==submitted.text||checked.coveredThroughMessageId!==submitted.coveredThroughMessageId)throw new Error('conversation_context_conflict');
   }
   const history=(conversation,profileRevision)=>requestContext(conversation,profileRevision).history;
-  const api=Object.freeze({limits,empty,record,migrate,retain,retainedPair,pair,history,requestContext,applyUpdate,bytes,sourceUrl});
+  const api=Object.freeze({limits,empty,record,migrate,retain,retainedPair,pair,history,requestContext,summaryInput,applyUpdate,bytes,sourceUrl});
   globalThis.GyeoteConversations=api;if(typeof module!=='undefined')module.exports=api;
 })();

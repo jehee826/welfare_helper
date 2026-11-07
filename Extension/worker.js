@@ -169,6 +169,18 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   const internal=sender.url===chrome.runtime.getURL('offscreen.html');
   const options=sender.url===chrome.runtime.getURL('options.html');
   const content=sender.frameId===0&&official(sender.url)&&official(sender.tab?.url);
+  if(message?.type==='gyeote:summary-capability'){
+    if(!content||sender.url!==sender.tab.url||Object.keys(message).join(',')!=='type')return;
+    (async()=>{
+      if((await documentAuth()).mode!=='anonymous')return {ok:true,available:false};
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
+      try{
+        const response=await fetch(GyeoteProtocol.documentOrigin()+'/api/v1/conversation/summary',{signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
+        const body=response.ok?await response.json():null;
+        return {ok:true,available:body?.available===true&&body?.version===1};
+      }finally{clearTimeout(timer);}
+    })().then(sendResponse).catch(()=>sendResponse({ok:true,available:false}));return true;
+  }
   if(message?.type==='gyeote:document-manager'){
     if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
     if(Object.keys(message).join(',')!=='type'){sendResponse({ok:false,error:'invalid_manager_request'});return;}
@@ -239,11 +251,13 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message?.type==='gyeote:document-access'){documentAuth().then(auth=>sendResponse(authSummary(auth))).catch(()=>sendResponse({mode:'admin',status:'expired'}));return true;}
   if(message?.type==='gyeote:options'){chrome.runtime.openOptionsPage();sendResponse({ok:true});return;}
   if(message?.type==='gyeote:prepare'){
-    if(Object.keys(message).some(key=>!['type','mode'].includes(key))||message.mode!==undefined&&!['screen','document'].includes(message.mode)){sendResponse({ok:false,error:'connection_failed'});return;}
+    if(Object.keys(message).some(key=>!['type','mode'].includes(key))||message.mode!==undefined&&!['screen','document','summary'].includes(message.mode)){sendResponse({ok:false,error:'connection_failed'});return;}
     (async()=>{
       GyeoteProtocol.documentOrigin();
-      const timeoutSeconds=message.mode==='document'?GyeoteProtocol.documentTimeoutSeconds():GyeoteProtocol.screenTimeoutSeconds();
-      const access=message.mode==='document'?authSummary(await documentAuth()):undefined;
+      const documentMode=['document','summary'].includes(message.mode);
+      const timeoutSeconds=documentMode?GyeoteProtocol.documentTimeoutSeconds():GyeoteProtocol.screenTimeoutSeconds();
+      const access=documentMode?authSummary(await documentAuth()):undefined;
+      if(message.mode==='summary'&&access?.mode!=='anonymous'){sendResponse({ok:false,error:'summary_public_only'});return;}
       if(access?.status==='expired'){sendResponse({ok:false,error:'document_auth_required'});return;}
       await prepare();sendResponse({ok:true,timeoutSeconds,...(access?{documentAccess:access}:{})});
     })().catch(error=>sendResponse({ok:false,error:error.message==='connection_configuration_invalid'?error.message:'connection_failed'}));return true;

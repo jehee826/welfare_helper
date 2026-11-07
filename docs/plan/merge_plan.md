@@ -1,6 +1,6 @@
 # 병합 후 결함 수정·기능 완결·배포 검증 계획
 
-작성: 2026-11-08. 최신 업데이트: 2026-11-08 01:04 KST
+작성: 2026-11-08. 최신 업데이트: 2026-11-08 01:18 KST
 
 ## 1. 목표와 기준
 
@@ -162,10 +162,18 @@ EC2 기동은 사용자가 한다. 기동 확인 뒤 필요한 시험 시점에 
 
 ## 6. 실행 기록
 
+### 2026-11-08 01:18 · W10 공개 상담 요약 API·확장 연결
+
+- 기준 `5618f99`. 신규 `BackEnd/conversation_summary.py`에 공개 `GET/POST /api/v1/conversation/summary`를 구현했다. 완전쌍 60메시지/12000자·request_id·개인정보를 검증하고 기존 모델 최대 1회·검색/임베딩 0회로 요약한다. 출력 text 1200자와 서버가 실제 포함한 메시지 ID만 반환한다. 공통 rate/gate·본문 수신 기한·취소·no-store를 연결했다. 입력 예산이 부족하면 최근 완전쌍만 포함하고 partial을 표시하며 단일 쌍도 못 담으면 생성하지 않는다.
+- 확장은 지원 capability를 확인한 공개 상담에만 버튼을 노출한다. worker 시계로 현재 주제/7일 경계의 문답을 선택하고, 요약 중 질문 전송·중복 클릭을 막되 초안을 보존한다. 취소·준비 지연·모드/프로필/삭제/pagehide·revision 변경의 늦은 결과를 폐기한다. 결과는 별도 닫기 영역의 메모리에만 남으며 상담·RAG 입력·DB에 넣지 않는다. 이전 서버·관리자·화면 안내는 지원 대상에서 제외했다.
+- 신규 서버 검사 22개·확장 검사 13개와 기존 실행 경계 검사를 CI 등록했다. 현재 소스의 실제 Python CI **563 passed, 13 skipped**, 확장 **22파일 382/382 통과**. skip은 기존 전용 임시 연락처 DB 미설정이며 새 skip은 없다. ASGI disconnect 뒤 native 호출이 끝날 때까지 gate 유지, 준비 10초 뒤 지연 응답의 포트 0회, 입력/출력·F5·부분 요약을 확인했다. `git diff --check` 통과.
+- 변경: 신규 summary API/검사, main·실행 경로·관련 검사, 확장 content/protocol/offscreen/worker/상담 정책·panel/store/신규 검사·README, CI 목록·안내. 첫 신규 fixture의 원문 속성 순서 정제에 따른 revision 기대는 초기 read 이후 기준으로 정정했다. W08 보완 기록의 결합 검사 수 오기 22→실제 48도 정정했다.
+- 실제 EC2 요약 1건·Chrome 버튼/기기 조작은 미검증이며 후반 검증 대상이다. DB/운영·설치 확장 재로드는 수행하지 않았다. 다음: W13 저장 정보 기본 OFF·최종 생성 전용 제공·OFF 새 자동 맥락·공식 원문 조건 비교.
+
 ### 2026-11-08 01:06 · W08 offscreen 통지 경계 보완
 
 - `4bcbef7` 후 전송 경로 읽기 검토에서 panel과 달리 offscreen이 옛 revision 통지도 취소로 처리함을 확인했다. `Extension/offscreen.js`도 같은 generation의 이전/동일 revision은 무시하고 새 revision·generation 변경·유효하지 않은 통지만 취소하도록 정정했다.
-- 실제 offscreen fetch 대역 회귀를 `context_expiry.test.cjs`에 추가했다. 신규 15개+원격 연결 검사 결합 **22/22 통과**, skip 없음. 이 보완은 실제 Chrome 결과를 대신하지 않는다. 다음 W10을 계속한다.
+- 실제 offscreen fetch 대역 회귀를 `context_expiry.test.cjs`에 추가했다. 신규 15개+원격 연결 검사 결합 **48/48 통과**, skip 없음. 이 보완은 실제 Chrome 결과를 대신하지 않는다. 다음 W10을 계속한다.
 
 ### 2026-11-08 01:04 · W08 7일 자동 맥락 경계
 

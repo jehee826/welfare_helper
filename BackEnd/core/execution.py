@@ -73,7 +73,7 @@ def inference_request(transport, server_timeout: float, timeout_seconds: int | N
 
 
 def inference_path(path: str) -> bool:
-    return path in {"/api/v1/chat", "/debug/rag", "/api/v1/desktop/guide", "/api/v1/screen/guide"} or (
+    return path in {"/api/v1/chat", "/debug/rag", "/api/v1/conversation/summary", "/api/v1/desktop/guide", "/api/v1/screen/guide"} or (
         path.startswith("/api/v1/admin/documents/") and path.endswith(("/query", "/search")))
 
 

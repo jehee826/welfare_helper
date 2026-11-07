@@ -38,6 +38,7 @@ from BackEnd.documents.context import ConversationContext
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.admin.programs import router as program_router
 from BackEnd.readiness import check_ready, ReadinessError
+from BackEnd.conversation_summary import router as conversation_summary_router
 
 logger = logging.getLogger("welfare_helper")
 
@@ -52,6 +53,7 @@ app.include_router(program_router)
 app.include_router(admin_session_router)
 app.include_router(admin_credentials_router)
 app.include_router(admin_referrals_router)
+app.include_router(conversation_summary_router)
 app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_origins,
                    allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                    allow_headers=["Content-Type", "Authorization"])
@@ -61,7 +63,7 @@ app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_ori
 async def validation_error(request: Request, exc: RequestValidationError):
     if request.url.path in {"/api/v1/desktop/guide", "/api/v1/screen/guide"}:
         return JSONResponse(status_code=422, content={"detail": "invalid_screen_request" if request.url.path == "/api/v1/screen/guide" else "invalid_desktop_request"})
-    if request.url.path in {"/api/v1/chat", "/debug/rag"} or (
+    if request.url.path in {"/api/v1/chat", "/debug/rag", "/api/v1/conversation/summary"} or (
         request.url.path.startswith("/api/v1/admin/documents/")
         and request.url.path.endswith(("/query", "/search"))
     ):
@@ -294,7 +296,7 @@ def admin_session(actor=Depends(require_document_admin)):
 @app.middleware("http")
 async def private_responses(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith(("/api/v1/admin", "/api/v1/desktop", "/api/v1/screen")) or request.url.path in {"/api/v1/chat", "/debug/rag"}:
+    if request.url.path.startswith(("/api/v1/admin", "/api/v1/desktop", "/api/v1/screen")) or request.url.path in {"/api/v1/chat", "/debug/rag", "/api/v1/conversation/summary"}:
         response.headers["Cache-Control"] = "no-store"
     return response
 

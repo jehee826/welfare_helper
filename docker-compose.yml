@@ -49,6 +49,7 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_LLM: ${OLLAMA_LLM-qwen2.5:1.5b-instruct}
       OLLAMA_EMBED: ${OLLAMA_EMBED-bge-m3}
+      EMBED_CPU_ONLY: ${EMBED_CPU_ONLY:-true}
       RERANK_CACHE_DIR: /app/.reranker_cache
     ports:
       - "${BACKEND_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
@@ -116,6 +117,7 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_LLM: ${OLLAMA_LLM-qwen2.5:1.5b-instruct}
       OLLAMA_EMBED: ${OLLAMA_EMBED-bge-m3}
+      EMBED_CPU_ONLY: ${EMBED_CPU_ONLY:-true}
       RERANK_CACHE_DIR: /app/.reranker_cache
       DOCLING_CACHE_DIR: /app/.docling_cache
       REFERRAL_RECORDS_ENABLED: ${REFERRAL_RECORDS_ENABLED:-false}

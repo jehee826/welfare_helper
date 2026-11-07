@@ -95,6 +95,7 @@ def test_worker_runs_analysis_to_embedding_without_review(monkeypatch, tmp_path,
                             begin_embedding=lambda *_: calls.append('embedding'), reused_vectors=lambda *_: {},
                             save_vectors=lambda *_: calls.append('vectors'), activate=lambda *_: calls.append('published'))
     settings = SimpleNamespace(ollama_embed='embed', ollama_llm='llm', ollama_base_url='http://unused', ollama_timeout=1,
+                               embed_cpu_only=True,
                                rerank_model='tokenizer', rerank_revision='revision', rerank_cache_dir='unused',
                                documents_max_file_mb=20, documents_max_characters=500000, documents_max_chunks=2000)
     monkeypatch.setattr(worker, 'get_document_store', lambda: store)
@@ -104,8 +105,13 @@ def test_worker_runs_analysis_to_embedding_without_review(monkeypatch, tmp_path,
         calls.append('analysis')
         return analysis
     monkeypatch.setattr(worker, 'analyze_file', analyze)
-    monkeypatch.setattr(ollama, 'OllamaClient', lambda *_a, **_k: SimpleNamespace(model_digest=lambda: 'digest', embed=lambda texts: [[0.0] * 1024 for _ in texts]))
+    clients = []
+    def client(*_args, **kwargs):
+        clients.append(kwargs)
+        return SimpleNamespace(model_digest=lambda: 'digest', embed=lambda texts: [[0.0] * 1024 for _ in texts])
+    monkeypatch.setattr(ollama, 'OllamaClient', client)
     monkeypatch.setattr(reranker, 'LocalReranker', lambda *_: SimpleNamespace(count_tokens=len))
     worker.process_job(str(uuid4()), 'lease', tmp_path)
+    assert clients[0]['embed_cpu_only'] is True
     assert calls == ([] if already_analyzed else ['analysis', 'analysis_saved']) + ['embedding', 'vectors', 'published']
     assert job['reviewed_by'] is None and job['reviewed_at'] is None

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ollama_embed: str = "bge-m3"
     ollama_timeout: float = Field(default=120.0, gt=0, allow_inf_nan=False)
     embed_dim: int = Field(default=1024, ge=1024, le=1024)
+    embed_cpu_only: bool = False
     llm_num_ctx: int = Field(default=8192, ge=512)
     llm_temperature: float = Field(default=0.0, ge=0, le=2)
     llm_num_predict: int = Field(default=512, ge=1)

@@ -114,7 +114,8 @@ def process_job(job_id, token, temp_dir):
     from BackEnd.rag.reranker import LocalReranker
 
     llm = OllamaClient(settings.ollama_base_url, settings.ollama_embed, settings.ollama_llm,
-                       settings.ollama_timeout, embed_dim=1024)
+                       settings.ollama_timeout, embed_dim=1024,
+                       embed_cpu_only=getattr(settings, "embed_cpu_only", False))
     digest = llm.model_digest()
     store.begin_embedding(job_id, token, settings.ollama_embed, digest)
     tokenizer = LocalReranker(settings.rerank_model, settings.rerank_revision, settings.rerank_cache_dir)

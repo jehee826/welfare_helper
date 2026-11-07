@@ -49,7 +49,7 @@ def main():
 
     import pytest
     files = [
-        "test_api.py", "test_settings.py", "test_deployment_runtime.py", "test_chat_rate_limit.py", "test_request_execution.py",
+        "test_api.py", "test_settings.py", "test_deployment_runtime.py", "test_ollama.py", "test_chat_rate_limit.py", "test_request_execution.py",
         "test_documents.py", "test_document_automatic_pipeline.py", "test_document_replacement_boundaries.py",
         "test_document_privacy.py", "test_chat_http_recovery.py", "test_desktop_timeout.py",
         "test_remote_screen.py", "test_remote_screen_tcp.py", "test_qa_diagnostics.py",

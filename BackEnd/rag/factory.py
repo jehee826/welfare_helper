@@ -7,7 +7,7 @@ def build_chat_service(repo, settings):
     llm = OllamaClient(settings.ollama_base_url, settings.ollama_embed, settings.ollama_llm,
         settings.ollama_timeout, {"temperature": settings.llm_temperature, "num_ctx": settings.llm_num_ctx,
                                 "num_predict": settings.llm_num_predict, "num_thread": settings.llm_num_thread},
-        embed_dim=settings.embed_dim)
+        embed_dim=settings.embed_dim, embed_cpu_only=getattr(settings, "embed_cpu_only", False))
     reranker = cached_reranker(settings.rerank_model, settings.rerank_revision, settings.rerank_cache_dir,
                              settings.rerank_max_length, settings.rerank_threads)
     return ChatService(repo, llm, settings.min_dense_sim, settings.retrieve_top_n,

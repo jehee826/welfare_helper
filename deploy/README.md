@@ -1,6 +1,6 @@
 # 공개 edge와 운영 경계
 
-최신 업데이트: 2026-11-08 02:42 KST
+최신 업데이트: 2026-11-08 03:30 KST
 
 `Caddyfile`의 공개 프록시는 다음 경계를 사용한다. 백엔드8000·Ollama11434를 직접 외부 공개하지 않고 edge로만 접근하게 한다. 로컬/내부 API 경로 자체를 삭제하는 설정은 아니다.
 
@@ -42,6 +42,8 @@ Ollama는 기존 실행에서 확인한 0.40.13과 같은 공식 태그로 고�
 ## 동시 추론·모델 상주 설정
 
 Compose는 기존 Ollama에 `OLLAMA_NUM_PARALLEL=3`, `OLLAMA_MAX_QUEUE=3`, `OLLAMA_MAX_LOADED_MODELS=2`, `OLLAMA_KEEP_ALIVE=-1`을 지정한다. 앱의 실행3·대기0과 Ollama 내부의 유한 대기는 별개다. 두 모델 허용은 검색용 bge-m3 때문에 Qwen3를 매번 교체하는 일을 줄이고, 음수 keep-alive는 한 번 로드한 모델의 유휴 만료를 막는다. 서버 시작이나 readiness가 모델을 자동으로 로드하지는 않는다. 승인된 운영 단계에서 기존 설치 모델만 워밍업한 뒤 실제 `/api/ps`의 동시 상주를 확인한다. [Ollama 메모리·동시 처리 설명](https://docs.ollama.com/faq), [사용 버전의 설정 구현](https://github.com/ollama/ollama/blob/v0.40.13/envconfig/config.go)을 기준으로 한다.
+
+Compose의 backend와 worker는 `EMBED_CPU_ONLY=true`를 기본으로 사용한다. 이 설정은 `/api/embed`에만 `options.num_gpu=0`을 보내 검색용 bge-m3를 CPU로 분리한다. 생성 모델의 GPU 옵션·기존 모델/다이제스트·벡터 차원은 바꾸지 않는다. Compose 밖의 설정 기본값은 기존 동작인 false이며 필요하면 환경에서 명시한다. 실제 T4에서 병렬3/ctx16384의 Qwen3 준비 후 GPU 임베딩 모델이 축출됐으므로, 두 모델 적재 허용만으로 공존을 판정하지 않는다. CPU 분리 반영 후 `/api/ps`의 두 모델·임베딩 GPU 사용0·생성 모델 유지·검색 지연을 다시 확인한다.
 
 병렬 수는 컨텍스트 메모리도 늘린다. 모델 2개 허용만으로 GPU/RAM에 모두 들어가거나 실제 3건이 동시에 생성된다고 보장하지 않는다. 기존 모델·컨텍스트/출력 예산·GPU runtime·캐시는 유지하고, 세 요청의 실행 겹침·각 최종 표시 60초 이내·품질·GPU/호스트 메모리를 실측한다. 모델 준비 시간은 별도 기록한다. 기존 worker의 2 CPU/4GB 제한과 작업별 Docling 자식 종료를 유지하고 문서 임베딩 업로드와 성능 시험을 겹치지 않는다.
 

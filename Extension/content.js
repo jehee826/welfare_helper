@@ -243,14 +243,14 @@
   }
   function speechVoice(){try{return synth.getVoices().find(voice=>voice.localService===true&&/^ko([-_]|$)/i.test(voice.lang||''))||null;}catch{return null;}}
   function speechIdle(button){button.textContent='읽기';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','이 답변 읽어주기');}
-  function stopSpeech(){speechVersion++;const prior=speaking;speaking=null;if(prior)speechIdle(prior);if(speechSupported){try{synth.cancel();}catch{}}}
+  function stopSpeech(){speechVersion++;const prior=speaking;speaking=null;if(prior){speechIdle(prior);if(speechSupported){try{synth.cancel();}catch{}}}}
   function speechChunks(text){
     const parts=[];
     for(const line of text.split(/\n+/)){
       let rest=line.trim();
       while(rest){
         if(rest.length<=180){parts.push(rest);break;}
-        let cut=Math.max(rest.lastIndexOf('. ',180),rest.lastIndexOf(', ',180),rest.lastIndexOf(' ',180));if(cut<60)cut=179;
+        let cut=[rest.lastIndexOf('. ',179),rest.lastIndexOf(', ',179),rest.lastIndexOf(' ',179)].find(index=>index>=60)??179;
         parts.push(rest.slice(0,cut+1).trim());rest=rest.slice(cut+1).trim();
       }
     }
@@ -425,8 +425,7 @@
     if(!drag||event&&event.pointerId!==drag.id)return;
     const {id,moved}=drag;drag=null;
     try{if(head.hasPointerCapture(id))head.releasePointerCapture(id);}catch{}
-    if(moved)void saveUi();
-    if(uiDeferred){uiDeferred=false;void refreshUi();}
+    settleUi(moved);
   }
   head.addEventListener('pointerdown',event=>{
     if(drag||event.button!==0||event.isPrimary===false||event.target.closest('button'))return;
@@ -448,7 +447,7 @@
     preferred=state.dock==='free'?{left:state.left,top:state.top}:null;showUi();clampPanel();schedule();
   }
   async function refreshUi(){
-    if(drag||resizing){uiDeferred=true;return;}
+    if(drag||resizing||keyTimer){uiDeferred=true;return;}
     try{const result=await chrome.runtime.sendMessage({type:'gyeote:ui-preferences-get'});if(result?.ok){uiInvalid=!!result.invalid;applyUi(result.state);}}catch{}
   }
   function currentPreferences(){
@@ -468,6 +467,10 @@
     });
     uiQueue=pending.catch(()=>{});return pending;
   }
+  function settleUi(changed){
+    const saved=changed?saveUi():Promise.resolve();
+    if(uiDeferred){uiDeferred=false;void saved.finally(()=>refreshUi());}
+  }
   function resizeTo(width,height){
     const before=panel.getBoundingClientRect();
     ui.width=bounded(width,limits.minWidth,limits.maxWidth);ui.height=bounded(height,limits.minHeight,limits.maxHeight);showUi();
@@ -478,8 +481,7 @@
     if(!resizing||event&&event.pointerId!==resizing.id)return;
     const {id,moved}=resizing;resizing=null;
     try{if(resizeHandle.hasPointerCapture(id))resizeHandle.releasePointerCapture(id);}catch{}
-    if(moved)void saveUi();
-    if(uiDeferred){uiDeferred=false;void refreshUi();}
+    settleUi(moved);
   }
   resizeHandle.addEventListener('pointerdown',event=>{
     if(resizing||event.button!==0||event.isPrimary===false)return;
@@ -491,7 +493,7 @@
   resizeHandle.addEventListener('keydown',event=>{
     const change={ArrowLeft:[limits.step,0],ArrowRight:[-limits.step,0],ArrowUp:[0,limits.step],ArrowDown:[0,-limits.step]}[event.key];
     if(!change)return;event.preventDefault();resizeTo(ui.width+change[0],ui.height+change[1]);
-    clearTimeout(keyTimer);keyTimer=setTimeout(()=>void saveUi(),400);
+    clearTimeout(keyTimer);keyTimer=setTimeout(()=>{keyTimer=null;settleUi(true);},400);
   });
   opacitySelect.addEventListener('change',()=>{const value=Number(opacitySelect.value);if(!limits.opacities.includes(value))return;ui.backgroundOpacity=value;showUi();void saveUi();});
   $('.ui-reset').addEventListener('click',()=>{if(!uiState)return;void saveUi(true);});

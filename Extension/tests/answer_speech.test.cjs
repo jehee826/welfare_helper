@@ -64,7 +64,7 @@ test('같은 버튼을 다시 누르면 정지하고 다른 답변을 누르면 
   try{
     await f.ready();await f.question('첫 질문');await f.answer({...answer,text:'첫 답변'});await f.question('둘째 질문');await f.answer({...answer,text:'둘째 답변'});
     const [first,second]=speakButtons(f);
-    first.click();await settle();first.click();await settle();assert.equal(first.textContent,'읽기');assert.ok(h.cancels>=2);
+    first.click();await settle();first.click();await settle();assert.equal(first.textContent,'읽기');assert.equal(h.cancels,1);
     const before=h.spoken.length;first.click();await settle();second.click();await settle();
     assert.equal(first.textContent,'읽기');assert.equal(second.textContent,'정지');assert.equal(h.spoken.at(-1).text,'둘째 답변');assert.ok(h.spoken.length>before);
   }finally{f.close();}
@@ -116,5 +116,25 @@ test('화면 안내 답변도 표시된 안내문만 읽고 자동 재생하지 
     await f.answer({reply:{snapshot_id:payload.snapshot_id,kind:'안내',answer:'공개 메뉴를 확인하세요.',targets:[{target_id:payload.candidates[0].id,meaning:'공개 메뉴'}]}});
     assert.equal(h.spoken.length,0);const button=speakButtons(f).at(-1);button.click();await settle();
     const text=h.spoken.map(item=>item.text).join(' ');assert.match(text,/공개 메뉴를 확인하세요/);assert.doesNotMatch(text,/snapshot|target_id|https?:/);
+  }finally{f.close();}
+});
+
+test('읽고 있지 않을 때 질문·취소는 페이지의 음성합성을 끊지 않는다',async()=>{
+  const h=speechHarness(),f=fixture(h);
+  try{
+    await f.ready();await f.question('첫 질문');await f.answer(answer);await f.question('둘째 질문');f.root.querySelector('.clear')?.click();await settle();
+    assert.equal(h.cancels,0);
+  }finally{f.close();}
+});
+
+test('나눈 조각은 구분점이 180번째 글자여도 180자를 넘지 않고 문장 끝을 먼저 고른다',async()=>{
+  const h=speechHarness(),f=fixture(h);
+  const edge='가'.repeat(100)+' '+'나'.repeat(79)+'. '+'다'.repeat(50),sentence='라'.repeat(99)+'. '+'마마 '.repeat(40).trim();
+  try{
+    await f.ready();await f.question('합성 질문');await f.answer({...answer,text:edge+'\n'+sentence});speakButtons(f)[0].click();await settle();
+    const parts=h.spoken.map(item=>item.text);
+    assert.ok(parts.every(part=>part.length<=180),JSON.stringify(parts.map(part=>part.length)));
+    assert.equal(parts.join(' ').replace(/\s+/g,' '),(edge+' '+sentence).replace(/\s+/g,' '));
+    assert.ok(parts.includes('라'.repeat(99)+'.'));
   }finally{f.close();}
 });

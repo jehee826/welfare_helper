@@ -167,3 +167,17 @@ test('패널을 옮기면 놓을 때 위치를 저장하고 제목줄 두 번 �
     assert.deepEqual(f.server.data[uiKey],stored(2));
   }finally{f.close();}
 });
+
+test('조절 중 도착한 변경 통지는 방향키 조절을 되돌리지 않고 저장이 끝난 뒤에 다시 읽는다',async()=>{
+  const f=panelFixture();
+  try{
+    await f.ready();const key=name=>f.handle.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:name,bubbles:true,cancelable:true}));
+    key('ArrowLeft');f.notify({type:'gyeote:ui-preferences-changed',revision:5});await settle();
+    assert.equal(size(f.panel)[0],'420px');
+    await wait(450);await settle();
+    assert.deepEqual(f.server.data[uiKey],stored(1,{width:420}));assert.equal(size(f.panel)[0],'420px');
+    f.server.clients.clear();f.pointer('pointerdown',100,100);f.pointer('pointermove',60,100);f.notify({type:'gyeote:ui-preferences-changed',revision:9});await settle();
+    f.pointer('pointerup',60,100);await settle();
+    assert.deepEqual(f.server.data[uiKey],stored(2,{width:460}));assert.equal(size(f.panel)[0],'460px');
+  }finally{f.close();}
+});

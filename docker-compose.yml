@@ -27,6 +27,7 @@ services:
     environment:
       DATABASE_MODE: supabase
       INGEST_ON_STARTUP: "false"
+      ADMIN_CREDENTIALS_FILE: ${ADMIN_CREDENTIALS_FILE:-}
       DESKTOP_GUIDANCE_ENABLED: ${DESKTOP_GUIDANCE_ENABLED:-false}
       REMOTE_DOM_GUIDANCE_ENABLED: ${REMOTE_DOM_GUIDANCE_ENABLED:-false}
       DESKTOP_EXTENSION_TOKEN: ${DESKTOP_EXTENSION_TOKEN:-}
@@ -52,6 +53,7 @@ services:
       - "${BACKEND_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./.reranker_cache:/app/.reranker_cache
+      - admin_credentials:/app/.local/admin-credentials
     depends_on:
       ollama:
         condition: service_healthy
@@ -155,6 +157,7 @@ services:
     restart: "no"
 
 volumes:
+  admin_credentials:
   docling_models:
   caddy_data:
   caddy_config:

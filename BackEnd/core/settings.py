@@ -58,6 +58,7 @@ class Settings(BaseSettings):
 
     documents_enabled: bool = False
     admin_password: SecretStr | None = None
+    admin_credentials_file: str | None = None
     admin_trusted_proxy_ips: list[str] = Field(default_factory=list)
     chat_rate_limit_per_minute: int = Field(default=30, ge=1, le=600)
     documents_max_file_mb: int = Field(default=20, ge=1, le=50)
@@ -76,6 +77,13 @@ class Settings(BaseSettings):
         "https://welfare-helper-iota.vercel.app",
         "http://localhost:5173", "http://127.0.0.1:5173",
     ])
+
+    @field_validator("admin_credentials_file", mode="before")
+    @classmethod
+    def optional_credentials_file(cls, value):
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @property
     def desktop_timeout_seconds(self) -> int:

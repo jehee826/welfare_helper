@@ -29,6 +29,7 @@ from BackEnd.rag.reranker import LocalReranker, RerankerError
 from BackEnd.documents.api import DocumentBodyLimit, router as document_router
 from BackEnd.documents.auth import bearer, require_document_admin
 from BackEnd.admin.session import router as admin_session_router
+from BackEnd.admin.credentials import router as admin_credentials_router
 from BackEnd.documents.qa import answer_document
 from BackEnd.documents.context import ConversationContext
 from BackEnd.documents.contracts import DocumentError
@@ -46,6 +47,7 @@ app.add_middleware(DocumentBodyLimit)
 app.include_router(document_router)
 app.include_router(program_router)
 app.include_router(admin_session_router)
+app.include_router(admin_credentials_router)
 app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_origins,
                    allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                    allow_headers=["Content-Type", "Authorization"])

@@ -41,7 +41,7 @@ def test_saved_profile_is_absent_from_preparation_search_and_off_final_prompt():
         final = service.llm.chat.call_args_list[1].args[1]
         intent = json.loads(final.split("비근거 상담 맥락(JSON):\n")[1].split("\n\n문서 근거(JSON):")[0])
         if consent:
-            assert intent["saved_profile"] == PROFILE
+            assert intent["saved_profile"] == {**PROFILE, "income": "기준중위소득 50% 이하", "household": "혼자 살아요"}
             assert "어머니 상담입니다" in intent["user_sources"]
         else:
             assert "saved_profile" not in intent and "부산광역시" not in final
@@ -60,6 +60,22 @@ def test_invalid_or_missing_consent_never_reaches_search_or_model(change):
     with pytest.raises(ValidationError):
         answer_document(repo, service, "질문", profile_context={**CONSENT, **change})
     repo.snapshot.assert_not_called();service.llm.embed.assert_not_called()
+
+
+@pytest.mark.parametrize("code,label", [
+    ("under50", "기준중위소득 50% 이하"), ("under100", "기준중위소득 50~100%"),
+    ("under150", "기준중위소득 100~150%"), ("over150", "기준중위소득 150% 초과"),
+    ("unknown", "소득 구간 모름"),
+])
+def test_final_profile_income_keeps_percentage_unit_and_unknown_instead_of_cash_amount(code, label):
+    repo, service, _ = components()
+    service.llm.chat = Mock(wraps=service.llm.chat)
+    submitted = {**PROFILE, "income": code}
+    answer_document(repo, service, "지원 조건을 알려주세요", profile_context={**CONSENT, "profile": submitted})
+    final = service.llm.chat.call_args.args[1]
+    intent = json.loads(final.split("비근거 상담 맥락(JSON):\n")[1].split("\n\n문서 근거(JSON):")[0])
+    assert intent["saved_profile"] == {**submitted, "income": label, "household": "혼자 살아요"}
+    assert submitted["income"] == code and PROFILE["income"] == "under50"
 
 
 def test_consent_revision_and_profile_are_required():

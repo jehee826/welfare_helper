@@ -140,12 +140,14 @@ def test_summary_uses_same_rate_and_inference_gate(summary_api):
     api = summary_api
     api.settings.chat_rate_limit_per_minute = 1
     assert execution.inference_path(PATH)
-    assert execution.inference_gate.acquire(blocking=False)
+    for _ in range(3):
+        assert execution.inference_gate.acquire(blocking=False)
     try:
         response = api.client.post(PATH, json=payload())
         assert response.status_code == 429 and response.json() == {"detail": "inference_busy"}
     finally:
-        execution.inference_gate.release()
+        for _ in range(3):
+            execution.inference_gate.release()
     response = api.client.post(PATH, json=payload())
     assert response.status_code == 429 and response.json() == {"detail": "chat_rate_limited"}
     api.factory.assert_not_called()
@@ -175,6 +177,8 @@ def test_http_disconnect_keeps_gate_until_summary_native_call_exits(summary_api)
         return {"text": "중단 뒤 늦은 요약"}
     api.llm.chat.side_effect = generate
     async def run():
+        for _ in range(2):
+            assert execution.inference_gate.acquire(blocking=False)
         exchange = Exchange(api.main.app, PATH, payload())
         try:
             assert await asyncio.to_thread(entered.wait, 1)
@@ -187,6 +191,8 @@ def test_http_disconnect_keeps_gate_until_summary_native_call_exits(summary_api)
         finally:
             release.set()
             await exchange.finish()
+            for _ in range(2):
+                execution.inference_gate.release()
         assert exchange.status == 499
         assert not [task for task in asyncio.all_tasks() if task.get_name() == "inference-disconnect"]
     asyncio.run(run())

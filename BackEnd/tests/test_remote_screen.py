@@ -89,12 +89,15 @@ def test_public_chat_and_remote_share_rate_budget(api,monkeypatch):
 
 
 def test_remote_busy_uses_existing_gate(api):
-    assert execution.inference_gate.acquire(blocking=False)
+    for _ in range(3):
+        assert execution.inference_gate.acquire(blocking=False)
     try:
         result=api.client.post('/api/v1/screen/guide',json=payload())
         assert result.status_code==429 and result.json()=={'detail':'inference_busy'}
         assert result.headers['retry-after']=='1' and not api.calls
-    finally:execution.inference_gate.release()
+    finally:
+        for _ in range(3):
+            execution.inference_gate.release()
 
 
 @pytest.mark.parametrize('count',[0,1,3])

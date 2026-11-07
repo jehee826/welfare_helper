@@ -246,6 +246,9 @@
   function stopSpeech(){speechVersion++;const prior=speaking;speaking=null;if(prior){speechIdle(prior);if(speechSupported){try{synth.cancel();}catch{}}}}
   function speechText(text){
     return String(text||'').split('\n').map(line=>line
+      .replace(/\b(?:https?:\/\/|www\.)[^\s<>()\[\]{}"']+/giu,' ')
+      .replace(/\b(?:document_id|chunk_id|snapshot_id|target_id)\s*[:=]\s*[\w-]+/gi,' ')
+      .replace(/\b(?:[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}|[a-f\d]{20})\b/gi,' ')
       .replace(/[①-⑳]/g,mark=>` ${mark.charCodeAt(0)-0x245f}번 `)
       .replace(/\s*~\s*/g,'부터 ')
       .replace(/(\d)([.,:-])(?=\d)/g,'$1\u0000$2')

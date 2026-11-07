@@ -4,8 +4,8 @@ const {worker,ui,profileKey}=require('./conversation_fixture.cjs');
 function pointer(f,type,{id=1,x=0,y=0,button=0,target=f.root.querySelector('.head'),primary=true}={}){
   const event=new f.w.Event(type,{bubbles:true});Object.assign(event,{pointerId:id,clientX:x,clientY:y,button,isPrimary:primary});target.dispatchEvent(event);
 }
-function dragFixture(){
-  const f=ui(worker()),panel=f.root.querySelector('.panel'),head=f.root.querySelector('.head'),captured=new Set();
+function dragFixture(setup){
+  const f=ui(worker(),1,setup),panel=f.root.querySelector('.panel'),head=f.root.querySelector('.head'),captured=new Set();
   head.setPointerCapture=id=>captured.add(id);head.hasPointerCapture=id=>captured.has(id);head.releasePointerCapture=id=>captured.delete(id);
   panel.getBoundingClientRect=()=>{const width=Math.min(360,f.w.innerWidth-24),height=Math.min(500,f.w.innerHeight-24);return {width,height,left:parseFloat(panel.style.left)||f.w.innerWidth-width-12,top:parseFloat(panel.style.top)||f.w.innerHeight-height-12};};
   return {...f,panel,head,captured};
@@ -105,8 +105,54 @@ test('패널 크기 보정 뒤 가려진 대상의 강조와 범례를 정리한
     const panel=f.root.querySelector('.panel');panel.getBoundingClientRect=()=>({left:900,top:700,width:360,height:500});
     f.w.document.elementFromPoint=()=>f.w.document.querySelector('[data-gyeote-host]');
     resized();await f.ready();
-    assert.equal(panel.style.left,'660px');assert.equal(panel.style.top,'264px');
+    assert.equal(panel.style.left,'');assert.equal(panel.style.top,'');assert.equal(panel.style.right,'');
     assert.equal(f.root.querySelectorAll('.badge').length,0);assert.doesNotMatch(f.w.document.querySelector('main button').className,/gyeote-/);
     assert.match(f.root.querySelector('.status').textContent,/가려져/);assert.doesNotMatch(f.root.querySelector('.status').textContent,/파랑 테두리/);
+  }finally{f.close();}
+});
+
+function viewport(f,width,height){f.w.innerWidth=width;f.w.innerHeight=height;f.w.dispatchEvent(new f.w.Event('resize'));}
+function docked(panel){return ['left','top','right','bottom'].every(side=>panel.style[side]==='');}
+
+test('기본 오른쪽 배치는 열기·폭 축소·확대·접기 뒤에도 오른쪽 여백 기준을 유지한다',async()=>{
+  const f=dragFixture();try{
+    await f.ready();assert.equal(docked(f.panel),true);
+    viewport(f,1440,900);viewport(f,900,900);assert.equal(docked(f.panel),true);
+    viewport(f,1440,900);assert.equal(docked(f.panel),true);
+    viewport(f,1440,480);viewport(f,1440,900);assert.equal(docked(f.panel),true);
+    f.root.querySelector('.collapse').click();viewport(f,900,600);f.root.querySelector('.collapse').click();assert.equal(docked(f.panel),true);
+    f.root.querySelector('.close').click();viewport(f,1440,900);f.root.querySelector('.open').click();assert.equal(docked(f.panel),true);
+  }finally{f.close();}
+});
+
+test('직접 옮긴 위치는 창 축소 때만 화면 안으로 보정하고 다시 넓어지면 원래 위치로 돌아간다',async()=>{
+  const f=dragFixture();try{
+    await f.ready();viewport(f,1440,900);
+    const r=f.panel.getBoundingClientRect();pointer(f,'pointerdown',{x:r.left+10,y:r.top+10});pointer(f,'pointermove',{x:810,y:110});pointer(f,'pointerup');
+    assert.equal(f.panel.style.left,'800px');assert.equal(f.panel.style.top,'100px');assert.equal(f.panel.style.right,'auto');
+    viewport(f,900,500);assert.equal(f.panel.style.left,'536px');assert.equal(f.panel.style.top,'20px');
+    viewport(f,1440,900);assert.equal(f.panel.style.left,'800px');assert.equal(f.panel.style.top,'100px');
+    f.root.querySelector('.collapse').click();viewport(f,900,900);assert.equal(f.panel.style.left,'536px');
+    f.root.querySelector('.collapse').click();viewport(f,1440,900);assert.equal(f.panel.style.left,'800px');assert.equal(f.panel.style.top,'100px');
+  }finally{f.close();}
+});
+
+test('헤더를 두 번 누르면 직접 옮긴 패널을 기본 오른쪽 배치로 되돌리고 버튼에서는 되돌리지 않는다',async()=>{
+  const f=dragFixture();try{
+    await f.ready();viewport(f,1440,900);
+    const r=f.panel.getBoundingClientRect();pointer(f,'pointerdown',{x:r.left+10,y:r.top+10});pointer(f,'pointermove',{x:310,y:110});pointer(f,'pointerup');
+    f.root.querySelector('.collapse').dispatchEvent(new f.w.MouseEvent('dblclick',{bubbles:true}));assert.equal(f.panel.style.left,'300px');
+    f.head.dispatchEvent(new f.w.MouseEvent('dblclick',{bubbles:true}));assert.equal(docked(f.panel),true);
+    viewport(f,900,900);viewport(f,1440,900);assert.equal(docked(f.panel),true);
+  }finally{f.close();}
+});
+
+test('ResizeObserver가 반복 호출돼도 배치 좌표가 바뀌지 않는다',async()=>{
+  let resized;
+  const f=dragFixture(w=>{w.ResizeObserver=class{constructor(callback){resized=callback;}observe(){}disconnect(){}};});
+  try{
+    await f.ready();for(let i=0;i<5;i++)resized();assert.equal(docked(f.panel),true);
+    viewport(f,1440,900);const r=f.panel.getBoundingClientRect();pointer(f,'pointerdown',{x:r.left+10,y:r.top+10});pointer(f,'pointermove',{x:510,y:210});pointer(f,'pointerup');
+    for(let i=0;i<5;i++)resized();assert.equal(f.panel.style.left,'500px');assert.equal(f.panel.style.top,'200px');
   }finally{f.close();}
 });

@@ -366,12 +366,15 @@
     finally{managerButton.disabled=false;}
   });
   $('.reset').addEventListener('click',()=>{if(mode==='document'&&currentAccess?.mode==='anonymous')return;cancel();if(mode==='document')resetDocumentHistory();else{history=[];historyUrl='';}conversations[mode]=[];$('.conversation').replaceChildren();snapshot=null;});
-  let drag=null;
+  let drag=null,preferred=null;
   const head=$('.head');
   function clampPanel(left,top){
     if(panel.hidden)return;
+    if(left===undefined&&!preferred){for(const side of ['left','top','right','bottom'])panel.style[side]='';return;}
     const rect=panel.getBoundingClientRect(),width=Math.min(rect.width,innerWidth-8),height=Math.min(rect.height,innerHeight-8);
-    panel.style.left=Math.max(4,Math.min(innerWidth-width-4,left??rect.left))+'px';panel.style.top=Math.max(4,Math.min(innerHeight-height-4,top??rect.top))+'px';panel.style.right='auto';panel.style.bottom='auto';
+    const place=(value,size,limit)=>Math.max(4,Math.min(limit-size-4,value));
+    if(left!==undefined)preferred={left:place(left,width,innerWidth),top:place(top,height,innerHeight)};
+    panel.style.left=place(preferred.left,width,innerWidth)+'px';panel.style.top=place(preferred.top,height,innerHeight)+'px';panel.style.right='auto';panel.style.bottom='auto';
   }
   function finishDrag(event){
     if(!drag||event&&event.pointerId!==drag.id)return;
@@ -385,6 +388,7 @@
   });
   head.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id)return;clampPanel(event.clientX-drag.x,event.clientY-drag.y);schedule();});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])head.addEventListener(type,finishDrag);
+  head.addEventListener('dblclick',event=>{if(event.target.closest('button'))return;finishDrag();preferred=null;clampPanel();schedule();});
   const sizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>{clampPanel();schedule();}):null;
   sizeObserver?.observe(panel);
   addEventListener('scroll',schedule,{passive:true,capture:true});addEventListener('resize',()=>{finishDrag();clampPanel();schedule();});

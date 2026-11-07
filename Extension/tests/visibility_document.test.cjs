@@ -7,7 +7,7 @@ test('숨김 중 기한 콜백이 지연돼도 절대 기한 뒤 결과는 저�
   await f.ready();await f.question('합성 질문');const port=f.ports.at(-1);visibility(f,true);await settle();
   now=port.packet.deadlineAt+1;await f.answer({kind:'fallback',text:'늦은 답변',evidence:[]},port);
   assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/늦은 답변/);
-  assert.equal(server.data[key],undefined);assert.equal(port.disconnected,true);
+  assert.deepEqual(server.data[key].conversations[0].messages,[]);assert.equal(port.disconnected,true);
  }finally{f.close();}
 });
 test('문서 blur와 hidden 복귀는 같은 요청과 기한을 유지하고 fallback을 복원한다',async()=>{

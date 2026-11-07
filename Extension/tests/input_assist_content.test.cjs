@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {worker,ui,key,profileKey,profile,answer,settle}=require('./conversation_fixture.cjs');
+const {worker,ui,key,profileKey,profile,answer,settle,activeBoundary}=require('./conversation_fixture.cjs');
 require('../protocol.js');const policy=require('../conversations.js');
 function speech(){
   const instances=[];
@@ -29,7 +29,7 @@ function seed(){
   for(let i=1;i<=9;i++)messages.push(...policy.pair(pair(i),'합성 상담 질문 '+i,answer,1,date));
   const summary={text:'사용자는 합성 상담의 신청 방법을 찾고 있음',coveredThroughMessageId:pair(3)+':assistant',profileRevision:1};
   return {[profileKey]:{...profile,profile:{age:70,income:'unknown',household:'single',region:'서울특별시',disability:false}},
-    [key]:{...policy.empty(),revision:1,lastActiveConversationId:'conversation',conversations:[{id:'conversation',title:'합성 상담',createdAt:date,updatedAt:date,messages,summary}]}};
+    [key]:{...policy.empty(),revision:1,lastActiveConversationId:'conversation',conversations:[{id:'conversation',title:'합성 상담',createdAt:date,updatedAt:date,messages,summary,contextBoundary:activeBoundary()}]}};
 }
 test('추천은 초안만 만들고 profile 전송 없이 history/summary를 유지한다',async()=>{
   const server=worker(seed()),f=ui(server);try{

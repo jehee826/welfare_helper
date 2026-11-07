@@ -4,7 +4,7 @@ const plain=value=>JSON.parse(JSON.stringify(value));
 const key='gyeote.conversations',profileKey='gyeote.profile';
 const profile={schemaVersion:1,revision:1,onboardingCompleted:true,profile:null};
 const settle=async()=>{for(let i=0;i<6;i++)await new Promise(setImmediate);};
-function worker(data={[profileKey]:profile},failure={},scriptSource=source,fetcher=()=>{throw Error('실제 통신 금지');},sharedSession=null){
+function worker(data={[profileKey]:profile},failure={},scriptSource=source,fetcher=()=>{throw Error('실제 통신 금지');},sharedSession=null,clock=null){
   let listener,changed,clicked,removed;const clients=new Map(),messages=[],calls={get:[],set:[],level:[]};
   const session=sharedSession||{documentAccess:'anonymous',documentAccessId:'public-1'};
   const chrome={runtime:{id:'x',getURL:name=>'chrome-extension://x/'+name,onMessage:{addListener(fn){listener=fn;}},sendMessage:async message=>messages.push(plain(message)),getContexts:async()=>[{}]},
@@ -14,6 +14,7 @@ function worker(data={[profileKey]:profile},failure={},scriptSource=source,fetch
     }},session:{setAccessLevel:async()=>{},get:async keys=>{if(failure.beforeSessionGet)await failure.beforeSessionGet(keys);return Object.fromEntries((Array.isArray(keys)?keys:[keys]).map(name=>[name,session[name]]));},set:async value=>{if(failure.sessionSet)throw Error('session failure');if(failure.beforeSessionSet)await failure.beforeSessionSet(value);const changes={};for(const [name,item] of Object.entries(value)){changes[name]={oldValue:session[name],newValue:item};session[name]=plain(item);}changed(changes,'session');},remove:async name=>{delete session[name];}},onChanged:{addListener(fn){changed=fn;}}},
     tabs:{onRemoved:{addListener(fn){removed=fn;}},query:async()=>[...clients.keys()].map(id=>({id})),sendMessage:async(id,message)=>clients.get(id)?.(plain(message),{id:'x'},()=>{})},action:{onClicked:{addListener(fn){clicked=fn;}}}};
   const sandbox={chrome,URL,TextEncoder,TextDecoder,crypto:require('node:crypto').webcrypto,AbortController,setTimeout,clearTimeout,fetch:fetcher};
+  if(clock)sandbox.Date=class extends Date{constructor(...args){super(...(args.length?args:[clock()]));}static now(){return clock();}};
   const context=vm.createContext(sandbox);sandbox.importScripts=(...names)=>names.forEach(name=>vm.runInContext(scriptSource(name),context));vm.runInContext(scriptSource('worker.js'),context);
   const sender=id=>({id:'x',frameId:0,url:'https://www.bokjiro.go.kr/',tab:{id,url:'https://www.bokjiro.go.kr/'}});
   const send=(message,from=sender(1))=>new Promise(resolve=>{if(!listener(plain(message),from,value=>resolve(plain(value))))resolve(undefined);});
@@ -45,6 +46,13 @@ function ui(server,id=1,setup=()=>{}){
     notify:message=>listener(message,{id:'x'},()=>{}),close:()=>{w.dispatchEvent(new w.Event('pagehide'));server.clients.delete(id);w.close();}};
 }
 const expected=state=>({expectedRevision:state.revision,generation:state.generation,conversationId:state.lastActiveConversationId});
+const activeBoundary=()=>({startedAt:new Date().toISOString(),startAfterPairId:null,lastUserSubmittedAt:new Date().toISOString()});
+async function beginRequest(f,fields,id=1,sender=null){
+  const result=sender?await f.send({type:'gyeote:conversations-begin',accessId:f.session.documentAccessId,...fields},sender):await f.action('begin',fields,id);
+  // 호출자는 begin이 저장한 revision·상담 ID로 같은 요청의 append를 이어 간다.
+  if(result.ok)Object.assign(fields,expected(result.state));
+  return result;
+}
 const answer={kind:'answer',text:'합성 복지 안내',evidence:[]};
-async function append(f,state,pairId='A'.repeat(20),question='합성 질문',body=answer,id=1){const fields={...expected(state),pairId,profileRevision:1};const begun=await f.action('begin',fields,id);if(!begun.ok)return begun;return f.action('append',{...fields,question,answer:body},id);}
-module.exports={worker,ui,key,profileKey,profile,plain,source,settle,expected,answer,append};
+async function append(f,state,pairId='A'.repeat(20),question='합성 질문',body=answer,id=1){const fields={...expected(state),pairId,profileRevision:1};const begun=await f.action('begin',fields,id);if(!begun.ok)return begun;return f.action('append',{...fields,...expected(begun.state),question,answer:body},id);}
+module.exports={worker,ui,key,profileKey,profile,plain,source,settle,expected,answer,append,beginRequest,activeBoundary};

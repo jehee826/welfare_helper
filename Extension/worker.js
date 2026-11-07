@@ -189,16 +189,16 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     // 대화 저장과 인증 전환은 직렬화하고 프로필 저장 대기와는 분리한다.
     changeConversations(()=>changeAuth(async()=>{
       conversationStore??=GyeoteConversationStore.create({storage:chrome.storage.local,newId:()=>crypto.randomUUID()});
-      const owner=message.type==='gyeote:conversations-append'?await restoreOwner(sender.tab.id):initialOwner;
-      const owns=()=>ownerMatches(owner,message,sender)&&conversationOwners.get(sender.tab.id)===owner&&(message.type==='gyeote:conversations-begin'||owner.committed===true);
-      const result=await conversationStore.action(message,await readAuth(),owns,owner?.input);
-      if(message.type==='gyeote:conversations-begin'&&result.ok){
+      const owner=['gyeote:conversations-append','gyeote:conversations-resume'].includes(message.type)?await restoreOwner(sender.tab.id):initialOwner;
+      const owns=()=>ownerMatches(message.type==='gyeote:conversations-resume'&&owner?{...owner,expectedRevision:message.expectedRevision}:owner,message,sender)&&conversationOwners.get(sender.tab.id)===owner&&(message.type==='gyeote:conversations-begin'||owner.committed===true);
+      const result=await conversationStore.action(message,await readAuth(),owns,owner?.input,owner?.boundaryStartedAt);
+      if(['gyeote:conversations-begin','gyeote:conversations-resume'].includes(message.type)&&result.ok){
         if(!owns())throw new Error('conversation_request_stopped');
-        owner.input=result.input;
+        const nextOwner={...owner,input:result.input,expectedRevision:result.state.revision,conversationId:result.state.lastActiveConversationId,boundaryStartedAt:result.state.conversations[0].contextBoundary.startedAt,committed:true};
         // worker 유휴 종료를 넘어도 원래 요청의 문맥과 소유권을 세션에 보존한다.
-        await writeOwner(async()=>{if(!owns())throw new Error('conversation_request_stopped');await chrome.storage.session.set({[ownerKey(sender.tab.id)]:{...owner,committed:true}});});
+        await writeOwner(async()=>{if(!owns())throw new Error('conversation_request_stopped');await chrome.storage.session.set({[ownerKey(sender.tab.id)]:nextOwner});});
         if(!owns())throw new Error('conversation_request_stopped');
-        owner.committed=true;
+        Object.assign(owner,nextOwner);
       }
       return result;
     })).then(sendResponse).catch(error=>sendResponse({ok:false,error:/^conversation_(invalid_request|data_invalid|conflict|context_conflict|access_changed|profile_changed|request_stopped|count_limit|messages_limit|bytes_limit|revision_limit)$/.test(error.message)?error.message:'conversation_storage_failed'}));

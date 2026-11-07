@@ -92,13 +92,17 @@
       unsaved.append(label,reason,body,destination,retry,discard);
       onStateChange();
     }
-    async function begin(value,pairId,revision){
+    async function begin(value,pairId,revision,resume=false){
       if(!matches(value))throw new Error('conversation_conflict');
-      ownedPair=pairId;
-      const response=await send('begin',{...value,pairId,profileRevision:revision});
-      if(!matches(value)||ownedPair!==pairId)throw new Error('conversation_request_stopped');
-      if(response.state.revision!==value.expectedRevision)throw new Error('conversation_conflict');
-      return response.input;
+      ownedPair=pairId;changing=true;notification=null;const owner=version;show();
+      try{
+        const response=await send(resume?'resume':'begin',{...value,pairId,profileRevision:revision});
+        if(owner!==version||!matches(value)||ownedPair!==pairId)throw new Error('conversation_request_stopped');
+        if(response.state.revision!==value.expectedRevision+(resume?0:1))throw new Error('conversation_conflict');
+        changing=false;apply(response,false);
+        Object.assign(value,{expectedRevision:state.revision,conversationId:state.lastActiveConversationId});
+        return response.input;
+      }finally{if(owner===version){changing=false;show();const message=notification;notification=null;if(message)changed(message.revision,message.generation);}}
     }
     async function save(value,pairId,question,answer,revision,isOwner=()=>true){
       if(!matches(value)||!isOwner()||ownedPair!==pairId)throw new Error('conversation_request_stopped');
@@ -124,7 +128,7 @@
           if(retry.context.generation!==state?.generation)throw new Error('conversation_context_conflict');
           value=context();
         }
-        await begin(value,retry.pairId,retry.profileRevision);
+        await begin(value,retry.pairId,retry.profileRevision,true);
         const answer={...retry.answer};if(moved)delete answer.context_update;
         await save(value,retry.pairId,retry.question,answer,retry.profileRevision);
       }catch(error){if(pending===retry)showUnsaved(error);}
@@ -134,7 +138,7 @@
       ownedPair=null;
     }
     function changed(revision,generation){
-      if(!access||access.mode!=='anonymous'||disposed||state&&revision===state.revision&&generation===state.generation)return;
+      if(!access||access.mode!=='anonymous'||disposed||state&&Number.isSafeInteger(revision)&&revision<=state.revision&&generation===state.generation)return;
       if(changing){notification={revision,generation};return;}
       invalidate();cancelRequest();void load(true);
     }

@@ -1,5 +1,5 @@
 (() => {
-  const limits=Object.freeze({conversations:1,pairs:30,messages:60,bytes:4*1024*1024,evidence:10,quote:1000,url:2048,references:50});
+  const limits=Object.freeze({conversations:1,pairs:30,messages:60,bytes:4*1024*1024,evidence:10,quote:1000,url:2048,references:50,contextAge:7*24*60*60*1000});
   const fail=()=>{throw new Error('conversation_data_invalid');};
   const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
   const revision=value=>Number.isSafeInteger(value)&&value>=0;
@@ -39,7 +39,13 @@
     });
     return {values,truncated,redacted};
   }
-  const empty=(generation='initial',value=0)=>({schemaVersion:2,revision:value,generation,lastActiveConversationId:null,conversations:[]});
+  const empty=(generation='initial',value=0)=>({schemaVersion:3,revision:value,generation,lastActiveConversationId:null,conversations:[]});
+  function contextBoundary(value){
+    if(!object(value)||Object.keys(value).sort().join(',')!=='lastUserSubmittedAt,startAfterPairId,startedAt'
+      ||value.startedAt!==null&&!date(value.startedAt)||value.lastUserSubmittedAt!==null&&!date(value.lastUserSubmittedAt)
+      ||value.startAfterPairId!==null&&!GyeoteProtocol.id(value.startAfterPairId))fail();
+    return {...value};
+  }
   const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).byteLength;
   function summaryRecord(value,messages){
     if(value===null)return null;
@@ -51,7 +57,7 @@
   }
   function record(raw){
     const legacy=raw?.schemaVersion===1;
-    if(!object(raw)||![1,2].includes(raw.schemaVersion)||!revision(raw.revision)||!identifier(raw.generation??'initial')||!Array.isArray(raw.conversations)||raw.conversations.length>(legacy?30:limits.conversations))fail();
+    if(!object(raw)||![1,2,3].includes(raw.schemaVersion)||!revision(raw.revision)||!identifier(raw.generation??'initial')||!Array.isArray(raw.conversations)||raw.conversations.length>(legacy?30:limits.conversations))fail();
     const ids=new Set(),pairs=new Set();
     const conversations=raw.conversations.map(conversation=>{
       if(!object(conversation)||!identifier(conversation.id)||!legacy&&ids.has(conversation.id)||!date(conversation.createdAt)||!date(conversation.updatedAt)||!Array.isArray(conversation.messages)||conversation.messages.length>(legacy?100:limits.messages)||conversation.messages.length%2)fail();
@@ -82,15 +88,21 @@
         }
         return value;
       });
-      return {id:conversation.id,createdAt:conversation.createdAt,updatedAt:conversation.updatedAt,messages,...(!legacy&&conversation.summary!==undefined?{summary:summaryRecord(conversation.summary,messages)}:{})};
+      return {id:conversation.id,createdAt:conversation.createdAt,updatedAt:conversation.updatedAt,messages,...(!legacy&&conversation.summary!==undefined?{summary:summaryRecord(conversation.summary,messages)}:{}),
+        ...(raw.schemaVersion===3?{contextBoundary:contextBoundary(conversation.contextBoundary)}:{})};
     });
     if(raw.lastActiveConversationId!==null&&!ids.has(raw.lastActiveConversationId))fail();
     if(!legacy&&raw.lastActiveConversationId!==(conversations[0]?.id??null))fail();
     const state={schemaVersion:raw.schemaVersion,revision:raw.revision,generation:raw.generation??'initial',lastActiveConversationId:raw.lastActiveConversationId,conversations};
+    if(raw.schemaVersion===3&&conversations.some(c=>c.contextBoundary.startAfterPairId!==null&&!c.messages.some(m=>m.role==='assistant'&&m.pairId===c.contextBoundary.startAfterPairId)))fail();
     if(bytes(state)>limits.bytes)fail();
     return state;
   }
   function migrate(state,generation){
+    if(state.schemaVersion===2){
+      return record({...state,schemaVersion:3,revision:state.revision+1,
+        conversations:state.conversations.map(conversation=>({...conversation,contextBoundary:{startedAt:null,startAfterPairId:conversation.messages.at(-1)?.pairId??null,lastUserSubmittedAt:null}}))});
+    }
     const ordered=[];
     state.conversations.forEach((conversation,room)=>{
       for(let index=0;index<conversation.messages.length;index+=2)ordered.push({messages:conversation.messages.slice(index,index+2),room,index});
@@ -104,11 +116,12 @@
       return item.messages.map(message=>{const value={...message,pairId,id:pairId+':'+message.role};delete value.contextUpdate;return value;});
     });
     const result=empty(generation,state.revision+1);
-    if(messages.length){const id='continuous';result.conversations=[{id,createdAt:messages[0].createdAt,updatedAt:messages.at(-1).createdAt,messages}];result.lastActiveConversationId=id;}
+    if(messages.length){const id='continuous';result.conversations=[{id,createdAt:messages[0].createdAt,updatedAt:messages.at(-1).createdAt,messages,contextBoundary:{startedAt:null,startAfterPairId:messages.at(-1).pairId,lastUserSubmittedAt:null}}];result.lastActiveConversationId=id;}
     return record(result);
   }
   function retain(conversation){
     conversation.messages=conversation.messages.slice(-limits.messages);
+    if(conversation.contextBoundary?.startAfterPairId&&!conversation.messages.some(m=>m.pairId===conversation.contextBoundary.startAfterPairId))conversation.contextBoundary.startAfterPairId=null;
     const prior=new Map();
     for(const message of conversation.messages){
       const boundary=message.contextUpdate?.coveredThroughMessageId;
@@ -131,8 +144,9 @@
   }
   function requestContext(conversation,profileRevision){
     // 화면 기록은 보존하고 마지막 새 주제의 질문부터 자동 맥락을 구성한다.
-    const full=conversation?.messages||[];let topicStart=0;
-    for(let i=1;i<full.length;i+=2)if(full[i].topicStart===true)topicStart=i-1;
+    const full=conversation?.messages||[],boundary=conversation?.contextBoundary;let topicStart=0;
+    if(boundary?.startAfterPairId){const index=full.findIndex(m=>m.pairId===boundary.startAfterPairId&&m.role==='assistant');if(index>=0)topicStart=index+1;}
+    for(let i=topicStart+1;i<full.length;i+=2)if(full[i].topicStart===true)topicStart=i-1;
     const all=full.slice(topicStart);let start=all.length;
     while(start>=2&&all[start-1].profileRevision===profileRevision&&all[start-2].profileRevision===profileRevision)start-=2;
     const messages=all.slice(start),stored=conversation?.summary;

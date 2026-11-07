@@ -37,7 +37,7 @@ test('요청 빈도 제한은 질문 옆에 안전하게 표시하고 다시 보
   await port.receive({type:'error',requestId:port.packet.requestId,error:'chat_rate_limited'});await settle();
   assert.match(f.root.querySelector('.request-outcome').textContent,/질문 요청이 많습니다/);
   assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
-  assert.equal(f.ports.length,1);assert.equal(server.data[key],undefined);
+  assert.equal(f.ports.length,1);assert.deepEqual(server.data[key].conversations[0].messages,[]);
  }finally{f.close();}
 });
 
@@ -48,7 +48,7 @@ test('맥락 불일치 저장 오류는 전용 안내와 미저장 답변을 보
   await f.answer(answer);const text=f.root.querySelector('.unsaved-conversation').textContent;
   assert.match(text,/요청 당시 대화 맥락과 현재 기록이 달라 자동 저장하지 않았습니다/);
   assert.doesNotMatch(text,/상담 저장소에 접근하지 못했습니다/);assert.match(text,/합성 복지 안내/);
-  assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);assert.equal(f.ports.length,1);assert.equal(server.data[key],undefined);
+  assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);assert.equal(f.ports.length,1);assert.deepEqual(server.data[key].conversations[0].messages,[]);
  }finally{f.close();}
 });
 
@@ -69,7 +69,7 @@ test('오류 수신은 프로필 확인이 응답하지 않아도 즉시 종료�
     await port.receive({type:'error',requestId:port.packet.requestId,error:'generation_failed'});await settle();
     assert.match(f.root.querySelector('.status').textContent,/문서 검색이나 답변 처리에 실패/);
     assert.match(f.root.querySelector('.request-outcome').textContent,/문서 검색이나 답변 처리에 실패/);
-    assert.equal(server.data[key],undefined);
+    assert.deepEqual(server.data[key].conversations[0].messages,[]);
     assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
     assert.equal(f.root.querySelector('button[type=submit]').getAttribute('aria-label'),'질문 보내기');assert.equal(port.disconnected,true);
   }finally{f.close();}
@@ -85,7 +85,7 @@ for(const ending of ['cancel','deadline'])test('문서 '+ending+' 결과를 질�
     if(ending==='cancel')f.root.querySelector('button[type=submit]').click();else{assert.equal(typeof deadline,'function');deadline();}
     await settle();assert.ok(f.root.querySelector('.request-outcome')?.textContent);
     assert.equal(f.root.querySelector('#gyeote-question').closest('form').querySelector('[type=submit]').disabled,false);
-    assert.equal(server.data[key],undefined);assert.equal(f.ports[0].disconnected,true);
+    assert.deepEqual(server.data[key].conversations[0].messages,[]);assert.equal(f.ports[0].disconnected,true);
   }finally{f.close();}
 });
 
@@ -161,7 +161,7 @@ test('전체 대화 삭제는 확인 후 실행하고 프로필을 보존한다'
 test('quota 실패 답변은 미저장으로 남고 재저장은 모델 포트를 만들지 않는다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('합성 질문');server.failure.quota=true;await f.answer(answer);
-    assert.equal(server.data[key],undefined);assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);assert.match(f.root.querySelector('.unsaved-conversation').textContent,/저장되지 않은 답변/);
+    assert.deepEqual(server.data[key].conversations[0].messages,[]);assert.equal(f.root.querySelector('.unsaved-conversation').hidden,false);assert.match(f.root.querySelector('.unsaved-conversation').textContent,/저장되지 않은 답변/);
     const count=f.ports.length;server.failure.quota=false;await f.click('답변 저장 다시 시도');assert.equal(f.ports.length,count);assert.equal(server.data[key].conversations[0].messages.length,2);assert.equal(f.root.querySelector('.unsaved-conversation').hidden,true);
   }finally{f.close();}
 });
@@ -206,7 +206,7 @@ test('프로필 변경은 진행 요청과 저장 대화 및 후속 이력을 �
 });
 test('권한 전환은 공개 요청을 중지하고 관리자 답변은 영구저장하지 않는다',async()=>{
   const server=worker(),f=ui(server);try{
-    await f.ready();await f.question('공개 질문');await f.answer(answer);const persisted=JSON.stringify(server.data[key]);await f.question('전환 전 질문');const old=f.ports.at(-1);
+    await f.ready();await f.question('공개 질문');await f.answer(answer);await f.question('전환 전 질문');const persisted=JSON.stringify(server.data[key]);const old=f.ports.at(-1);
     await server.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:require('../protocol.js').documentOrigin()}},{id:'x',url:'chrome-extension://x/options.html'});await settle();
     await f.answer({kind:'answer',text:'권한 전환 뒤 늦은 공개 응답',evidence:[]},old);assert.equal(f.root.querySelector('.saved-slot').hidden,true);
     await f.question('관리자 합성 문서');assert.equal(f.ports.at(-1).packet.conversationContext,undefined);await f.answer({kind:'answer',text:'합성 관리자 전용 응답',evidence:[]});assert.equal(JSON.stringify(server.data[key]),persisted);
@@ -235,7 +235,7 @@ test('접근 확인과 prepare 사이 권한이 바뀌면 익명으로 내려 �
 });
 test('화면 전환은 문서요청을 취소하고 임시 화면대화가 저장소에 섞이지 않는다',async()=>{
   const server=worker(),f=ui(server);try{
-    await f.ready();await f.question('문서 질문');await f.answer(answer);const raw=JSON.stringify(server.data[key]);await f.question('문서 지연');const old=f.ports.at(-1);
+    await f.ready();await f.question('문서 질문');await f.answer(answer);await f.question('문서 지연');const raw=JSON.stringify(server.data[key]),old=f.ports.at(-1);
     await f.mode('screen');await f.answer({kind:'answer',text:'늦은 문서 답변',evidence:[]},old);assert.equal(f.root.querySelector('.saved-slot').hidden,true);
     await f.question('공개 메뉴');const port=f.ports.at(-1);assert.equal(port.packet.mode,'screen');assert.equal(port.packet.payload.profile,undefined);
     await f.answer({reply:{snapshot_id:port.packet.payload.snapshot_id,kind:'설명',answer:'공개 기능 설명입니다.',targets:[]}},port);assert.equal(JSON.stringify(server.data[key]),raw);

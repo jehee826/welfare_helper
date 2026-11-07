@@ -37,10 +37,9 @@ def components(size):
         return snapshot
 
     def generate(_system, user, **_kwargs):
-        sources = json.loads(user.split("문서 근거(JSON):\n")[1].split("\n\n질문:")[0])
-        first = sources[0]["chunks"][0]
-        return {"status": "answer", "text": "합성 원문을 확인했습니다.",
-                "citations": [{"id": first["id"], "quote": first["text"]}]}
+        if _system == qa.EMPTY_EVIDENCE_SYSTEM:
+            return {"status": "no_evidence", "text": "현재 자료에서 확인하지 못했습니다."}
+        return {"status": "answer", "text": "합성 원문을 확인했습니다."}
 
     repo = SimpleNamespace(snapshot=current, document_scope=None, include_local_documents=False,
                            embed_model="synthetic", embed_dim=1024,

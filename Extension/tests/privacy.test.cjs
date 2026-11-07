@@ -40,7 +40,7 @@ test('문서 패널은 민감 질문을 메시지·준비·포트 전송 전에 
       assert.match(f.root.querySelector('.status').textContent,/개인정보가 포함된 질문은 보낼 수 없습니다/);
     }
     await f.send('2026년 129/1355, 14일 3권');assert.equal(f.packets.length,1);
-    const payload=f.packets[0].payload;assert.equal(payload.query,'2026년 129/1355, 14일 3권');assert.deepEqual(payload.history,[]);assert.equal(payload.profile,null);assert.ok(payload.conversation_context);
+    const payload=f.packets[0].payload;assert.equal(payload.query,'2026년 129/1355, 14일 3권');assert.deepEqual(payload.history,[]);assert.equal(Object.hasOwn(payload,'profile'),false);assert.ok(payload.conversation_context);
     await f.answer({kind:'answer',text:'정상 답변',evidence:[]});
   }finally{f.close();}
 });

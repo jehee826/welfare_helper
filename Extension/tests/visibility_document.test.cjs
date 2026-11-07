@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {worker,ui,key,settle,append}=require('./conversation_fixture.cjs');
+const {worker,ui,key,settle,append,answer}=require('./conversation_fixture.cjs');
 
 function visibility(f,hidden){Object.defineProperty(f.w.document,'hidden',{configurable:true,value:hidden});f.w.document.dispatchEvent(new f.w.Event('visibilitychange'));}
 test('숨김 중 기한 콜백이 지연돼도 절대 기한 뒤 결과는 저장하지 않는다',async()=>{
@@ -31,6 +31,10 @@ for(const ending of ['cancel','deadline','pagehide','mode','profile','access','c
   if(ending==='profile')await server.send({type:'gyeote:profile-save',expectedRevision:1,profile:{age:60}});
   if(ending==='access')await server.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:require('../protocol.js').documentOrigin()}},{id:'x',url:'chrome-extension://x/options.html'});
   if(ending==='conversation'){await f.click('전체 대화 삭제');await f.click('삭제 확인');}
-  await settle();assert.equal(port.disconnected,true);assert.equal(server.data[key]?.conversations?.some(c=>c.messages.length>0)??false,false);
+  await settle();
+  if(ending==='profile'){
+    assert.notEqual(port.disconnected,true);assert.equal(Object.hasOwn(port.packet.payload,'profile'),false);
+    await f.answer(answer);assert.equal(server.data[key].conversations[0].messages.length,2);
+  }else{assert.equal(port.disconnected,true);assert.equal(server.data[key]?.conversations?.some(c=>c.messages.length>0)??false,false);}
  }finally{f.close();}
 });

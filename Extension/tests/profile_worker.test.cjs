@@ -5,7 +5,7 @@ const key='gyeote.profile',profile={age:70,income:'under50',household:'single',r
 function worker(data={},failure={}){
  let listener,changed;const calls={get:0,set:0,level:[]},tabMessages=[],runtimeMessages=[];
  const chrome={runtime:{id:'x',getURL:n=>'chrome-extension://x/'+n,onMessage:{addListener(fn){listener=fn;}},sendMessage:async m=>runtimeMessages.push(m)},
-  storage:{local:{async setAccessLevel(value){calls.level.push(value);if(failure.level)throw Error('private level error');},async get(name){calls.get++;assert.equal(name,key);if(failure.get)throw Error('private read error');return {[key]:data[key]};},async set(value){calls.set++;if(failure.set)throw Error('private write error');const previous=data[key];Object.assign(data,plain(value));changed?.({[key]:{oldValue:previous,newValue:data[key]}},'local');}},onChanged:{addListener(fn){changed=fn;}}},
+  storage:{session:{},local:{async setAccessLevel(value){calls.level.push(value);if(failure.level)throw Error('private level error');},async get(name){calls.get++;assert.equal(name,key);if(failure.get)throw Error('private read error');return {[key]:data[key]};},async set(value){calls.set++;if(failure.set)throw Error('private write error');const previous=data[key];Object.assign(data,plain(value));changed?.({[key]:{oldValue:previous,newValue:data[key]}},'local');}},onChanged:{addListener(fn){changed=fn;}}},
   tabs:{query:async()=>[{id:1}],sendMessage:async(_id,message)=>tabMessages.push(message)},action:{onClicked:{addListener(){}}}};
  vm.runInNewContext(source,{chrome,GyeoteProtocol:protocol,importScripts(){},URL,crypto:require('node:crypto').webcrypto});
  const sender={id:'x',frameId:0,url:'https://www.bokjiro.go.kr/',tab:{id:1,url:'https://www.bokjiro.go.kr/'}};
@@ -66,7 +66,7 @@ test('공식 최상위 동일 탭 외 sender와 arbitrary key 메시지는 저�
 
 test('모름과 정상 프로필은 정규화하고 조작값·화면 프로필 전송은 거절한다',()=>{
  assert.deepEqual(protocol.profile({}),{age:null,income:'unknown',household:null,region:null,disability:null});
- assert.deepEqual(protocol.documentRequest({query:'질문',profile}).profile,profile);
- for(const value of [{...profile,age:true},{...profile,age:121},{...profile,household:'invented'},{...profile,region:'상세주소'},{...profile,income:null},{...profile,disability:'false'}])assert.throws(()=>protocol.documentRequest({query:'질문',profile:value}));
- assert.throws(()=>protocol.request({profile}));assert.equal(protocol.documentRequest({query:'질문',profile:null}).profile,null);
+ assert.equal(Object.hasOwn(protocol.documentRequest({query:'질문',profile}),'profile'),false);
+ for(const value of [{...profile,age:true},{...profile,age:121},{...profile,household:'invented'},{...profile,region:'상세주소'},{...profile,income:null},{...profile,disability:'false'}])assert.throws(()=>protocol.profile(value));
+ assert.throws(()=>protocol.request({profile}));assert.equal(protocol.documentRequest({query:'질문',profile:null}).profile,undefined);
 });

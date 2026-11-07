@@ -105,7 +105,7 @@ for(const options of [{constructorError:true},{startError:Error('private start')
 });
 test('미지원 브라우저에서도 텍스트 입력을 유지하고 무음 종료는 재시작하지 않는다',()=>{
   const unsupported=fixture({unsupported:true});try{
-    assert.equal(unsupported.form.querySelector('.voice-start').disabled,true);assert.match(unsupported.status(),/지원하지/);unsupported.edit('직접 질문');assert.equal(unsupported.input.value,'직접 질문');
+    assert.equal(unsupported.form.querySelector('.voice-start').disabled,true);assert.match(unsupported.form.querySelector('.voice-start').title,/지원하지/);unsupported.edit('직접 질문');assert.equal(unsupported.input.value,'직접 질문');
   }finally{unsupported.close();}
   const f=fixture();try{f.start();f.instances[0].onend();assert.match(f.status(),/듣지 못/);assert.equal(f.instances.length,1);}finally{f.close();}
 });

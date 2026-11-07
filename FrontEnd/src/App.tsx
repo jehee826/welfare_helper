@@ -7,6 +7,7 @@ import { AdminPage } from "./pages/AdminPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { Header } from "./components/Header";
 import { PasswordRotation } from "./components/admin/PasswordRotation";
+import { ReferralsPage } from "./pages/ReferralsPage";
 
 const liveApi = createHttpApi();
 
@@ -28,6 +29,7 @@ function AppRoutes({ api }: { api: WelfareApi }) {
       <Route element={<AdminLayout />}>
         <Route path="/admin/documents" element={<DocumentsPage />} />
         <Route path="/admin/programs" element={<AdminPage api={api} />} />
+        <Route path="/admin/referrals" element={<ReferralsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/admin/documents" replace />} />
     </Routes>

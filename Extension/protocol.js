@@ -81,6 +81,15 @@
     return {age,income,household,region,disability};
   }
   const uiDefaults=Object.freeze({width:400,height:720,backgroundOpacity:100,dock:'right',left:null,top:null});
+  function profileUsageRecord(value){
+    if(!value||Object.keys(value).sort().join(',')!=='enabled,profileRevision,revision,schemaVersion'||value.schemaVersion!==1||!Number.isSafeInteger(value.revision)||value.revision<0||typeof value.enabled!=='boolean'||(value.enabled?!Number.isSafeInteger(value.profileRevision)||value.profileRevision<0:value.profileRevision!==null))throw new Error('profile_usage_invalid');
+    return {schemaVersion:1,revision:value.revision,enabled:value.enabled,profileRevision:value.profileRevision};
+  }
+  function profileContext(value){
+    if(!value||Object.keys(value).sort().join(',')!=='consent_revision,enabled,profile,profile_revision'||value.enabled!==true||![value.consent_revision,value.profile_revision].every(revision=>Number.isSafeInteger(revision)&&revision>=0))throw new Error('invalid_profile');
+    const normalized=profile(value.profile);if(!normalized)throw new Error('invalid_profile');
+    return {enabled:true,consent_revision:value.consent_revision,profile_revision:value.profile_revision,profile:normalized};
+  }
   const uiLimits=Object.freeze({minWidth:320,maxWidth:640,minHeight:360,maxHeight:900,step:20,opacities:Object.freeze([100,95,90,85])});
   function uiPreferences(value){
     if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='backgroundOpacity,dock,height,left,top,width')throw new Error('invalid_ui_preferences');
@@ -171,10 +180,10 @@
   }
   function documentRequest(payload){
     if(payload&&(typeof payload.query==='string'&&sensitiveInput(payload.query)||Array.isArray(payload.history)&&payload.history.some(h=>typeof h?.content==='string'&&sensitiveInput(h.content))))throw new Error('sensitive_input');
-    if(!payload||Object.keys(payload).some(k=>!['query','history','timeout_seconds','profile','conversation_context'].includes(k))||!documentText(payload.query,300)||payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('invalid_request');
+    if(!payload||Object.keys(payload).some(k=>!['query','history','timeout_seconds','profile','conversation_context','profile_context'].includes(k))||!documentText(payload.query,300)||payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('invalid_request');
     const history=payload.history||[];
     if(!Array.isArray(history)||history.length>12||history.some(h=>!h||!['user','assistant'].includes(h.role)||!documentText(h.content,6000)||Object.keys(h).some(k=>!['role','content'].includes(k)))||history.reduce((n,h)=>n+h.content.length,0)>6000)throw new Error('invalid_request');
-    return {query:payload.query,history,...(payload.timeout_seconds===undefined?{}:{timeout_seconds:payload.timeout_seconds}),...(Object.hasOwn(payload,'conversation_context')?{conversation_context:conversationContext(payload.conversation_context)}:{})};
+    return {query:payload.query,history,...(payload.timeout_seconds===undefined?{}:{timeout_seconds:payload.timeout_seconds}),...(Object.hasOwn(payload,'conversation_context')?{conversation_context:conversationContext(payload.conversation_context)}:{}),...(Object.hasOwn(payload,'profile_context')?{profile_context:profileContext(payload.profile_context)}:{})};
   }
   function summaryRequest(payload){
     if(!payload||Object.keys(payload).some(key=>!['request_id','messages','partial','timeout_seconds'].includes(key))||!id(payload.request_id)||typeof payload.partial!=='boolean'||!Array.isArray(payload.messages)||!payload.messages.length||payload.messages.length>60||payload.messages.length%2)throw new Error('summary_input_budget');
@@ -213,6 +222,6 @@
   }
   const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
   const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&value.origin===documentOrigin();
-  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,summaryRequest,summaryReply,documentReply,documentContacts,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,uiDefaults,uiLimits,uiPreferences,uiPreferenceRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
+  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,summaryRequest,summaryReply,documentReply,documentContacts,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,profileUsageRecord,profileContext,uiDefaults,uiLimits,uiPreferences,uiPreferenceRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

@@ -101,7 +101,7 @@
         if(response.state.revision!==value.expectedRevision+(resume?0:1))throw new Error('conversation_conflict');
         changing=false;apply(response,false);
         Object.assign(value,{expectedRevision:state.revision,conversationId:state.lastActiveConversationId});
-        return response.input;
+        return {...response.input,...(response.profileContext?{profile_context:response.profileContext}:{})};
       }finally{if(owner===version){changing=false;show();const message=notification;notification=null;if(message)changed(message.revision,message.generation);}}
     }
     async function save(value,pairId,question,answer,revision,isOwner=()=>true){

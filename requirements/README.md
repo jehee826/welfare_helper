@@ -1,6 +1,6 @@
 # Python 의존성 잠금
 
-최신 업데이트: 2026-11-08 01:18 KST
+최신 업데이트: 2026-11-08 01:37 KST
 
 `locks/*-py312-linux.txt`는 uv 0.10.9로 해석한 **CPython 3.12·Linux AMD64** 버전·배포 파일 해시다. Windows 가상환경을 freeze한 결과가 아니며 다른 플랫폼 잠금으로 사용하지 않는다.
 
@@ -28,7 +28,7 @@ python scripts/ci_python.py tests
 
 ## 모델 없는 CI
 
-`.github/workflows/ci.yml`은 backend/worker/dev를 분리 설치해 pip check·최소 import를 실행하고, dev에서는 `scripts/ci_python.py`의 선정 계약/API 검사를 실행한다. 원격 DOM의 opt-in·금지 필드·공유 예산·loopback 전송 검사도 포함한다. dev의 API→확장 DTO 복원 검사는 Node 22와 `FrontEnd/node_modules`의 jsdom을 사용하므로 Node 설정·npm ci 후 실행한다. FrontEnd는 npm ci·test:ci·build:ci, Extension은 workflow에 명시한 **22개 계약 파일**을 검사한다. UI 설정·낭독·DOM과 정정한 개인정보·음성 입력·요청 수명 검사도 포함한다. 실제 .env를 읽지 않으며 개인정보·인증·빈도 제한 가드는 유지한다.
+`.github/workflows/ci.yml`은 backend/worker/dev를 분리 설치해 pip check·최소 import를 실행하고, dev에서는 `scripts/ci_python.py`의 선정 계약/API 검사를 실행한다. 원격 DOM의 opt-in·금지 필드·공유 예산·loopback 전송 검사도 포함한다. dev의 API→확장 DTO 복원 검사는 Node 22와 `FrontEnd/node_modules`의 jsdom을 사용하므로 Node 설정·npm ci 후 실행한다. FrontEnd는 npm ci·test:ci·build:ci, Extension은 workflow에 명시한 **23개 계약 파일**을 검사한다. UI 설정·낭독·DOM과 정정한 개인정보·음성 입력·요청 수명 검사도 포함한다. 실제 .env를 읽지 않으며 개인정보·인증·빈도 제한 가드는 유지한다.
 
 실제 DB·Ollama·모델 가중치·Docling PDF 해석은 기본 CI에 포함하지 않는다. 해당 통합 검사는 준비된 별도 환경에서 명시적으로 선택해 실행한다. CPU torch 배포 패키지 설치는 모델 가중치 다운로드나 추론이 아니다.
 

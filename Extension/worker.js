@@ -4,6 +4,7 @@ const documentManagerUrl='https://welfare-helper-iota.vercel.app/admin/documents
 let creating;
 let authChanges=Promise.resolve();
 const profileKey='gyeote.profile';
+const profileUsageKey='gyeote.profileUsage';
 let localChanges=Promise.resolve(),conversationChanges=Promise.resolve(),invalidProfile=null,conversationStore;
 const conversationOwners=new Map();
 let ownerWrites=Promise.resolve();
@@ -41,6 +42,48 @@ async function storedProfile(){
     if(!invalidProfile||invalidProfile.serialized!==serialized)invalidProfile={serialized,token:crypto.randomUUID()};
     return {invalid:true,resetToken:invalidProfile.token,raw};
   }
+}
+async function storedProfileUsage(){
+  const raw=(await chrome.storage.local.get(profileUsageKey))[profileUsageKey];
+  return raw===undefined?{schemaVersion:1,revision:0,enabled:false,profileRevision:null}:GyeoteProtocol.profileUsageRecord(raw);
+}
+async function profileSupported(){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
+  try{
+    const response=await fetch(GyeoteProtocol.documentOrigin()+'/api/v1/chat/capabilities',{signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
+    return response.ok&&(await response.json()).profile_context_supported===true;
+  }catch{return false;}finally{clearTimeout(timer);}
+}
+async function currentProfileContext(checkSupport=false){
+  try{
+    const usage=await storedProfileUsage();if(!usage.enabled||checkSupport&&!await profileSupported())return null;
+    const stored=await storedProfile();
+    if(stored.invalid||!stored.state.profile||stored.state.revision!==usage.profileRevision)return null;
+    return GyeoteProtocol.profileContext({enabled:true,consent_revision:usage.revision,profile_revision:stored.state.revision,profile:stored.state.profile});
+  }catch{return null;}
+}
+const profileStamp=value=>value?`${value.consent_revision}:${value.profile_revision}`:null;
+async function profileUsageAction(message){
+  const state=await storedProfileUsage();
+  if(message.type==='gyeote:profile-usage-get'){
+    if(Object.keys(message).join(',')!=='type')throw new Error('profile_usage_invalid');
+    return {ok:true,state,supported:await profileSupported(),valid:!!await currentProfileContext()};
+  }
+  if(Object.keys(message).sort().join(',')!=='enabled,expectedRevision,profileRevision,type'||typeof message.enabled!=='boolean'||!Number.isSafeInteger(message.expectedRevision)||message.expectedRevision!==state.revision)throw new Error('profile_usage_conflict');
+  if(state.revision===Number.MAX_SAFE_INTEGER)throw new Error('profile_usage_invalid');
+  if(message.enabled){
+    if(!await profileSupported())throw new Error('profile_usage_unsupported');
+    const stored=await storedProfile();
+    if(stored.invalid||!stored.state.profile||message.profileRevision!==stored.state.revision)throw new Error('profile_changed');
+  }else if(message.profileRevision!==null)throw new Error('profile_usage_invalid');
+  const next=GyeoteProtocol.profileUsageRecord({schemaVersion:1,revision:state.revision+1,enabled:message.enabled,profileRevision:message.enabled?message.profileRevision:null});
+  const values={[profileUsageKey]:next};
+  if(state.enabled&&(!next.enabled||state.profileRevision!==next.profileRevision)){
+    conversationStore??=GyeoteConversationStore.create({storage:chrome.storage.local,newId:()=>crypto.randomUUID()});
+    values[GyeoteConversationStore.key]=await conversationStore.prepareContextReset();
+  }
+  await chrome.storage.local.set(values);
+  return {ok:true,state:next,supported:true,valid:next.enabled};
 }
 async function profileAction(message){
   const keys=Object.keys(message).sort().join(',');
@@ -115,6 +158,10 @@ async function adminRequest(action,session){
   finally{clearTimeout(timer);}
 }
 chrome.storage.onChanged?.addListener((changes,area)=>{
+  if(area==='local'&&profileUsageKey in changes){
+    const revision=changes[profileUsageKey].newValue?.revision;
+    (async()=>{const message={type:'gyeote:profile-usage-changed',revision};await chrome.runtime.sendMessage({target:'gyeote:offscreen',...message}).catch(()=>{});const tabs=await chrome.tabs.query({});await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,message,{frameId:0})));})().catch(()=>{});
+  }
   if(area==='local'&&'gyeote.conversations' in changes){
     const value=changes['gyeote.conversations'].newValue;
     const revision=Number.isSafeInteger(value?.revision)&&value.revision>=0?value.revision:null;
@@ -132,6 +179,7 @@ chrome.storage.onChanged?.addListener((changes,area)=>{
       // 프로필 값은 통지에 싣지 않는다. 수신기는 worker에서 최신 revision을 다시 확인한다.
       const tabs=await chrome.tabs.query({});
       await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,{type:'gyeote:profile-changed',revision},{frameId:0})));
+      await chrome.runtime.sendMessage({target:'gyeote:offscreen',type:'gyeote:profile-changed',revision}).catch(()=>{});
     })().catch(()=>{});
     return;
   }
@@ -169,6 +217,18 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   const internal=sender.url===chrome.runtime.getURL('offscreen.html');
   const options=sender.url===chrome.runtime.getURL('options.html');
   const content=sender.frameId===0&&official(sender.url)&&official(sender.tab?.url);
+  if(['gyeote:profile-usage-get','gyeote:profile-usage-set'].includes(message?.type)){
+    if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
+    const action=async()=>{
+      if((await readAuth()).mode!=='anonymous')throw new Error('profile_usage_unavailable');
+      return profileUsageAction(message);
+    };
+    const result=message.type==='gyeote:profile-usage-get'?action():changeConversations(()=>changeAuth(()=>changeLocal(action)));
+    result.then(sendResponse).catch(error=>sendResponse({ok:false,error:['profile_usage_invalid','profile_usage_conflict','profile_usage_unsupported','profile_usage_unavailable','profile_changed'].includes(error.message)?error.message:'profile_usage_storage_failed'}));return true;
+  }
+  if(message?.type==='gyeote:profile-context'&&internal){
+    currentProfileContext().then(context=>sendResponse({ok:true,context})).catch(()=>sendResponse({ok:false}));return true;
+  }
   if(message?.type==='gyeote:summary-capability'){
     if(!content||sender.url!==sender.tab.url||Object.keys(message).join(',')!=='type')return;
     (async()=>{
@@ -202,15 +262,18 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
     changeConversations(()=>changeAuth(async()=>{
       conversationStore??=GyeoteConversationStore.create({storage:chrome.storage.local,newId:()=>crypto.randomUUID()});
       const owner=['gyeote:conversations-append','gyeote:conversations-resume'].includes(message.type)?await restoreOwner(sender.tab.id):initialOwner;
+      if(['gyeote:conversations-append','gyeote:conversations-resume'].includes(message.type)&&owner?.profileContextStamp&&owner.profileContextStamp!==profileStamp(await currentProfileContext()))throw new Error('conversation_profile_changed');
       const owns=()=>ownerMatches(message.type==='gyeote:conversations-resume'&&owner?{...owner,expectedRevision:message.expectedRevision}:owner,message,sender)&&conversationOwners.get(sender.tab.id)===owner&&(message.type==='gyeote:conversations-begin'||owner.committed===true);
       const result=await conversationStore.action(message,await readAuth(),owns,owner?.input,owner?.boundaryStartedAt);
       if(['gyeote:conversations-begin','gyeote:conversations-resume'].includes(message.type)&&result.ok){
+        const context=message.type==='gyeote:conversations-begin'?await currentProfileContext(true):null;
         if(!owns())throw new Error('conversation_request_stopped');
-        const nextOwner={...owner,input:result.input,expectedRevision:result.state.revision,conversationId:result.state.lastActiveConversationId,boundaryStartedAt:result.state.conversations[0].contextBoundary.startedAt,committed:true};
+        const nextOwner={...owner,input:result.input,expectedRevision:result.state.revision,conversationId:result.state.lastActiveConversationId,boundaryStartedAt:result.state.conversations[0].contextBoundary.startedAt,profileContextStamp:message.type==='gyeote:conversations-begin'?profileStamp(context):owner.profileContextStamp,committed:true};
         // worker 유휴 종료를 넘어도 원래 요청의 문맥과 소유권을 세션에 보존한다.
         await writeOwner(async()=>{if(!owns())throw new Error('conversation_request_stopped');await chrome.storage.session.set({[ownerKey(sender.tab.id)]:nextOwner});});
         if(!owns())throw new Error('conversation_request_stopped');
         Object.assign(owner,nextOwner);
+        if(context)result.profileContext=context;
       }
       return result;
     })).then(sendResponse).catch(error=>sendResponse({ok:false,error:/^conversation_(invalid_request|data_invalid|conflict|context_conflict|access_changed|profile_changed|request_stopped|count_limit|messages_limit|bytes_limit|revision_limit)$/.test(error.message)?error.message:'conversation_storage_failed'}));

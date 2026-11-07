@@ -327,7 +327,8 @@ def test_runtime_reports_effective_document_policy_without_external_calls(diagno
     assert response.status_code == 200
     body = response.json()
     assert body["configuration_only"] is True and body["readiness_checked"] is False
-    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": False,
+    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": True,
+                          "profile_requires_consent": True, "profile_usage_stage": "generation_only",
                           "history_supported": True, "conversation_summary_supported": True,
                           "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
                           "source_span_validation_enabled": False, "semantic_entailment_verified": False}

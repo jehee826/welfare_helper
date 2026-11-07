@@ -113,7 +113,16 @@
       if(operation==='append'&&!ownsRequest())throw new Error('conversation_request_stopped');
       return write(state);
     }
-    return {action};
+    async function prepareContextReset(){
+      const current=await read();if(current.invalid)throw new Error('conversation_data_invalid');
+      let state=current.state;
+      if(state.schemaVersion<3)state=GyeoteConversations.migrate(state,newId());
+      state.revision=nextRevision(state);
+      const conversation=state.conversations[0];
+      if(conversation)conversation.contextBoundary={startedAt:new Date(now()).toISOString(),startAfterPairId:conversation.messages.at(-1)?.pairId??null,lastUserSubmittedAt:conversation.contextBoundary.lastUserSubmittedAt};
+      return GyeoteConversations.record(state);
+    }
+    return {action,prepareContextReset};
   }
   globalThis.GyeoteConversationStore=Object.freeze({key,create});
 })();

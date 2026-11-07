@@ -13,6 +13,7 @@ from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM, EMPTY_EVIDENCE_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
+from BackEnd.profile_context import ProfileContext
 
 MAX_CACHED_CHUNKS = 2000
 MAX_CACHED_INDEX_CHARACTERS = 2_000_000
@@ -39,7 +40,8 @@ def _document_keyword_index(repo, service, snapshot, digest):
 
 @diagnose_qa
 def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None,
-                    select_contacts=False):
+                    select_contacts=False, profile_context=None):
+    consent = ProfileContext.model_validate(profile_context) if profile_context is not None else None
     qa_stage("snapshot")
     checkpoint()
     budget = current_budget()
@@ -192,7 +194,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                 for candidate in contact_options if candidate['document_id'] == document['document_id']
                 and candidate['document_version'] == document['version']]
     qa_stage("generation")
-    prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output, system=generation_system)
+    prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output, system=generation_system,
+                                                 saved_profile=consent.profile.model_dump() if consent else None)
     trace["context"]["context_omitted"] |= omitted
     trace["budget"] = {"context_limit": capacity, "reserved_output": output,
                        "estimated_input": llm.input_cost(generation_system, prompt) if prompt else None,

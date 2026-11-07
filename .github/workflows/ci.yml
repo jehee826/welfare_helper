@@ -92,3 +92,4 @@ jobs:
           Extension/tests/conversations_worker.test.cjs
           Extension/tests/context_expiry.test.cjs
           Extension/tests/consultation_summary.test.cjs
+          Extension/tests/profile_usage.test.cjs

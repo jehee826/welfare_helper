@@ -15,11 +15,10 @@ from BackEnd.core.chat_rate import enforce_chat_rate_limit
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from pydantic_core import PydanticCustomError
 
 from BackEnd.core.db import DatabaseNotConfigured, connect
 from BackEnd.core.settings import get_settings
-from BackEnd.core.privacy import redact_document, validate_document_input, sensitive_input
+from BackEnd.core.privacy import redact_document, validate_document_input
 from BackEnd.desktop_guidance import router as desktop_guidance_router
 from BackEnd.screen_guidance import router as screen_guidance_router, remote_screen_enabled
 from BackEnd.rag.chat import ChatService
@@ -39,6 +38,7 @@ from BackEnd.documents.contracts import DocumentError
 from BackEnd.admin.programs import router as program_router
 from BackEnd.readiness import check_ready, ReadinessError
 from BackEnd.conversation_summary import router as conversation_summary_router
+from BackEnd.profile_context import ProfileIn, ProfileContext
 
 logger = logging.getLogger("welfare_helper")
 
@@ -72,22 +72,6 @@ async def validation_error(request: Request, exc: RequestValidationError):
     return await request_validation_exception_handler(request, exc)
 
 
-class ProfileIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    age: int | None = Field(default=None, ge=0, le=120, strict=True)
-    income: Literal["under50", "under100", "under150", "over150", "unknown"] = "unknown"
-    household: Literal["single", "couple", "withChildren", "singleParent", "grandparent", "other"] | None = None
-    region: str | None = Field(default=None, max_length=20)
-    disability: bool | None = Field(default=None, strict=True)
-
-    @field_validator("region")
-    @classmethod
-    def validate_region_privacy(cls, value):
-        if value is not None and sensitive_input(value):
-            raise PydanticCustomError("sensitive_input", "개인정보를 제외하고 질문해 주세요.")
-        return value
-
-
 class HistoryMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
     role: Literal["user", "assistant"]
@@ -107,6 +91,7 @@ class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=300)
     timeout_seconds: int | None = Field(default=None, ge=1, le=1800, strict=True)
     profile: ProfileIn | None = Field(default=None, description="구형 클라이언트 호환용이며 문서 검색·생성에는 사용하지 않습니다.")
+    profile_context: ProfileContext | None = None
     history: list[HistoryMessage] = Field(default_factory=list, max_length=12,
                                         description="검색 의도와 답변 맥락에 참고하며 공식 근거로 취급하지 않습니다.")
     conversation_context: ConversationContext | None = None
@@ -119,6 +104,8 @@ class ChatRequest(BaseModel):
             context = self.conversation_context
             absent = {"userMessages", "documentIds", "supportsTopicBoundary"} - context.model_fields_set
             result["conversation_context"] = context.model_dump(exclude=absent)
+        if self.profile_context is not None:
+            result["profile_context"] = self.profile_context.model_dump()
         return result
 
     @model_validator(mode="before")
@@ -181,6 +168,12 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/v1/chat/capabilities")
+def chat_capabilities():
+    return JSONResponse({"profile_context_supported": get_settings().documents_enabled and not bool(os.getenv("VERCEL"))},
+                        headers={"Cache-Control": "no-store"})
+
+
 @app.get("/health/runtime")
 def runtime_settings():
     """프로세스에 적용된 공개 설정만 반환하며 연결·준비 상태를 검사하지 않는다."""
@@ -190,7 +183,8 @@ def runtime_settings():
         "readiness_checked": False,
         "qa": {
             "mode": "document_rag", "policy": "welfare_document_evidence",
-            "profile_supported": False, "history_supported": True, "conversation_summary_supported": True,
+            "profile_supported": True, "profile_requires_consent": True, "profile_usage_stage": "generation_only",
+            "history_supported": True, "conversation_summary_supported": True,
             "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
             "source_span_validation_enabled": False, "semantic_entailment_verified": False,
         },

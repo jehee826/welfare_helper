@@ -19,9 +19,9 @@
     }
     function render(){
       section.replaceChildren(node('h2',editing?'내 정보 입력':'내 정보'));
-      const notice=node('p','입력은 선택입니다. 저장 정보는 추천 질문 초안에만 사용합니다. 초안의 안내 대상을 확인·수정해 주세요. 최종 지원 자격은 담당 기관에서 확인해 주세요.');notice.className='muted';section.append(notice);
+      const notice=node('p','입력은 선택입니다. 저장 정보는 추천 질문 초안에 사용하며, 별도의 저장 정보 사용을 켠 경우에만 답변 생성에도 제공합니다. 초안의 안내 대상을 확인·수정해 주세요. 최종 지원 자격은 담당 기관에서 확인해 주세요.');notice.className='muted';section.append(notice);
       const storageDetails=node('details'),storageSummary=node('summary','정보 저장·전송 안내');
-      const storageNotice=node('p','이 브라우저에 저장하며 문서 질문에 자동으로 첨부하지 않습니다. 추천 초안을 직접 전송하면 초안에 보이는 조건이 질문에 포함됩니다. 같은 브라우저를 공유하면 정보도 공유됩니다. 확장을 지우거나 저장소를 삭제하면 복구되지 않습니다. 아래에서 내 정보를 삭제할 수 있습니다.');storageNotice.className='muted';storageDetails.append(storageSummary,storageNotice);section.append(storageDetails);
+      const storageNotice=node('p','이 브라우저에 저장하며 별도 사용 선택이 꺼져 있으면 문서 질문에 첨부하지 않습니다. 추천 초안을 직접 전송하면 초안에 보이는 조건이 질문에 포함됩니다. 같은 브라우저를 공유하면 정보도 공유됩니다. 확장을 지우거나 저장소를 삭제하면 복구되지 않습니다. 아래에서 내 정보를 삭제할 수 있습니다.');storageNotice.className='muted';storageDetails.append(storageSummary,storageNotice);section.append(storageDetails);
       const error=node('p');error.className='profile-error';error.setAttribute('role','alert');section.append(error);
       const reload=button('최신 정보 다시 불러오기',()=>void refresh());reload.className='profile-reload';reload.hidden=true;section.append(reload);
       if(!state){

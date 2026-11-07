@@ -22,6 +22,7 @@
   let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
   let configurationReady=false,pendingQuestion=null,pendingReply=null,accessVersion=0;
   let summaryAvailable=false,summaryBusy=false,summaryPort=null,summaryVersion=0,summaryTimer;
+  let profileUsageState=null,profileUsageSupported=false,profileUsageValid=false,profileUsageBusy=false,profileUsageDeferred=false,profileUsageVersion=0,profileUsageError='';
   try{GyeoteProtocol.documentOrigin();configurationReady=true;}catch{}
   const conversations={screen:[],document:[]};
   const rootStyles=new Map([[document,style]]);
@@ -204,11 +205,43 @@
     updateRequestControl();
     $('.onboarding-later').disabled=!profilePanel.state||profilePanel.busy;
     inputAssist?.update();
+    renderProfileUsage();
   }
   profileButton.addEventListener('click',()=>{if(collapsed)$('.collapse').click();profileOpen=!profileOpen;updateProfileView();if(profileOpen){showMenu(false);transcript.scrollTop=0;const target=profileSlot.querySelector('input')||profileSlot.querySelector('h2');if(target){if(target.tagName==='H2')target.tabIndex=-1;target.focus();}}else focusPanel();});
   transcript.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(profileSlot.contains(event.target)){profileOpen=false;updateProfileView();profileButton.focus();}else if(tools.contains(event.target)){showMenu(false);menuButton.focus();}});
-  profilePanel=GyeoteProfilePanel.create(profileSlot,()=>inputAssist?.invalidate(),updateProfileView);
+  profilePanel=GyeoteProfilePanel.create(profileSlot,()=>{inputAssist?.invalidate();if(profileUsageState?.enabled)cancel();},updateProfileView);
   const profileControls=document.createElement('details');profileControls.className='profile-controls';const managementSummary=document.createElement('summary');managementSummary.textContent='저장·확장 관리';profileControls.append(managementSummary);profileSlot.append(profileControls);
+  const profileUsageSection=document.createElement('section');profileUsageSection.className='profile-usage';profileUsageSection.hidden=true;
+  profileUsageSection.innerHTML='<label><input type="checkbox" class="profile-usage-toggle"> 저장한 내 정보 사용</label><p class="muted">기본은 꺼짐입니다. 켜면 나이·소득·가구·지역·장애 여부의 저장 정보가 상담 서버로 전송되어 답변 생성에만 사용됩니다. 문서 검색에는 쓰지 않습니다. 끄면 자동 대화 맥락은 새로 시작하고 화면 기록은 남깁니다.</p><p class="profile-usage-status muted" role="status"></p>';
+  profileControls.before(profileUsageSection);
+  const profileUsageToggle=profileUsageSection.querySelector('input'),profileUsageStatus=profileUsageSection.querySelector('.profile-usage-status');
+  function renderProfileUsage(){
+    profileUsageSection.hidden=currentAccess?.mode!=='anonymous'||(!profileUsageSupported&&!profileUsageState?.enabled&&!profileUsageError);
+    profileUsageToggle.checked=profileUsageState?.enabled===true;
+    profileUsageToggle.disabled=profileUsageBusy||!profileUsageState||!profileUsageState.enabled&&(!profileUsageSupported||!profilePanel.state?.profile||!profilePanel.allowed);
+    profileUsageStatus.textContent=profileUsageError||(profileUsageState?.enabled?(!profileUsageSupported?'서버가 저장 정보 사용을 지원하지 않아 지금은 정보 없이 질문합니다. 사용 선택을 끌 수 있습니다.':!profileUsageValid?'제공 동의와 현재 저장 정보를 다시 확인해야 합니다. 현재 질문에는 저장 정보를 보내지 않습니다.':'저장 정보를 답변 생성에 사용합니다. 질문에서 다른 상담 대상을 말하면 그 대상의 조건을 우선합니다.'):'저장 정보는 답변 생성에 보내지 않습니다. 켜려면 내 정보를 먼저 저장해 주세요.');
+  }
+  async function refreshProfileUsage(){
+    if(profileUsageBusy){profileUsageDeferred=true;return;}
+    if(currentAccess?.mode!=='anonymous'){renderProfileUsage();return;}
+    const version=++profileUsageVersion;
+    try{
+      const response=await chrome.runtime.sendMessage({type:'gyeote:profile-usage-get'});if(version!==profileUsageVersion)return;
+      if(!response?.ok)throw new Error(response?.error||'profile_usage_storage_failed');
+      profileUsageState=GyeoteProtocol.profileUsageRecord(response.state);profileUsageSupported=response.supported===true;profileUsageValid=response.valid===true;profileUsageError='';
+    }catch{if(version===profileUsageVersion){profileUsageState=null;profileUsageError='정보 사용 설정을 읽지 못해 저장 정보를 제공하지 않습니다. 원본 설정은 유지했습니다.';}}
+    if(version===profileUsageVersion)renderProfileUsage();
+  }
+  profileUsageToggle.addEventListener('change',async()=>{
+    if(profileUsageBusy||!profileUsageState)return;
+    const enabled=profileUsageToggle.checked;cancel();profileUsageVersion++;profileUsageBusy=true;profileUsageError='';renderProfileUsage();let conflict=false;
+    try{
+      const response=await chrome.runtime.sendMessage({type:'gyeote:profile-usage-set',expectedRevision:profileUsageState.revision,enabled,profileRevision:enabled?profilePanel.state?.revision:null});
+      if(!response?.ok){conflict=response?.error==='profile_usage_conflict';throw new Error();}
+      profileUsageState=GyeoteProtocol.profileUsageRecord(response.state);profileUsageSupported=response.supported===true;profileUsageValid=response.valid===true;
+    }catch{profileUsageError='정보 사용 선택을 저장하지 못했습니다. 이전 선택을 유지했으니 확인 후 다시 바꿔 주세요.';}
+    finally{profileUsageBusy=false;renderProfileUsage();if(profileUsageDeferred||conflict){profileUsageDeferred=false;void refreshProfileUsage();}}
+  });
   $('.settings').textContent='확장 옵션';profileControls.append($('.settings'),modeLabel,modeNotice,accessNotice,$('.mode-intro'),$('.scope-notice'),$('.reset'));
   const uiSettings=document.createElement('section');uiSettings.className='ui-settings';uiSettings.setAttribute('aria-label','화면 설정');
   uiSettings.innerHTML='<h3>화면 설정</h3><label>패널 배경 불투명도 <select class="ui-opacity"><option value="100">100% (불투명)</option><option value="95">95%</option><option value="90">90%</option><option value="85">85%</option></select></label><p class="muted">크기는 제목줄 왼쪽 ⤡ 손잡이를 끌거나, 손잡이를 선택한 뒤 방향키로 바꿔요. 옮긴 패널은 제목줄을 두 번 누르면 오른쪽 기본 위치로 돌아가요. 글자와 버튼은 투명해지지 않아요.</p><button class="ui-reset">화면 설정 기본값으로</button><p class="ui-status muted" role="status"></p>';
@@ -246,11 +279,13 @@
   function resetDocumentHistory(){documentHistory=[];documentHistoryAccess=null;conversations.document=[];if(mode==='document')$('.conversation').replaceChildren();inputAssist?.invalidate();}
   function showDocumentAccess(state){
     if(configurationReady&&(state?.origin!==GyeoteProtocol.documentOrigin()))throw new Error('document_access_changed');
-    if(configurationReady&&accessKey(state)!==accessKey(currentAccess)){
+    const changed=accessKey(state)!==accessKey(currentAccess);
+    if(configurationReady&&changed){
       summaryAvailable=false;
       void chrome.runtime.sendMessage({type:'gyeote:summary-capability'}).then(result=>{if(accessKey(state)===accessKey(currentAccess)){summaryAvailable=result?.available===true;updateSummaryControls();}}).catch(()=>{});
     }
     currentAccess=state;
+    if(changed)void refreshProfileUsage();else renderProfileUsage();
     retentionNotice.hidden=mode!=='document'||state?.mode!=='anonymous';
     conversationAlerts.hidden=mode!=='document'||state?.mode!=='anonymous';
     accessNotice.textContent=state?.mode==='admin'?(state.status==='ready'?'문서 접근: 관리자 연결됨':'문서 접근: 관리자 세션 만료 · Chrome 확장 옵션에서 다시 로그인하세요.'):'문서 접근: 공개 문서 (익명)';
@@ -272,7 +307,7 @@
     $('.screen-controls').hidden=documentMode;
     input.maxLength=documentMode?300:240;input.value='';
     questionForm.querySelector('label').textContent=documentMode?'복지 상담':'화면 안내';
-    modeNotice.textContent=documentMode?'입력한 질문·제한한 최근 대화와 누적 요약으로 문서를 검색합니다. 저장 정보는 추천 질문 초안에만 사용합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요. 비공개 자료는 Chrome 확장 옵션에서 관리자 로그인 후 질문하세요.':'질문을 보낼 때 공개 화면의 요소 이름·주변 문구를 연결 서버로 전송합니다. 이미지·입력값·내 정보는 보내지 않습니다. 클릭은 직접 해 주세요.';
+    modeNotice.textContent=documentMode?'입력한 질문과 직접 말한 조건으로 문서를 검색합니다. 저장 정보는 사용을 켠 경우에만 답변 생성에 제공합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요. 비공개 자료는 Chrome 확장 옵션에서 관리자 로그인 후 질문하세요.':'질문을 보낼 때 공개 화면의 요소 이름·주변 문구를 연결 서버로 전송합니다. 이미지·입력값·내 정보는 보내지 않습니다. 클릭은 직접 해 주세요.';
     accessNotice.hidden=!documentMode;if(documentMode){accessNotice.textContent='문서 접근 상태 확인 중';void refreshDocumentAccess();}
     $('.mode-intro').textContent=documentMode?'등록된 문서의 원문 근거로 답변합니다.':'현재 공개 복지로 화면을 함께 봅니다. 클릭은 직접 해 주세요.';
     $('.scope-notice').textContent=documentMode?'복지 정보는 등록 문서를 기준으로 안내합니다. 개인정보는 입력하지 마세요.':'다른 사이트·로그인·개인정보 화면은 지원하지 않습니다.';
@@ -389,7 +424,7 @@
   async function ask(question){
     cancel();const version=serial,documentMode=mode==='document';
     if(!configurationReady){setStatus('설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.');return;}
-    let conversationContext,requestAccess,requestInput,publicRequest=false;
+    let conversationContext,requestAccess,requestInput,publicRequest=false,profileContextOmitted=false;
     const requestId=GyeoteDOM.id();
     const startedAt=Date.now();let budgetSeconds;
     const stoppedText=()=>budgetSeconds?`요청이 취소되거나 설정된 ${budgetSeconds}초를 넘었습니다. 서버 확인 후 직접 다시 질문하세요.`:errors.request_stopped;
@@ -404,7 +439,7 @@
         if(currentAccess&&accessKey(currentAccess)!==accessKey(access))resetDocumentHistory();
         await showDocumentAccess(access);if(version!==serial)return;requestAccess=accessKey(access);publicRequest=access.mode==='anonymous';
         if(!pendingQuestion?.isConnected){pendingQuestion=appendMessage('user',GyeoteProtocol.privacy.maskText(question,true)).article;showPending();}
-        if(publicRequest){conversationContext=savedPanel.context();requestInput=await savedPanel.begin(conversationContext,requestId,conversationContext.profileRevision);if(version!==serial)return;}
+        if(publicRequest){conversationContext=savedPanel.context();requestInput=await savedPanel.begin(conversationContext,requestId,conversationContext.profileRevision);if(version!==serial)return;profileContextOmitted=profileUsageState?.enabled===true&&!requestInput.profile_context;}
         payload=GyeoteProtocol.documentRequest({query:question,...(publicRequest?requestInput:{history:documentHistory})});
       }
       else{
@@ -446,7 +481,7 @@
             if(publicRequest){
               clearTimeout(requestTimer);
               const saved=await savedPanel.save(conversationContext,requestId,question,answer,conversationContext.profileRevision,()=>version===serial&&requestPort===port&&mode==='document');
-              if(version===serial&&requestPort===port)setStatus(saved?[(answer.context_update?.status==='failed'?'이전 대화 일부만 참고해 답변했습니다.':''),(answer.context_update?.status!=='failed'&&(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted)?'일부 대화 맥락은 제외됐습니다.':'')].filter(Boolean).join(' '):'답변과 대화 맥락의 저장을 확인하지 못했습니다. 저장 상태와 재시도를 확인하세요.');
+              if(version===serial&&requestPort===port)setStatus(saved?[(profileContextOmitted?'저장 정보 제공을 확인하지 못해 이번 답변에는 사용하지 않았습니다.':''),(answer.context_update?.status==='failed'?'이전 대화 일부만 참고해 답변했습니다.':''),(answer.context_update?.status!=='failed'&&(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted)?'일부 대화 맥락은 제외됐습니다.':'')].filter(Boolean).join(' '):'답변과 대화 맥락의 저장을 확인하지 못했습니다. 저장 상태와 재시도를 확인하세요.');
               return;
             }
             // 기존 /chat은 이력을 수용하지만 현재 문서 검색·생성에는 마지막 질문만 사용한다.
@@ -614,7 +649,8 @@
   chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{
     if(message?.type==='gyeote:conversations-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){savedPanel.changed(message.revision,message.generation);sendResponse({ok:true});return;}
     if(message?.type==='gyeote:ui-preferences-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){if(!(Number.isSafeInteger(message.revision)&&uiState&&message.revision<=uiState.revision))void refreshUi();sendResponse({ok:true});return;}
-    if(message?.type==='gyeote:profile-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){stopSummary();profilePanel.changed(message.revision);sendResponse({ok:true});return;}
+    if(message?.type==='gyeote:profile-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){if(profileUsageState?.enabled)cancel();else stopSummary();profilePanel.changed(message.revision);void refreshProfileUsage();sendResponse({ok:true});return;}
+    if(message?.type==='gyeote:profile-usage-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){if(message.revision!==profileUsageState?.revision){cancel();void refreshProfileUsage();}sendResponse({ok:true});return;}
     if(message?.type==='gyeote:document-access-changed'){
       if(_sender.id!==chrome.runtime.id||_sender.tab)return;
       accessVersion++;

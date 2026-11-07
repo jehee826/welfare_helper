@@ -14,6 +14,28 @@ def test_dimension_incompatible_with_existing_schema_is_rejected():
         Settings(_env_file=None, embed_dim=768)
 
 
+def test_verified_project_preview_requires_explicit_exact_origin():
+    preview = "https://welfare-helper-git-codex-fix-merge-welfare7.vercel.app"
+    assert preview not in Settings(_env_file=None).cors_allowed_origins
+    settings = Settings(_env_file=None, cors_allowed_origins=[preview, preview])
+    assert settings.cors_allowed_origins == [preview]
+
+
+@pytest.mark.parametrize("origin", [
+    "*", "https://*.vercel.app", "https://welfare-helper-git-branch-other-team.vercel.app",
+    "https://other-project-git-branch-welfare7.vercel.app",
+    "https://welfare-helper-git-branch-welfare7.vercel.app.attacker.invalid",
+    "http://welfare-helper-git-branch-welfare7.vercel.app",
+    "https://welfare-helper-git-branch-welfare7.vercel.app:443",
+    "https://welfare-helper-git-branch-welfare7.vercel.app/path",
+    "https://welfare-helper-git-branch-welfare7.vercel.app?x=1",
+    "https://user@welfare-helper-git-branch-welfare7.vercel.app",
+])
+def test_other_or_malformed_preview_origins_are_rejected(origin):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, cors_allowed_origins=[origin])
+
+
 @pytest.mark.parametrize('values', [
     {'ollama_llm': ' '}, {'ollama_embed': 'bad model'},
     {'ollama_base_url': 'http://a:b@localhost:11434'},

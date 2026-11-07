@@ -1,6 +1,6 @@
 # 공개 edge와 운영 경계
 
-최신 업데이트: 2026-11-08 02:10 KST
+최신 업데이트: 2026-11-08 02:42 KST
 
 `Caddyfile`의 공개 프록시는 다음 경계를 사용한다. 백엔드8000·Ollama11434를 직접 외부 공개하지 않고 edge로만 접근하게 한다. 로컬/내부 API 경로 자체를 삭제하는 설정은 아니다.
 
@@ -16,6 +16,8 @@
 실제 DNS/TLS·프록시 배포 적용은 별도 확인이 필요하다. 정적 경로 검사는 Caddy 런타임 라우팅 성공을 의미하지 않는다. [Caddy path matcher](https://caddyserver.com/docs/caddyfile/matchers#path)는 기본 정확 일치이며 하위 경로는 `/*`로 명시한다. [validate](https://caddyserver.com/docs/command-line#caddy-validate)는 서비스를 시작하지 않는 설정 검사지만 실제 배포·인증서·요청 경로 검증을 대신하지 않는다.
 
 ## 로그인과 추론 제한
+
+관리자 후보 검증은 Vercel에서 확인한 `welfare-helper-git-<branch>-welfare7.vercel.app`의 HTTPS Origin 하나를 `CORS_ALLOWED_ORIGINS`에 명시해 진행할 수 있다. 브랜치 별칭을 자동 허용하는 정규식 CORS는 사용하지 않으며 기본 허용값은 기존 운영 주소다. 다른 팀/프로젝트·와일드카드·임의 배포 해시 주소·경로/쿼리/포트가 붙은 Origin은 설정 검증에서 거절한다. 실제 등록/복구는 승인된 서버 런타임 변경으로 수행하고 `allow_credentials=false`·관리자 Bearer 인증은 유지한다.
 
 Uvicorn 시작은 `--no-proxy-headers`를 유지한다. 관리자 로그인은 **제한 키별60초 동안 실패5회 후429**로 제한하며 성공 또는 창 만료 시 해당 키의 실패가 정리된다. 관리 세션은8시간·최대256개, 단일 서버 프로세스 메모리에 보관한다.
 

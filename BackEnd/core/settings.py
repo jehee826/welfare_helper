@@ -132,8 +132,11 @@ class Settings(BaseSettings):
     @classmethod
     def validate_cors_origins(cls, values: list[str]) -> list[str]:
         allowed = {"https://welfare-helper-iota.vercel.app", "http://localhost:5173", "http://127.0.0.1:5173"}
-        if any(value not in allowed and not re.fullmatch(r"chrome-extension://[a-p]{32}", value) for value in values):
-            raise ValueError("CORS는 공식 프런트·지정된 로컬 개발 Origin·명시한 Chrome 확장 ID만 허용합니다.")
+        # 검증한 관리자 프로젝트의 브랜치 별칭도 실제 등록한 Origin만 허용한다.
+        preview = r"https://welfare-helper-git-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?-welfare7\.vercel\.app"
+        if any(value not in allowed and not re.fullmatch(r"chrome-extension://[a-p]{32}", value)
+               and not re.fullmatch(preview, value) for value in values):
+            raise ValueError("CORS는 공식 프런트·지정 프로젝트 브랜치·로컬 개발 Origin·명시한 Chrome 확장 ID만 허용합니다.")
         return list(dict.fromkeys(values))
 
 

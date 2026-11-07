@@ -1,6 +1,6 @@
 # 병합 후 결함 수정·기능 완결·배포 검증 계획
 
-작성: 2026-11-08. 최신 업데이트: 2026-11-08 02:35 KST
+작성: 2026-11-08. 최신 업데이트: 2026-11-08 02:42 KST
 
 ## 1. 목표와 기준
 
@@ -182,6 +182,14 @@ EC2 기동은 사용자가 한다. 기동 확인 뒤 필요한 시험 시점에 
 각 단계 결과는 이 문서 아래에 `날짜 / 후보 SHA / 대상 W·A / 변경 파일 / 명령·실측 결과 / 실패·미검증 / 다음 조건`으로 누적한다. 원출력·합성 fixture는 기존 Git 제외 시험 경로에 보관하고 별도 결과 MD를 늘리지 않는다. 새로운 결함은 재현·영향·담당·완료 기준을 먼저 추가한다. 필수 요구를 뒤로 미룰 경우 사용자 범위 결정 없이 전체 완료로 표시하지 않는다.
 
 ## 6. 실행 기록
+
+### 2026-11-08 02:42 · f33de41 원격 검사 통과·관리자 프리뷰 CORS 보완
+
+- 승인된 추가11커밋을 `codex/fix-merge`에 push해 원격 f33de41 일치를 확인했다. GitHub Actions run42397223521의 web-extension·Python backend/worker/dev **4개 job 모두 success**, 해당 SHA의 Vercel preview `dpl_2nzREpGzij4iJr39anxbRh1mjF1L` READY를 확인했다. 연결 도구가 push 트리거 Actions 목록을 지원하지 않아 기존 GitHub 인증을 메모리에서만 사용해 run ID를 읽고 이후 job 상태는 연결 도구로 확인했다. 토큰을 출력/파일 보관하지 않았다.
+- f33de41의 배포 소스 묶음 SHA256은 `bae761a6e85f03185dd1bb17f7e953d2ea0bd6d4138bdf61054309a96e450808`이며 실제 환경/키/개인 .local은 포함하지 않았다. 확장15파일·HTTPS호스트·600초 패키지도 준비했지만 설치 폴더 변경/재로드는 하지 않았다. 이 후보 이후 아래 CORS 보완 때문에 최종 운영 후보 SHA/묶음은 다시 고정해야 한다.
+- 운영 사전 읽기에서 edge 설정 해시가 현행 Caddyfile과 같고 backend 포트127.0.0.1:8000·기존 NVIDIA runtime/캐시를 확인했다. 운영 main.py 해시는793aca6 원본과 같다. 원격 기존 이미지 ID·Compose project welfare_helper/버전5.6.1·보존 마운트를 확인했고 디스크 여유22GB였다. 기존 edge는 재빌드할 변경이 없으며 backend/worker·Ollama 설정 변경만 후보로 준비한다.
+- Vercel이 부여한 실제 브랜치 별칭 `https://welfare-helper-git-codex-fix-merge-welfare7.vercel.app`을 확인했다. 기존 Settings는 운영 주소만 허용해 이 프리뷰를 명시 등록할 수 없었다. 검증한 welfare-helper/welfare7 프로젝트의 HTTPS 브랜치 별칭을 개별 환경 목록에 넣을 수 있도록 최소 보완했다. 기본값·정확한 allow_origins 목록·credentials=false·관리자 Bearer 인증은 유지하며 다른 프로젝트/팀·와일드카드·임의 배포 해시·사용자정보/포트/경로/쿼리는 거절한다. 등록하지 않은 같은 프로젝트의 다른 브랜치도 실제 preflight400을 확인했다.
+- Settings·실제 앱 CORS·관리자 인증 집중 **46/46 통과**. 새 경계 검사를 CI 진입점에 등록했고 `.env.example`과 운영 문구를 정정했다. 보완한 현재 CI 진입점은 **615 passed, 13 skipped**로 통과했다. 서버 CORS 목록 변경은 아직 미실행이며 승인된 후보 반영 단계에서만 진행한다. 후보 URL의 HTTP200은 Vercel 로그인 보호 페이지로 확인돼 앱 성공으로 세지 않았다. 현재는 후보 프리뷰 UI와 운영 API의 실제 인증 연결 완료로 표시하지 않는다.
 
 ### 2026-11-08 02:35 · 원본 전체 검사·CI 보완
 

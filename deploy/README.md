@@ -1,11 +1,13 @@
 # 공개 edge와 운영 경계
 
+최신 업데이트: 2026-11-08 01:51 KST
+
 `Caddyfile`의 공개 프록시는 다음 경계를 사용한다. 백엔드8000·Ollama11434를 직접 외부 공개하지 않고 edge로만 접근하게 한다. 로컬/내부 API 경로 자체를 삭제하는 설정은 아니다.
 
 | 경로 | 공개 edge 동작 |
 |---|---|
 | `/health` | 단순 API 상태 확인을 backend에 전달 |
-| `/api/v1/chat`, `/api/v1/admin/*` | 기존 상담·관리자 인증/문서 API에 전달, 서버 인증·게시 범위 유지 |
+| `/api/v1/chat`, `/api/v1/chat/capabilities`, `/api/v1/conversation/summary`, `/api/v1/admin/*` | 상담·지원 기능 확인·요약·관리자 API에 전달, 서버 인증·게시 범위 유지 |
 | `/health/*`, `/docs`·`/redoc` 및 하위 경로, `/openapi.json`, `/debug` 및 하위 경로 | 404, DB/의존성 점검·구성 정보·API 문서/진단을 공개하지 않음 |
 | `/api/v1/desktop` 및 하위 경로 | 기존404 유지, 로컬/SSH 화면 안내 전용 |
 
@@ -34,3 +36,13 @@ Uvicorn 시작은 `--no-proxy-headers`를 유지한다. 관리자 로그인은 *
 Python 3.12 Linux AMD64의 backend/worker/dev·빌드 도구를 버전·해시 잠금으로 분리했고 Docker와 모델 없는 CI가 해당 파일을 사용한다. 생성·설치·검사 범위는 [의존성 잠금](../requirements/README.md)을 참고한다. Windows나 다른 CPU 플랫폼의 설치 성공과 원격 CI·배포 성공까지 보장하지 않는다.
 
 Ollama는 기존 실행에서 확인한 0.40.13과 같은 공식 태그로 고정했다. Python/Caddy/Ollama 태그는 이미지 digest 고정이 아니며 OS apt 저장소와 모델 파일도 별도 식별이 필요하다. 프로세스·모델 캐시·GPU deploy 수동 주석 해제 방식을 이 변경으로 바꾸지 않는다.
+
+## 연락처 기록 활성화와 복구
+
+기본 `REFERRAL_RECORDS_ENABLED=false`는 0006 없이 기존 상담을 유지한다. 실제 활성화는 후보 SHA·대상 DB·기존 게시 문서/부서 버전·변경/복구 범위를 확인한 별도 운영 단계다. 앱이나 worker는 DDL을 자동 실행하지 않는다.
+
+1. 읽기 점검으로 `public.contact_referrals` 존재·RLS/권한·기존 department 키와 공개 게시 버전을 확인한다. 새 테이블이면 승인된 대상에 `BackEnd/db/migrations/0006_contact_referrals.sql`만 적용한다. 기존 테이블을 재생성하거나 문서·관리자·다른 자료를 삭제하지 않는다.
+2. backend·document-worker를 같은 후보로 준비하되 수집은 OFF로 둔다. 새 확장의 공개 상담 최초 진입에서 입력창 위 고지가 보이고, 질문 전송 직전 `/api/v1/chat/capabilities` 재확인이 성공하는지 확인한다. 수집 상태 확인 실패 시 새 확장은 질문을 전송하지 않는다. 옛 404 서버의 비활성 호환은 운영 수집 ON의 근거가 아니다. 지원하는 클라이언트의 고지 준비를 확인한 뒤에만 활성화한다.
+3. 승인된 런타임에서 backend와 worker에 같은 `REFERRAL_RECORDS_ENABLED=true`를 적용한다. 정해진 공개 자료의 합성 연락처 응답 최소 1건으로 기록·관리자 기간/부서 집계·권한을 확인한다. 서버 생성 안내 건수이며 실제 수신·전화 발신·신청 횟수로 해석하지 않는다. 질문·답변·요약·프로필·IP는 기록하지 않는다.
+4. 기록은 90일 이상이면 조회·통계에서 제외한다. 기존 worker는 유휴/문서 작업 heartbeat에서 최대 10분마다 만료 기록 물리 삭제를 시도한다. worker 중단이나 삭제 실패 시 물리 삭제가 지연될 수 있으므로 worker 전체를 끄지 않는다. 관리자 기간 삭제는 선택한 KST 날짜·부서 범위와 해당 집계를 함께 줄이며 실제 삭제는 승인 범위에서만 실행한다.
+5. 이상이 있으면 양쪽 수집 flag를 OFF로 되돌려 추가 기록을 중단하고 기존 기록은 보존한다. 코드/이미지 복구 시도 때문에 0006 테이블·운영 문서·볼륨을 삭제하지 않는다. flag OFF는 기존 행 삭제나 고지 검증 완료를 뜻하지 않는다.

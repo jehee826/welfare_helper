@@ -170,7 +170,10 @@ def health():
 
 @app.get("/api/v1/chat/capabilities")
 def chat_capabilities():
-    return JSONResponse({"profile_context_supported": get_settings().documents_enabled and not bool(os.getenv("VERCEL"))},
+    settings = get_settings()
+    enabled = settings.documents_enabled and not bool(os.getenv("VERCEL"))
+    return JSONResponse({"profile_context_supported": enabled,
+                         "referral_records_enabled": enabled and settings.referral_records_enabled},
                         headers={"Cache-Control": "no-store"})
 
 

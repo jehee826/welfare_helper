@@ -4,7 +4,10 @@ const plain=value=>JSON.parse(JSON.stringify(value));
 const key='gyeote.conversations',profileKey='gyeote.profile';
 const profile={schemaVersion:1,revision:1,onboardingCompleted:true,profile:null};
 const settle=async()=>{for(let i=0;i<6;i++)await new Promise(setImmediate);};
-function worker(data={[profileKey]:profile},failure={},scriptSource=source,fetcher=()=>{throw Error('실제 통신 금지');},sharedSession=null,clock=null){
+function worker(data={[profileKey]:profile},failure={},scriptSource=source,fetcher=(url,options)=>{
+  if(new URL(url).pathname==='/api/v1/chat/capabilities'&&(!options?.method||options.method==='GET'))return Promise.resolve(new Response(JSON.stringify({profile_context_supported:false,referral_records_enabled:false})));
+  throw Error('실제 통신 금지');
+},sharedSession=null,clock=null){
   let listener,changed,clicked,removed;const clients=new Map(),messages=[],calls={get:[],set:[],level:[]};
   const session=sharedSession||{documentAccess:'anonymous',documentAccessId:'public-1'};
   const chrome={runtime:{id:'x',getURL:name=>'chrome-extension://x/'+name,onMessage:{addListener(fn){listener=fn;}},sendMessage:async message=>messages.push(plain(message)),getContexts:async()=>[{}]},

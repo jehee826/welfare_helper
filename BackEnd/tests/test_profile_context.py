@@ -81,5 +81,5 @@ def test_http_old_client_defaults_off_and_new_consent_is_explicit(api, monkeypat
     api.main.answer_document.assert_not_called()
     monkeypatch.setattr(api.main, "get_settings", lambda: Settings(_env_file=None, documents_enabled=True))
     capability = api.client.get("/api/v1/chat/capabilities")
-    assert capability.json() == {"profile_context_supported": True}
+    assert capability.json() == {"profile_context_supported": True, "referral_records_enabled": False}
     assert capability.headers["cache-control"] == "no-store"

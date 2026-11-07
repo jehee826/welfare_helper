@@ -23,6 +23,7 @@
   let configurationReady=false,pendingQuestion=null,pendingReply=null,accessVersion=0;
   let summaryAvailable=false,summaryBusy=false,summaryPort=null,summaryVersion=0,summaryTimer;
   let profileUsageState=null,profileUsageSupported=false,profileUsageValid=false,profileUsageBusy=false,profileUsageDeferred=false,profileUsageVersion=0,profileUsageError='';
+  let publicNoticeVersion=0;
   try{GyeoteProtocol.documentOrigin();configurationReady=true;}catch{}
   const conversations={screen:[],document:[]};
   const rootStyles=new Map([[document,style]]);
@@ -253,6 +254,20 @@
   $('.onboarding-edit').addEventListener('click',()=>{if(!profileOpen)profileButton.click();});
   $('.onboarding-later').addEventListener('click',()=>void profilePanel.defer());
   const retentionNotice=document.createElement('p');retentionNotice.className='retention-notice muted';retentionNotice.textContent='대화내역은 30개까지 저장됩니다';transcript.prepend(retentionNotice);
+  const referralNotice=document.createElement('p');referralNotice.className='referral-notice muted';referralNotice.hidden=true;
+  const referralNoticeText='기관·번호·출처·문서 버전의 익명 연락처 안내 기록을 90일 보관 후 자동 삭제합니다. 관리자 기간별 삭제가 가능하며 질문·답변·요약·프로필·IP는 이 기록에 저장하지 않습니다.';
+  questionForm.before(referralNotice);
+  async function refreshPublicNotice(){
+    if(mode!=='document'||currentAccess?.mode!=='anonymous')return;
+    const version=++publicNoticeVersion,access=accessKey(currentAccess);
+    referralNotice.hidden=false;referralNotice.textContent='수집 여부 확인 중입니다. 수집 활성화 시 '+referralNoticeText;
+    try{
+      const response=await chrome.runtime.sendMessage({type:'gyeote:public-capabilities'});
+      if(version!==publicNoticeVersion||mode!=='document'||access!==accessKey(currentAccess)||!host.isConnected)return;
+      if(!response?.ok)throw new Error();
+      referralNotice.hidden=response.referralRecordsEnabled!==true;referralNotice.textContent=referralNoticeText;
+    }catch{if(version===publicNoticeVersion&&mode==='document'&&access===accessKey(currentAccess))referralNotice.textContent='수집 설정을 확인하지 못했습니다. 전송 전에 다시 확인하며 실패하면 질문을 보내지 않습니다. 수집 활성화 시 '+referralNoticeText;}
+  }
   const savedSlot=document.createElement('div');savedSlot.className='saved-slot';modeNotice.after(savedSlot);
   const conversationAlerts=document.createElement('div');conversationAlerts.className='conversation-alerts';transcript.append(conversationAlerts);
   savedPanel=GyeoteConversationPanel.create(savedSlot,{
@@ -286,7 +301,9 @@
     }
     currentAccess=state;
     if(changed)void refreshProfileUsage();else renderProfileUsage();
+    if(changed)void refreshPublicNotice();
     retentionNotice.hidden=mode!=='document'||state?.mode!=='anonymous';
+    if(mode!=='document'||state?.mode!=='anonymous')referralNotice.hidden=true;
     conversationAlerts.hidden=mode!=='document'||state?.mode!=='anonymous';
     accessNotice.textContent=state?.mode==='admin'?(state.status==='ready'?'문서 접근: 관리자 연결됨':'문서 접근: 관리자 세션 만료 · Chrome 확장 옵션에서 다시 로그인하세요.'):'문서 접근: 공개 문서 (익명)';
     $('.reset').hidden=mode==='document'&&state?.mode==='anonymous';$('.reset').textContent=mode==='document'?'임시 대화 지우기':'안내 대화 지우기';
@@ -301,6 +318,8 @@
     const documentMode=mode==='document',input=$('#gyeote-question');
     (documentMode?profileControls:$('.screen-controls')).append($('.reset'));screenSettings.hidden=documentMode;const voiceHelp=$('.voice-input');if(voiceHelp)(documentMode?profileControls:screenSettings).append(voiceHelp);
     retentionNotice.hidden=!documentMode||currentAccess?.mode==='admin';
+    if(!documentMode||currentAccess?.mode!=='anonymous')referralNotice.hidden=true;
+    else void refreshPublicNotice();
     $('.reset').hidden=documentMode&&currentAccess?.mode==='anonymous';$('.reset').textContent=documentMode?'임시 대화 지우기':'안내 대화 지우기';
     for(const button of modeSwitch.querySelectorAll('button'))button.setAttribute('aria-pressed',String(button.dataset.mode===mode));
     panel.setAttribute('aria-label',documentMode?'곁에 복지 상담':'곁에 화면 안내');
@@ -455,6 +474,8 @@
       if(documentMode){
         const access=accessKey(prepared.documentAccess);
         if(access!==requestAccess)throw new Error('document_access_changed');
+        referralNotice.hidden=!publicRequest||prepared.referralRecordsEnabled!==true;
+        referralNotice.textContent=referralNoticeText;
         // 알림이 늦어져도 이전 관리자 이력을 다른 접근 상태의 요청에 싣지 않는다.
         if(documentHistoryAccess&&documentHistoryAccess!==access){resetDocumentHistory();payload.history=[];pendingQuestion=appendMessage('user',GyeoteProtocol.privacy.maskText(question,true)).article;showPending();}
         documentHistoryAccess=access;
@@ -506,7 +527,7 @@
     }
     finally{if(version===serial){requestPending=false;updateRequestControl();inputAssist.update();}}
   }
-  function documentError(code){if(code.startsWith('summary_'))return ({summary_input_budget:'요약할 완전한 문답이 입력 한도를 넘었습니다. 더 짧은 상담에서 다시 시도해 주세요.',summary_public_only:'요약은 공개 상담에서만 사용할 수 있습니다.',summary_unavailable:'서버에서 상담 요약을 아직 지원하지 않습니다.',summary_generation_failed:'상담 요약에 실패했습니다. 원래 대화는 그대로 보관됩니다.'})[code]||'상담 요약을 처리하지 못했습니다.';if(code==='conversation_storage_failed')return '대화 맥락 경계를 저장하지 못해 질문을 보내지 않았습니다. 저장 공간을 확인한 뒤 다시 질문해 주세요.';return ({chat_rate_limited:'질문 요청이 많습니다. 잠시 기다린 뒤 직접 다시 질문해 주세요.',invalid_profile:'내 정보의 입력값을 확인한 뒤 다시 질문해 주세요.',profile_changed:'내 정보가 바뀌어 이전 답변을 표시하지 않았습니다. 확인한 뒤 다시 질문해 주세요.',profile_storage_failed:'내 정보를 확인하지 못해 질문을 보내거나 답변을 표시하지 않았습니다. 내 정보에서 다시 불러오세요.',profile_data_invalid:'저장된 내 정보를 확인하지 못했습니다. 내 정보에서 재설정을 확인해 주세요.',sensitive_input:'개인정보가 포함된 질문은 보낼 수 없습니다. 개인정보를 제외하고 다시 질문해 주세요.',document_auth_required:'관리자 세션이 없거나 만료됐습니다. Chrome 확장 옵션에서 다시 로그인하거나 익명으로 전환하세요.',document_access_changed:'문서 접근 상태가 바뀌어 이전 대화를 지웠습니다. 현재 접근 상태에서 직접 다시 질문하세요.',generation_failed:'문서 검색이나 답변 처리에 실패했습니다. 잠시 후 다시 질문해 주세요.',connection_failed:'서버에 연결하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.',request_timeout:'요청 처리 시간을 넘었습니다. 잠시 후 다시 질문해 주세요.',request_cancelled:'요청이 취소되었습니다. 다시 질문할 수 있습니다.',input_budget:'문서 질문은 300자, 대화 이력은 전체 6000자 이내여야 합니다.',invalid_reply:'문서 응답 형식을 확인하지 못해 표시하지 않았습니다.'})[code]||errors[code]||'문서 요청을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.';}
+  function documentError(code){if(code==='public_settings_unavailable')return '연락처 기록 수집 설정을 확인하지 못해 질문을 보내지 않았습니다. 잠시 후 다시 시도해 주세요.';if(code.startsWith('summary_'))return ({summary_input_budget:'요약할 완전한 문답이 입력 한도를 넘었습니다. 더 짧은 상담에서 다시 시도해 주세요.',summary_public_only:'요약은 공개 상담에서만 사용할 수 있습니다.',summary_unavailable:'서버에서 상담 요약을 아직 지원하지 않습니다.',summary_generation_failed:'상담 요약에 실패했습니다. 원래 대화는 그대로 보관됩니다.'})[code]||'상담 요약을 처리하지 못했습니다.';if(code==='conversation_storage_failed')return '대화 맥락 경계를 저장하지 못해 질문을 보내지 않았습니다. 저장 공간을 확인한 뒤 다시 질문해 주세요.';return ({chat_rate_limited:'질문 요청이 많습니다. 잠시 기다린 뒤 직접 다시 질문해 주세요.',invalid_profile:'내 정보의 입력값을 확인한 뒤 다시 질문해 주세요.',profile_changed:'내 정보가 바뀌어 이전 답변을 표시하지 않았습니다. 확인한 뒤 다시 질문해 주세요.',profile_storage_failed:'내 정보를 확인하지 못해 질문을 보내거나 답변을 표시하지 않았습니다. 내 정보에서 다시 불러오세요.',profile_data_invalid:'저장된 내 정보를 확인하지 못했습니다. 내 정보에서 재설정을 확인해 주세요.',sensitive_input:'개인정보가 포함된 질문은 보낼 수 없습니다. 개인정보를 제외하고 다시 질문해 주세요.',document_auth_required:'관리자 세션이 없거나 만료됐습니다. Chrome 확장 옵션에서 다시 로그인하거나 익명으로 전환하세요.',document_access_changed:'문서 접근 상태가 바뀌어 이전 대화를 지웠습니다. 현재 접근 상태에서 직접 다시 질문하세요.',generation_failed:'문서 검색이나 답변 처리에 실패했습니다. 잠시 후 다시 질문해 주세요.',connection_failed:'서버에 연결하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.',request_timeout:'요청 처리 시간을 넘었습니다. 잠시 후 다시 질문해 주세요.',request_cancelled:'요청이 취소되었습니다. 다시 질문할 수 있습니다.',input_budget:'문서 질문은 300자, 대화 이력은 전체 6000자 이내여야 합니다.',invalid_reply:'문서 응답 형식을 확인하지 못해 표시하지 않았습니다.'})[code]||errors[code]||'문서 요청을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.';}
   questionForm.addEventListener('submit',event=>{event.preventDefault();if(summaryBusy)return;inputAssist.cancel();if(busy||requestPending){cancel();return;}if(mode==='document'&&currentAccess?.mode==='anonymous'&&!savedPanel.ready){setStatus('대화 저장 상태를 확인한 뒤 다시 질문해 주세요. 대화 저장 관리에서 다시 불러올 수 있습니다.');return;}if(mode==='document'&&currentAccess?.mode==='anonymous'&&savedPanel.hasUnsaved){setStatus('미저장 답변을 보관하거나 명시적으로 버린 뒤 다음 질문을 보내세요.');return;}const input=$('#gyeote-question'),question=input.value.trim();if(question.length>input.maxLength){setStatus(`질문을 ${input.maxLength}자 이내로 수정한 뒤 전송해 주세요.`);input.focus();return;}input.value='';void ask(question);});
   $('.settings').addEventListener('click',()=>{void chrome.runtime.sendMessage({type:'gyeote:options'}).catch(()=>setStatus('확장 관리 화면에서 곁에의 옵션을 열어 주세요.'));});
   const managerButton=$('.documents');

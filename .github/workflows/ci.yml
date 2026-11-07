@@ -93,3 +93,4 @@ jobs:
           Extension/tests/context_expiry.test.cjs
           Extension/tests/consultation_summary.test.cjs
           Extension/tests/profile_usage.test.cjs
+          Extension/tests/referral_notice.test.cjs

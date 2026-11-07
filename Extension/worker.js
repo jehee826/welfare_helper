@@ -47,13 +47,25 @@ async function storedProfileUsage(){
   const raw=(await chrome.storage.local.get(profileUsageKey))[profileUsageKey];
   return raw===undefined?{schemaVersion:1,revision:0,enabled:false,profileRevision:null}:GyeoteProtocol.profileUsageRecord(raw);
 }
-async function profileSupported(){
+async function fetchPublicCapabilities(){
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);
   try{
     const response=await fetch(GyeoteProtocol.documentOrigin()+'/api/v1/chat/capabilities',{signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
-    return response.ok&&(await response.json()).profile_context_supported===true;
-  }catch{return false;}finally{clearTimeout(timer);}
+    if(response.status===404)return {profile_context_supported:false,referral_records_enabled:false};
+    if(!response.ok)throw new Error('public_settings_unavailable');
+    const value=await response.json();
+    if(!value||typeof value!=='object'||Array.isArray(value)||['profile_context_supported','referral_records_enabled'].some(key=>key in value&&typeof value[key]!=='boolean'))throw new Error('public_settings_unavailable');
+    return {profile_context_supported:value.profile_context_supported===true,referral_records_enabled:value.referral_records_enabled===true};
+  }finally{clearTimeout(timer);}
 }
+let publicCapabilityRead;
+async function publicCapabilities(){
+  if(publicCapabilityRead)return publicCapabilityRead;
+  // 동시에 열린 고지·정보 설정은 읽기를 공유하고, 전송 직전에는 새로 확인한다.
+  publicCapabilityRead=fetchPublicCapabilities();
+  try{return await publicCapabilityRead;}finally{publicCapabilityRead=null;}
+}
+async function profileSupported(){try{return (await publicCapabilities()).profile_context_supported;}catch{return false;}}
 async function currentProfileContext(checkSupport=false){
   try{
     const usage=await storedProfileUsage();if(!usage.enabled||checkSupport&&!await profileSupported())return null;
@@ -217,6 +229,11 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   const internal=sender.url===chrome.runtime.getURL('offscreen.html');
   const options=sender.url===chrome.runtime.getURL('options.html');
   const content=sender.frameId===0&&official(sender.url)&&official(sender.tab?.url);
+  if(message?.type==='gyeote:public-capabilities'){
+    if(!content||sender.url!==sender.tab.url||Object.keys(message).join(',')!=='type')return;
+    (async()=>{if((await documentAuth()).mode!=='anonymous')throw new Error();return {ok:true,referralRecordsEnabled:(await publicCapabilities()).referral_records_enabled};})()
+      .then(sendResponse).catch(()=>sendResponse({ok:false,error:'public_settings_unavailable'}));return true;
+  }
   if(['gyeote:profile-usage-get','gyeote:profile-usage-set'].includes(message?.type)){
     if(!content||sender.url!==sender.tab.url||!Number.isInteger(sender.tab.id)||sender.tab.id<0)return;
     const action=async()=>{
@@ -322,7 +339,11 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
       const access=documentMode?authSummary(await documentAuth()):undefined;
       if(message.mode==='summary'&&access?.mode!=='anonymous'){sendResponse({ok:false,error:'summary_public_only'});return;}
       if(access?.status==='expired'){sendResponse({ok:false,error:'document_auth_required'});return;}
-      await prepare();sendResponse({ok:true,timeoutSeconds,...(access?{documentAccess:access}:{})});
-    })().catch(error=>sendResponse({ok:false,error:error.message==='connection_configuration_invalid'?error.message:'connection_failed'}));return true;
+      let referralRecordsEnabled;
+      if(message.mode==='document'&&access?.mode==='anonymous'){
+        try{referralRecordsEnabled=(await publicCapabilities()).referral_records_enabled;}catch{throw new Error('public_settings_unavailable');}
+      }
+      await prepare();sendResponse({ok:true,timeoutSeconds,...(access?{documentAccess:access}:{}),...(referralRecordsEnabled!==undefined?{referralRecordsEnabled}:{})});
+    })().catch(error=>sendResponse({ok:false,error:['connection_configuration_invalid','public_settings_unavailable'].includes(error.message)?error.message:'connection_failed'}));return true;
   }
 });

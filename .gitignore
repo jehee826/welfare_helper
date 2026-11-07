@@ -18,6 +18,7 @@ postgres_data/
 # 로컬 개발·테스트 환경
 .pytest_cache/
 .reranker_cache/
+.playwright-mcp/
 
 .CLAUDE.md
 

@@ -6,11 +6,12 @@ import type { WelfareApi } from "./api/types";
 import { AdminPage } from "./pages/AdminPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { Header } from "./components/Header";
+import { PasswordRotation } from "./components/admin/PasswordRotation";
 
 const liveApi = createHttpApi();
 
 function AdminLayout() {
-  return <div className="page"><Header /><main className="admin">
+  return <div className="page"><Header /><PasswordRotation /><main className="admin">
     <AdminGate><Outlet /></AdminGate>
   </main></div>;
 }

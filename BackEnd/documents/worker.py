@@ -18,6 +18,7 @@ from BackEnd.documents.contracts import DocumentError, PARSER_VERSION, automatic
 from BackEnd.documents.indexing import document_children
 from BackEnd.documents.store import get_document_store
 from BackEnd.readiness import worker_heartbeat
+from BackEnd.admin.referral_store import prune_due
 
 
 def failure_diagnostic(exc, job_id, temp_dir):
@@ -198,6 +199,7 @@ def supervise(job, store, settings):
                          else settings.documents_parse_timeout if phase == "parsing" else settings.documents_index_timeout)
                 if now - phase_started > limit:
                     raise DocumentError("job_stage_timeout")
+                prune_due()
                 time.sleep(1)
             if child.returncode:
                 try:
@@ -238,6 +240,7 @@ def main():
     worker_heartbeat()
     while True:
         worker_heartbeat()
+        prune_due()
         if settings.documents_enabled:
             try:
                 store = get_document_store()

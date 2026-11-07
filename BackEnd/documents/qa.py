@@ -6,15 +6,17 @@ from dataclasses import replace
 from pydantic import ValidationError
 
 from BackEnd.documents.contracts import DocumentError
-from BackEnd.documents.contacts import fallback_contacts
+from BackEnd.documents.contacts import (fallback_contacts, contact_candidates, ContactSelectionAnswer,
+                                       CONTACT_SELECTION_SYSTEM)
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
 from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
-from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM
+from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM, EMPTY_EVIDENCE_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
 
 MAX_CACHED_CHUNKS = 2000
 MAX_CACHED_INDEX_CHARACTERS = 2_000_000
+OUT_OF_SCOPE_TEXT = "저는 복지서비스 챗봇입니다. 해당질문에는 답해드릴수 없습니다"
 
 
 def _document_keyword_index(repo, service, snapshot, digest):
@@ -36,7 +38,8 @@ def _document_keyword_index(repo, service, snapshot, digest):
 
 
 @diagnose_qa
-def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None):
+def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None,
+                    select_contacts=False):
     qa_stage("snapshot")
     checkpoint()
     budget = current_budget()
@@ -51,16 +54,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         raise DocumentError("document_scope_mismatch")
     trace["snapshot"] = snapshot.stamp
     trace["versions"] = sorted({chunk.version for chunk in snapshot.chunks})
-    if not snapshot.chunks:
-        service._document_bm25 = None
-        trace["reason"] = "no_document_evidence"
-        trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-        contacts = fallback_contacts(snapshot)
-        text = "등록된 문서에서 검색할 원문을 찾지 못했습니다."
-        text += " 아래 문의처에서 확인해 주세요." if contacts else " 확인된 연락처를 제공하지 못했습니다."
-        return {"kind": "fallback", "text": text,
-                "reason": "no_document_evidence", "services": [], "contacts": contacts, "suggestions": [], "evidence": []}, trace
-
     qa_stage("context")
     try:
         capacity = llm.context_limit()
@@ -96,103 +89,113 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                 "services": [], "contacts": [], "suggestions": [], "evidence": [],
                 "context_usage": {"omitted": context_trace["context_omitted"]},
                 **({"context_update": context_update} if context_update is not None else {})}, trace
-    qa_stage("retrieval")
-    retrieval_started = time.monotonic()
-    try:
-        digest = llm.model_digest()
+    pending_index = None
+    digest = None
+    selected, documents = [], []
+    if snapshot.chunks:
+        qa_stage("retrieval")
+        retrieval_started = time.monotonic()
+        try:
+            digest = llm.model_digest()
+            checkpoint()
+            allowed = {chunk.chunk_id for chunk in snapshot.chunks if chunk.embed_digest == digest}
+            if not allowed:
+                raise DocumentError("embedding_digest_changed")
+            vector = llm.embed([search_query])[0]
+            checkpoint()
+            # 저장소가 이미 계산한 전체 코사인을 받아 BM25 전용 후보에도 재사용한다.
+            scored = repo.dense_search(vector, len(allowed), sorted(allowed), snapshot=snapshot)
+            checkpoint()
+        except (ExecutionTimeoutError, ExecutionCancelledError):
+            raise
+        except DocumentError:
+            raise
+        except Exception:
+            raise DocumentError("document_embedding_failed") from None
+        index, pending_index = _document_keyword_index(repo, service, snapshot, digest)
         checkpoint()
-        allowed = {chunk.chunk_id for chunk in snapshot.chunks if chunk.embed_digest == digest}
-        if not allowed:
-            raise DocumentError("embedding_digest_changed")
-        vector = llm.embed([search_query])[0]
+        keyword = index.search(search_query, service.keyword_k, allowed)
         checkpoint()
-        # 저장소가 이미 계산한 전체 코사인을 받아 BM25 전용 후보에도 재사용한다.
-        scored = repo.dense_search(vector, len(allowed), sorted(allowed), snapshot=snapshot)
-        checkpoint()
-    except (ExecutionTimeoutError, ExecutionCancelledError):
-        raise
-    except DocumentError:
-        raise
-    except Exception:
-        raise DocumentError("document_embedding_failed") from None
-    index, pending_index = _document_keyword_index(repo, service, snapshot, digest)
-    checkpoint()
-    keyword = index.search(search_query, service.keyword_k, allowed)
-    checkpoint()
-    by_id = {chunk.chunk_id: chunk for chunk in snapshot.chunks if chunk.chunk_id in allowed}
-    if (len({c.chunk_id for c in scored}) != len(scored)
-            or any(c.chunk_id not in by_id or type(c.score) not in (int, float)
-                   or not math.isfinite(c.score) or not -1 <= c.score <= 1 for c in scored)):
-        raise DocumentError("document_embedding_failed")
-    cosines = {c.chunk_id: c.score for c in scored}
-    dense = [replace(by_id[c.chunk_id], score=c.score) for c in scored[:service.dense_k]]
-    keyword = [(by_id[c.chunk_id], score) for c, score in keyword if c.chunk_id in by_id]
-    union = {c.chunk_id: c for c in [*dense, *(c for c, _ in keyword)]}
-    if any(identifier not in cosines for identifier in union):
-        raise DocumentError("document_embedding_failed")
-    passing = {identifier for identifier in union if cosines[identifier] >= service.min_similarity}
-    filtered_dense = [c for c in dense if c.chunk_id in passing]
-    filtered_keyword = [c for c, _ in keyword if c.chunk_id in passing]
-    fused = reciprocal_ranks([filtered_dense, filtered_keyword])
-    candidates = [chunk for chunk, _ in fused[:service.top_n]]
-    dense_ids = {c.chunk_id for c in dense}
-    keyword_ids = {c.chunk_id for c, _ in keyword}
-    trace["retrieval"] = [{"intent_id": "document",
-        "dense": [{"chunk_id": c.chunk_id, "rank": i + 1, "similarity": c.score} for i, c in enumerate(dense)],
-        "keyword": [{"chunk_id": c.chunk_id, "rank": i + 1, "bm25": score} for i, (c, score) in enumerate(keyword)],
-        "dense_threshold": {"configured": service.min_similarity, "enabled": True,
-                            "effective": service.min_similarity, "stage": "hybrid_union"},
-        "candidates": [{"chunk_id": identifier, "cosine": cosines[identifier],
-                        "sources": [name for name, ids in (("dense", dense_ids), ("keyword", keyword_ids)) if identifier in ids],
-                        "passed": identifier in passing} for identifier in union],
-        "rrf": [{"chunk_id": c.chunk_id, "rank": i + 1, "score": score} for i, (c, score) in enumerate(fused)]}]
-    trace["timings_ms"]["retrieval"] = round((time.monotonic() - retrieval_started) * 1000, 2)
-    if not candidates:
-        reason = "low_similarity" if union else "no_document_evidence"
-        trace["reason"] = reason
-        trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
-        contacts = fallback_contacts(snapshot)
-        text = "질문과 충분히 가까운 문서 근거를 찾지 못했습니다." if union else "등록된 문서에서 질문에 사용할 원문을 찾지 못했습니다."
-        text += " 아래 문의처에서 확인해 주세요." if contacts else " 확인된 연락처를 제공하지 못했습니다."
-        return {"kind": "fallback", "text": text,
-                "reason": reason, "services": [], "contacts": contacts, "suggestions": [], "evidence": [],
-                "context_usage": {"omitted": context_trace["context_omitted"]},
-                **({"context_update": context_update} if context_update is not None else {})}, trace
+        by_id = {chunk.chunk_id: chunk for chunk in snapshot.chunks if chunk.chunk_id in allowed}
+        if (len({c.chunk_id for c in scored}) != len(scored)
+                or any(c.chunk_id not in by_id or type(c.score) not in (int, float)
+                       or not math.isfinite(c.score) or not -1 <= c.score <= 1 for c in scored)):
+            raise DocumentError("document_embedding_failed")
+        cosines = {c.chunk_id: c.score for c in scored}
+        dense = [replace(by_id[c.chunk_id], score=c.score) for c in scored[:service.dense_k]]
+        keyword = [(by_id[c.chunk_id], score) for c, score in keyword if c.chunk_id in by_id]
+        union = {c.chunk_id: c for c in [*dense, *(c for c, _ in keyword)]}
+        if any(identifier not in cosines for identifier in union):
+            raise DocumentError("document_embedding_failed")
+        passing = {identifier for identifier in union if cosines[identifier] >= service.min_similarity}
+        filtered_dense = [c for c in dense if c.chunk_id in passing]
+        filtered_keyword = [c for c, _ in keyword if c.chunk_id in passing]
+        fused = reciprocal_ranks([filtered_dense, filtered_keyword])
+        candidates = [chunk for chunk, _ in fused[:service.top_n]]
+        dense_ids = {c.chunk_id for c in dense}
+        keyword_ids = {c.chunk_id for c, _ in keyword}
+        trace["retrieval"] = [{"intent_id": "document",
+            "dense": [{"chunk_id": c.chunk_id, "rank": i + 1, "similarity": c.score} for i, c in enumerate(dense)],
+            "keyword": [{"chunk_id": c.chunk_id, "rank": i + 1, "bm25": score} for i, (c, score) in enumerate(keyword)],
+            "dense_threshold": {"configured": service.min_similarity, "enabled": True,
+                                "effective": service.min_similarity, "stage": "hybrid_union"},
+            "candidates": [{"chunk_id": identifier, "cosine": cosines[identifier],
+                            "sources": [name for name, ids in (("dense", dense_ids), ("keyword", keyword_ids)) if identifier in ids],
+                            "passed": identifier in passing} for identifier in union],
+            "rrf": [{"chunk_id": c.chunk_id, "rank": i + 1, "score": score} for i, (c, score) in enumerate(fused)]}]
+        trace["timings_ms"]["retrieval"] = round((time.monotonic() - retrieval_started) * 1000, 2)
+        if not candidates:
+            trace["retrieval_reason"] = "low_similarity" if union else "no_document_evidence"
 
-    qa_stage("rerank")
-    rerank_started = time.monotonic()
-    passages = [f"문서: {c.document_name}\n{c.heading_context}\n{c.text}" for c in candidates]
-    try:
-        scores = service.reranker.score(search_query, passages)
-        checkpoint()
-        if len(scores) != len(candidates) or any(not math.isfinite(score) for score in scores):
-            raise ValueError("리랭커 응답 형식이 올바르지 않습니다.")
-    except (ExecutionTimeoutError, ExecutionCancelledError):
-        raise
-    except Exception:
-        raise DocumentError("document_reranker_failed") from None
-    ordered = sorted(zip(candidates, scores), key=lambda row: -row[1])
-    selected = [chunk for chunk, _ in ordered[:service.core_k]]
-    trace["rerank"] = [{"chunk_id": c.chunk_id, "score": score, "selected": i < service.core_k}
-                       for i, (c, score) in enumerate(ordered)]
-    trace["timings_ms"]["rerank"] = round((time.monotonic() - rerank_started) * 1000, 2)
-    core_ids = {chunk.chunk_id for chunk in selected}
-    selected = complete_sources(snapshot, selected, query+' '+conversation['search_intent'])
-    trace['evidence_expansion'] = {'core_chunks': len(core_ids), 'expanded_chunks': len(selected),
-                                 'added_chunks': sum(c.chunk_id not in core_ids for c in selected)}
-    trace['evidence_policy'] = 'related_parents_and_conditions_within_document_version'
-    documents = [{"id": c.chunk_id, "name": c.document_name, "pages": list(c.page_refs),
-                  "heading": c.heading_context, "text": c.text, 'document_id':c.document_id,
-                  'version':c.version, 'service_id':c.service_id, 'source_url':c.source_url,
-                  'source_updated_at':c.source_updated_at, 'basis_year':c.basis_year,
-                  **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
-    for index, document in enumerate(documents,1):
-        document['reference_id'] = f'C{index}'
+        if candidates:
+            qa_stage("rerank")
+            rerank_started = time.monotonic()
+            passages = [f"문서: {c.document_name}\n{c.heading_context}\n{c.text}" for c in candidates]
+            try:
+                scores = service.reranker.score(search_query, passages)
+                checkpoint()
+                if len(scores) != len(candidates) or any(not math.isfinite(score) for score in scores):
+                    raise ValueError("리랭커 응답 형식이 올바르지 않습니다.")
+            except (ExecutionTimeoutError, ExecutionCancelledError):
+                raise
+            except Exception:
+                raise DocumentError("document_reranker_failed") from None
+            ordered = sorted(zip(candidates, scores), key=lambda row: -row[1])
+            selected = [chunk for chunk, _ in ordered[:service.core_k]]
+            trace["rerank"] = [{"chunk_id": c.chunk_id, "score": score, "selected": i < service.core_k}
+                               for i, (c, score) in enumerate(ordered)]
+            trace["timings_ms"]["rerank"] = round((time.monotonic() - rerank_started) * 1000, 2)
+            core_ids = {chunk.chunk_id for chunk in selected}
+            selected = complete_sources(snapshot, selected, query+' '+conversation['search_intent'])
+            trace['evidence_expansion'] = {'core_chunks': len(core_ids), 'expanded_chunks': len(selected),
+                                         'added_chunks': sum(c.chunk_id not in core_ids for c in selected)}
+            trace['evidence_policy'] = 'related_parents_and_conditions_within_document_version'
+            documents = [{"id": c.chunk_id, "name": c.document_name, "pages": list(c.page_refs),
+                          "heading": c.heading_context, "text": c.text, 'document_id':c.document_id,
+                          'version':c.version, 'service_id':c.service_id, 'source_url':c.source_url,
+                          'source_updated_at':c.source_updated_at, 'basis_year':c.basis_year,
+                          **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
+            for index, document in enumerate(documents,1):
+                document['reference_id'] = f'C{index}'
+    else:
+        service._document_bm25 = None
+        trace["retrieval_reason"] = "no_document_evidence"
+
+    empty_evidence = not documents
+    generation_system = EMPTY_EVIDENCE_SYSTEM if empty_evidence else ANSWER_SYSTEM
+    contact_options = contact_candidates(snapshot, documents) if select_contacts and not empty_evidence else []
+    if select_contacts:
+        generation_system += CONTACT_SELECTION_SYSTEM
+        for document in documents:
+            document['contact_candidates'] = [
+                {key: candidate[key] for key in ('id', 'label', 'phone', 'source_url')}
+                for candidate in contact_options if candidate['document_id'] == document['document_id']
+                and candidate['document_version'] == document['version']]
     qa_stage("generation")
-    prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output)
+    prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output, system=generation_system)
     trace["context"]["context_omitted"] |= omitted
     trace["budget"] = {"context_limit": capacity, "reserved_output": output,
-                       "estimated_input": llm.input_cost(ANSWER_SYSTEM, prompt) if prompt else None,
+                       "estimated_input": llm.input_cost(generation_system, prompt) if prompt else None,
                        "evidence_omitted": len(documents)-len(included)}
     if not prompt:
         trace["reason"] = "document_input_budget"
@@ -216,8 +219,10 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     generation_started = time.monotonic()
     try:
         checkpoint()
-        schema = WelfareAnswer.model_json_schema()
-        raw_answer = llm.chat(ANSWER_SYSTEM, prompt, schema=schema)
+        schema = (ContactSelectionAnswer if select_contacts else WelfareAnswer).model_json_schema()
+        if empty_evidence:
+            schema['properties']['status']['enum'] = ['out_of_scope', 'no_evidence']
+        raw_answer = llm.chat(generation_system, prompt, schema=schema)
         checkpoint()
         if not isinstance(raw_answer, dict) or not raw_answer:
             raise ValueError("빈 모델 응답입니다.")
@@ -232,18 +237,30 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         service._document_bm25 = None
         raise DocumentError("document_changed_during_search")
     checkpoint()
+    if digest is not None:
+        try:
+            current_digest = llm.model_digest()
+            checkpoint()
+        except (ExecutionTimeoutError, ExecutionCancelledError):
+            raise
+        except Exception:
+            raise DocumentError("document_embedding_failed") from None
+        if current_digest != digest:
+            service._document_bm25 = None
+            raise DocumentError("embedding_digest_changed")
     try:
-        current_digest = llm.model_digest()
-        checkpoint()
-    except (ExecutionTimeoutError, ExecutionCancelledError):
-        raise
-    except Exception:
-        raise DocumentError("document_embedding_failed") from None
-    if current_digest != digest:
-        service._document_bm25 = None
-        raise DocumentError("embedding_digest_changed")
-    try:
-        answer = validate_answer(raw_answer)
+        answer = ContactSelectionAnswer.model_validate(raw_answer) if select_contacts else validate_answer(raw_answer)
+        if not answer.text.strip():
+            raise ValueError('empty_answer')
+        allowed_contacts = {candidate['id']: candidate for candidate in contact_options
+                            if any(d['document_id'] == candidate['document_id'] and d['version'] == candidate['document_version']
+                                   for d in included)}
+        if select_contacts and (len(set(answer.contact_ids)) != len(answer.contact_ids)
+                                or any(identifier not in allowed_contacts for identifier in answer.contact_ids)
+                                or answer.status != 'answer' and answer.contact_ids):
+            raise ValueError('invalid_contact_selection')
+        if empty_evidence and answer.status not in {'out_of_scope', 'no_evidence'}:
+            raise ValueError('invalid_scope_answer')
         trace['answer_validation'] = 'accepted'
     except ValidationError:
         answer = None
@@ -258,18 +275,31 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     if pending_index is not None:
         service._document_bm25 = pending_index
     status = answer.status if answer else 'invalid_evidence_answer'
+    text = answer.text.strip() if answer else '답변 형식을 확인하지 못했습니다. 잠시 후 다시 질문해 주세요.'
+    if status == 'out_of_scope':
+        text = OUT_OF_SCOPE_TEXT
+        evidence = []
     trace["reason"] = status
     trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
     contacts = []
-    if status == 'no_evidence':
-        confirmed_ids = list(conversation['document_ids'])
+    if select_contacts:
+        chosen = [allowed_contacts[identifier] for identifier in answer.contact_ids] if answer and status == 'answer' else []
+        contacts = [candidate['contact'] for candidate in chosen]
+        # HTTP 필드가 아닌 서버 내부 전달값이다. 본문·질문·프로필을 저장 경로에 넘기지 않는다.
+        trace['selected_contacts'] = [{key: candidate[key] for key in (
+            'label', 'phone', 'source_url', 'document_id', 'document_version', 'contact_version')}
+            for candidate in chosen]
+    elif status in {'answer', 'no_evidence'}:
+        confirmed_ids = ([document['document_id'] for document in included]
+                         if status == 'answer' else list(conversation['document_ids']))
         if repo.document_scope:
             confirmed_ids.append(str(repo.document_scope))
         contact_query = search_query if context_trace['preparation'] in {'used', 'skipped'} else query
         contacts = fallback_contacts(snapshot, included, query=contact_query, confirmed_document_ids=confirmed_ids)
     return {"kind": "answer" if status == 'answer' else 'fallback',
-            **({'reason': status, 'contacts': contacts} if status != 'answer' else {}),
-            "text": answer.text.strip() if answer else '답변 형식을 확인하지 못했습니다. 잠시 후 다시 질문해 주세요.',
+            'contacts': contacts,
+            **({'reason': status} if status != 'answer' else {}),
+            "text": text,
             "services": [], "suggestions": [], "evidence": evidence if answer else [],
             "context_usage": {"omitted": context_trace["context_omitted"]},
             **({"context_update": context_update} if context_update is not None else {})}, trace

@@ -32,6 +32,8 @@ def components(*, empty=False, failure=None):
             raise RuntimeError("private prompt")
         sources = json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
         documents = [chunk for source in sources for chunk in source['chunks']]
+        if not documents:
+            return json.dumps({'status':'no_evidence','text':'등록된 자료에서 확인하지 못했습니다.'},ensure_ascii=False)
         text = '원문에 따르면 평균 오차는 150만 원입니다.' if '150만 원' in documents[0]['text'] else '자료의 조건과 예외를 확인해 주세요.'
         return json.dumps({'status':'answer', 'text':text}, ensure_ascii=False)
 
@@ -56,15 +58,17 @@ def components(*, empty=False, failure=None):
     return repo, service, calls
 
 
-@pytest.mark.parametrize(('score','expected'),[(.519999,'low_similarity'),(.52,'answer'),(.520001,'answer')])
-def test_document_similarity_threshold_includes_equal_only_and_blocks_generation_below(score,expected):
+@pytest.mark.parametrize(('score','expected'),[(.519999,'no_evidence'),(.52,'answer'),(.520001,'answer')])
+def test_document_similarity_threshold_includes_equal_and_withholds_facts_below(score,expected):
     repo,service,calls=components()
     original=repo.dense_search
     repo.dense_search=lambda *args,**kwargs:[replace(c,score=score) for c in original(*args,**kwargs)]
     response,trace=answer_document(repo,service,'MAE 평균 오차')
     assert trace['reason']==expected
-    assert len(calls['prompts'])==(0 if expected=='low_similarity' else 1)
-    assert response['kind']==('fallback' if expected=='low_similarity' else 'answer')
+    assert len(calls['prompts'])==1
+    assert response['kind']==('fallback' if expected=='no_evidence' else 'answer')
+    if expected=='no_evidence':
+        assert trace['retrieval_reason']=='low_similarity' and response['evidence']==[]
 
 
 def test_keyword_only_candidate_uses_same_snapshot_cosine_before_reranking(monkeypatch):
@@ -86,20 +90,23 @@ def test_keyword_only_candidate_uses_same_snapshot_cosine_before_reranking(monke
     assert any(item['chunk_id']==first.chunk_id for item in trace['retrieval'][0]['rrf'])
     assert response['kind']=='answer' and len(calls['prompts'])==1
 
-def test_low_similarity_followup_allows_one_prepare_but_no_final_generation():
-    from BackEnd.documents.context import PREPARE_SYSTEM,ANSWER_SYSTEM
+def test_low_similarity_followup_allows_one_prepare_and_one_scope_response():
+    from BackEnd.documents.context import PREPARE_SYSTEM,EMPTY_EVIDENCE_SYSTEM
     repo,service,calls=components();original=repo.dense_search
     repo.dense_search=lambda *args,**kwargs:[replace(c,score=.1) for c in original(*args,**kwargs)]
     seen=[]
     def chat(system,user,**kwargs):
         seen.append(system)
-        assert system==PREPARE_SYSTEM
-        payload=json.loads(user)
-        return {'source_ids':[s['id'] for s in payload['sources']],'document_ids':[],'needs_clarification':False}
+        if system==PREPARE_SYSTEM:
+            payload=json.loads(user)
+            return {'relation':'followup','search_query':'합성 지원 금액','source_ids':[s['id'] for s in payload['sources']],
+                    'document_ids':[],'needs_clarification':False}
+        assert system==EMPTY_EVIDENCE_SYSTEM and '합성 지원 금액' in user
+        return {'status':'no_evidence','text':'등록된 자료에서 확인하지 못했습니다.'}
     service.llm.chat=chat
     result,trace=answer_document(repo,service,'얼마인가요?',history=[{'role':'user','content':'합성 지원'}])
-    assert result['reason']=='low_similarity' and trace['reason']=='low_similarity'
-    assert seen==[PREPARE_SYSTEM] and ANSWER_SYSTEM not in seen and calls['prompts']==[]
+    assert result['reason']=='no_evidence' and trace['retrieval_reason']=='low_similarity'
+    assert seen==[PREPARE_SYSTEM,EMPTY_EVIDENCE_SYSTEM] and calls['prompts']==[]
 
 def test_passing_hybrid_candidates_keep_original_rrf_order(monkeypatch):
     from BackEnd.documents import qa
@@ -146,9 +153,9 @@ def test_plain_document_rag_uses_ranked_source_without_rerank_cutoff_or_fact_sel
 def test_no_source_is_not_reported_as_a_successful_model_answer():
     repo, service, calls = components(empty=True)
     response, trace = answer_document(repo, service, "무엇인가요?")
-    assert response["kind"] == "fallback" and response["reason"] == "no_document_evidence"
-    assert calls["embeddings"] == 0 and calls["prompts"] == []
-    assert trace["reason"] == "no_document_evidence"
+    assert response["kind"] == "fallback" and response["reason"] == "no_evidence"
+    assert calls["embeddings"] == 0 and len(calls["prompts"]) == 1
+    assert trace["reason"] == "no_evidence" and trace["retrieval_reason"] == "no_document_evidence"
 
 
 @pytest.mark.parametrize("failure", ["embedding", "reranker", "generation"])

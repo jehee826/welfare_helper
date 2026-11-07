@@ -5,18 +5,18 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, unquote, urlparse
 
 from BackEnd.documents.context import safe_context_text
-from BackEnd.rag.chat import GENERAL_CONTACT
 from BackEnd.rag.text import name_key, parse_contacts
 
 
 PHONE = re.compile(r"(?:1\d{2,3}|1\d{3}-\d{4}|0[2-9]\d{0,2}-\d{3,4}-\d{4})")
+CONTACT_LINE = re.compile(r"^\s*(?:[-*+]\s*)?(?:문의(?:처)?|연락처|전화(?:번호)?)\s*[:：]\s*(.+)$")
 
 
 def _contact(label, phone, source_url, kind, checked_at, hours=None):
     if not all(isinstance(value, str) for value in (label, phone, source_url)):
         return None
     label, phone, source_url = label.strip(), phone.strip(), source_url.strip()
-    if not label or len(label) > 160 or not PHONE.fullmatch(phone) or len(source_url) > 2048:
+    if not label or len(label) > 160 or not PHONE.fullmatch(phone) or phone == '129' or len(source_url) > 2048:
         return None
     try:
         safe_context_text(label)
@@ -53,14 +53,20 @@ def fallback_contacts(snapshot, documents=(), *, query='', confirmed_document_id
         chunks = [c for c in admitted if c.service_id == service_id]
         for chunk in chunks:
             candidates = []
+            body = chunk.text.partition('\n')[2] if chunk.text.startswith('#') else chunk.text
+            sections = []
             if re.search(r'문의|연락처|전화', chunk.heading_context):
-                body = chunk.text.partition('\n')[2] if chunk.text.startswith('#') else chunk.text
-                if not re.search(r'<[^>]*>|\bBearer\s+|(?:password|비밀번호|api[_ -]?key|access[_ -]?token)\s*[:=：]', body, re.I):
-                    candidates.extend(parse_contacts(body))
+                sections.append(body)
+            else:
+                sections.extend(match.group(1) for line in body.splitlines() if (match := CONTACT_LINE.match(line)))
+            for section in sections:
+                if not re.search(r'<[^>]*>|\bBearer\s+|(?:password|비밀번호|api[_ -]?key|access[_ -]?token)\s*[:=：]', section, re.I):
+                    candidates.extend(parse_contacts(section))
             record = records.get(service_id)
             if record and isinstance(record.contacts, list):
                 candidates.extend(item for item in record.contacts if isinstance(item, dict)
-                                  and isinstance(item.get('phone'), str) and item['phone'] in chunk.text)
+                                  and isinstance(item.get('phone'), str)
+                                  and re.search(r'(?<![\d-])' + re.escape(item['phone']) + r'(?![\d-])', chunk.text))
             for item in candidates:
                 label = item.get('label')
                 if label in (None, '', '문의처', '연락처', '전화번호'):
@@ -71,10 +77,4 @@ def fallback_contacts(snapshot, documents=(), *, query='', confirmed_document_id
                     contacts.append(contact)
                     if len(contacts) == 3:
                         return contacts
-    if contacts:
-        return contacts
-    # 일반상담 시간은 긴급지원의 24시간 운영과 구분한다.
-    general = _contact(GENERAL_CONTACT.get('label'), GENERAL_CONTACT.get('phone'),
-                       'https://www.129.go.kr/counsel/counsel01.do', 'general', '2026-11-03',
-                       '일반상담 평일 09:00~18:00') if isinstance(GENERAL_CONTACT, dict) else None
-    return [general] if general else []
+    return contacts

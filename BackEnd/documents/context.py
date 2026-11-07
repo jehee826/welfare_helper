@@ -116,6 +116,8 @@ PREPARE_SYSTEM = (
 ANSWER_SYSTEM = (
     "주어진 문서 자료에 근거해 복지 질문에 한국어로 짧고 구체적으로 답하세요. "
     "자료에 없는 사실·금액·비용·절차·연락처는 추측하지 말고 확인할 수 없다고 설명하세요. "
+    "복지 제도·생활 지원·공공서비스와 무관한 요청은 out_of_scope로 판단하고 일반 지식 답변을 하지 마세요. "
+    "생활 곤란·노인 일자리 등 복지 상담과 자료가 없는 복지 질문을 복지 외 요청으로 오인하지 마세요. "
     "문서의 지역·대상·기간·예외·지원 형태를 구분하고, 대안 자격을 공통 필수 요건으로 바꾸지 마세요. "
     "직접 사용자 원문은 개인 조건, 검색 의도는 질문을 이해하는 맥락이며 문서 근거가 아닙니다. "
     "확인되지 않은 조건의 충족이나 최종 자격을 단정하지 말고, 설명 가능한 내용을 안내한 뒤 필요한 조건을 질문하세요. "
@@ -124,6 +126,16 @@ ANSWER_SYSTEM = (
     "status와 text만 가진 JSON 객체를 반환하세요. status는 설명 가능한 answer, 의미나 대상 확인이 필요한 clarify, "
     "요청한 사실을 자료에서 확인할 수 없는 no_evidence, 복지 외 질문인 out_of_scope 중 하나입니다. "
     "text에는 해당 상황을 사용자에게 설명하는 답변을 쓰세요."
+)
+
+
+EMPTY_EVIDENCE_SYSTEM = ANSWER_SYSTEM + (
+    "이번 검색은 정상 처리됐지만 제공할 문서 근거가 없습니다. "
+    "현재 질문과 비근거 상담 맥락으로 복지 상담 범위인지 판단하세요. "
+    "복지 질문이면 no_evidence, 명백한 복지 외 요청이면 out_of_scope만 사용하세요. "
+    "짧은 후속은 해석된 검색 의도를 참고하고, 의미가 불확실하다는 이유만으로 복지 외 요청으로 단정하지 마세요. "
+    "answer와 clarify는 사용할 수 없습니다. 제도 존재·자격·금액·신청절차·문의처를 만들어 설명하지 마세요. "
+    "no_evidence의 text에는 자료에서 확인하지 못한 점이나 필요한 확인 질문만 적으세요."
 )
 
 
@@ -260,7 +272,7 @@ def answer_prompt(query, context, documents):
             + "\n\n문서 근거(JSON):\n" + json.dumps(sources, ensure_ascii=False) + "\n\n질문: " + query)
 
 
-def fit_answer(llm, query, context, documents, capacity, output):
+def fit_answer(llm, query, context, documents, capacity, output, *, system=ANSWER_SYSTEM):
     context = {**context, "history": [], "summary": ""}
     # 같은 문서·버전의 조건과 예외를 통째로 넣거나 제외한다.
     groups = []
@@ -270,11 +282,11 @@ def fit_answer(llm, query, context, documents, capacity, output):
             groups.append((key, []))
         groups[-1][1].append(document)
     selected = groups[0][1] if groups else []
-    if llm.input_cost(ANSWER_SYSTEM, answer_prompt(query, context, selected)) + output > capacity:
+    if llm.input_cost(system, answer_prompt(query, context, selected)) + output > capacity:
         return None, [], context, False
     for _, group in groups[1:]:
         trial = [*selected, *group]
-        if llm.input_cost(ANSWER_SYSTEM, answer_prompt(query, context, trial)) + output > capacity:
+        if llm.input_cost(system, answer_prompt(query, context, trial)) + output > capacity:
             break
         selected = trial
     return answer_prompt(query, context, selected), selected, context, False

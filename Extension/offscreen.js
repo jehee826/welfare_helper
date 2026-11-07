@@ -22,7 +22,7 @@ chrome.runtime.onConnect.addListener(port=>{
     if(!GyeoteProtocol.id(requestId))return port.disconnect();
     if(active){send({type:'error',requestId,error:'busy'});return;}
     controller=new AbortController();active={controller,documentMode:false};
-    let payload,adminSession,timer=setTimeout(()=>controller.abort(),10000);
+    let payload,adminSession,sessionExpired=false,timer=setTimeout(()=>controller.abort(),10000);
     try{
       if(Object.keys(packet).some(key=>!['requestId','mode','payload','documentAccess','profileRevision','conversationContext','deadlineAt'].includes(key)))throw new Error('invalid_reply');
       const mode=packet.mode??'screen';
@@ -58,7 +58,8 @@ chrome.runtime.onConnect.addListener(port=>{
       if(packet.deadlineAt!==undefined&&(!Number.isFinite(packet.deadlineAt)||packet.deadlineAt<=0))throw new Error('invalid_reply');
       const remaining=Math.min(budget,(packet.deadlineAt??Date.now()+budget)-Date.now());
       if(remaining<=0)throw new Error('request_stopped');
-      clearTimeout(timer);timer=setTimeout(()=>controller.abort(),Math.min(remaining,adminSession?Math.max(0,adminSession.expiresAt*1000-Date.now()):remaining));
+      const sessionRemaining=adminSession?Math.max(0,adminSession.expiresAt*1000-Date.now()):Infinity;
+      clearTimeout(timer);timer=setTimeout(()=>{sessionExpired=sessionRemaining<=remaining;controller.abort();},Math.min(remaining,sessionRemaining));
       payload.timeout_seconds=Math.min(payload.timeout_seconds??1800,Math.max(1,Math.ceil(remaining/1000)));
       if(controller.signal.aborted)throw new Error('request_stopped');
       if(adminSession&&!GyeoteProtocol.documentSession(adminSession))throw new Error('document_auth_required');
@@ -91,7 +92,7 @@ chrome.runtime.onConnect.addListener(port=>{
       if(controller.signal.aborted)throw new Error('request_stopped');
       send({type:'result',requestId,body:summaryMode?GyeoteProtocol.summaryReply(body,payload):documentMode?GyeoteProtocol.privacy.redactDocument(body):body});
     }catch(error){
-      const expired=adminSession&&adminSession.expiresAt<=Date.now()/1000;
+      const expired=adminSession&&(sessionExpired||adminSession.expiresAt<=Date.now()/1000);
       if(expired)await chrome.runtime.sendMessage({type:'gyeote:admin-invalid',token:adminSession.token}).catch(()=>{});
       send({type:'error',requestId,error:expired?'document_auth_required':controller.signal.aborted?'request_stopped':['connection_configuration_invalid','sensitive_input','invalid_profile','profile_changed','invalid_context','invalid_context_update','document_auth_required','document_access_changed','feature_disabled','input_budget','screen_body_size_limit','invalid_screen_request','screen_context_budget_exceeded','screen_request_rejected','busy','chat_rate_limited','generation_failed','invalid_reply','request_stopped','request_timeout','request_cancelled','summary_input_budget','summary_public_only','summary_unavailable','summary_generation_failed'].includes(error.message)?error.message:'connection_failed'});
     }

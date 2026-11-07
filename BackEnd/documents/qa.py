@@ -261,14 +261,16 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     trace["reason"] = status
     trace["timings_ms"]["total"] = round((time.monotonic() - started) * 1000, 2)
     contacts = []
-    if status == 'no_evidence':
-        confirmed_ids = list(conversation['document_ids'])
+    if status in {'answer', 'no_evidence'}:
+        confirmed_ids = ([document['document_id'] for document in included]
+                         if status == 'answer' else list(conversation['document_ids']))
         if repo.document_scope:
             confirmed_ids.append(str(repo.document_scope))
         contact_query = search_query if context_trace['preparation'] in {'used', 'skipped'} else query
         contacts = fallback_contacts(snapshot, included, query=contact_query, confirmed_document_ids=confirmed_ids)
     return {"kind": "answer" if status == 'answer' else 'fallback',
-            **({'reason': status, 'contacts': contacts} if status != 'answer' else {}),
+            'contacts': contacts,
+            **({'reason': status} if status != 'answer' else {}),
             "text": answer.text.strip() if answer else '답변 형식을 확인하지 못했습니다. 잠시 후 다시 질문해 주세요.',
             "services": [], "suggestions": [], "evidence": evidence if answer else [],
             "context_usage": {"omitted": context_trace["context_omitted"]},

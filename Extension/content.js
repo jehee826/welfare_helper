@@ -43,7 +43,9 @@
     pendingReply.innerHTML='<span class="sr-only">곁에가 답변을 준비하고 있습니다.</span><span class="thinking-dots" aria-hidden="true"><span>•</span><span>•</span><span>•</span></span>';
     $('.conversation').append(pendingReply);if(follow)transcript.scrollTop=transcript.scrollHeight;
   }
-  function cancel(message){removePending();finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;updateRequestControl();clear(message);inputAssist?.invalidate();}
+  const synth=window.speechSynthesis,speechSupported=!!synth&&typeof window.SpeechSynthesisUtterance==='function';
+  let speaking=null,speechVersion=0;
+  function cancel(message){stopSpeech();removePending();finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;updateRequestControl();clear(message);inputAssist?.invalidate();}
   function position(){
     frame=0;
     if(!selected.length)return;
@@ -103,6 +105,7 @@
   const listeningOverlay=document.createElement('section');listeningOverlay.className='listening-overlay';listeningOverlay.hidden=true;listeningOverlay.setAttribute('role','dialog');listeningOverlay.setAttribute('aria-label','음성 입력');listeningOverlay.innerHTML='<strong role="status" aria-live="polite">듣고 있습니다...</strong>';panel.append(listeningOverlay);
   formStyle.textContent+=`.compose-row .voice-start{width:40px;height:42px;display:grid;place-items:center;flex-shrink:0;padding:0;border:0;background:transparent;color:#555}.voice-start[aria-pressed=true]{color:#175cde}.listening-overlay{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#ffffff88;border-radius:inherit}.listening-overlay strong{font-size:22px}.listening-overlay p{font-size:13px;line-height:1.6;margin:0;max-width:270px}.listening-overlay .voice-cancel{background:#171717;color:#fff}.panel.is-listening>.head,.panel.is-listening>.body,.panel.is-listening>.mode-reason{filter:blur(2px);opacity:.55}.panel.is-listening{animation:gyeote-listening-glow 2s ease-in-out infinite;box-shadow:0 0 0 2px #7ab7ff,0 0 28px #176cff66}@keyframes gyeote-listening-glow{0%,100%{box-shadow:0 0 0 2px #7ab7ff,-7px 0 28px #176cff77,7px 0 18px #7acbff44}50%{box-shadow:0 0 0 2px #7ab7ff,7px 0 28px #176cff77,-7px 0 18px #7acbff44}}@media(prefers-reduced-motion:reduce){.panel.is-listening{animation:none}}`;
   function showListening(listening){
+    if(listening)stopSpeech();
     const changed=panel.classList.contains('is-listening')!==listening;panel.classList.toggle('is-listening',listening);listeningOverlay.hidden=!listening;
     $('.head').inert=listening;$('.body').inert=listening;
     if(changed&&listening)listeningOverlay.querySelector('.voice-cancel')?.focus();
@@ -155,7 +158,7 @@
   profileControls.append(uiSettings);
   const closeButton=$('.close');closeButton.textContent='×';closeButton.title='패널 닫기';$('.head').append(closeButton);$('.documents').textContent='관리자 접근';
   const screenSettings=document.createElement('details'),screenSummary=document.createElement('summary');screenSettings.className='screen-settings';screenSummary.textContent='화면·음성 안내';screenSettings.append(screenSummary);$('.screen-controls').append(screenSettings);
-  formStyle.textContent+='.head{gap:3px;padding:10px 8px}.head .menu-toggle,.head .collapse,.head .close{width:28px;padding:0;font-size:18px;flex-shrink:0}.head .profile-toggle{padding:6px 4px}.head .mode-switch button{padding:4px}.profile-controls{margin-top:12px}.profile-controls>.settings{margin-top:8px}.screen-controls>p,.screen-controls>details{flex-basis:100%;margin:8px 0}.head .resize-handle{width:28px;padding:0;font-size:16px;flex-shrink:0;cursor:nwse-resize;touch-action:none}.ui-settings{margin-top:12px;padding-top:8px;border-top:1px solid #eee}.ui-settings h3{font-size:15px;margin:0 0 6px}.ui-settings label{display:grid;gap:6px}.ui-settings .ui-status:empty{display:none}';
+  formStyle.textContent+='.head{gap:3px;padding:10px 8px}.head .menu-toggle,.head .collapse,.head .close{width:28px;padding:0;font-size:18px;flex-shrink:0}.head .profile-toggle{padding:6px 4px}.head .mode-switch button{padding:4px}.profile-controls{margin-top:12px}.profile-controls>.settings{margin-top:8px}.screen-controls>p,.screen-controls>details{flex-basis:100%;margin:8px 0}.head .resize-handle{width:28px;padding:0;font-size:16px;flex-shrink:0;cursor:nwse-resize;touch-action:none}.ui-settings{margin-top:12px;padding-top:8px;border-top:1px solid #eee}.ui-settings h3{font-size:15px;margin:0 0 6px}.ui-settings label{display:grid;gap:6px}.ui-settings .ui-status:empty{display:none}.speak-answer{min-height:32px;padding:2px 10px;margin:0 0 4px 8px;font-size:13px}.speak-answer[aria-pressed=true]{background:#eaf1ff;border-color:#aac6ee;color:#174b8d}';
   profilePanel.ready.then(()=>{if(!profilePanel.state){profileOpen=true;updateProfileView();}});
   $('.onboarding-edit').addEventListener('click',()=>{if(!profileOpen)profileButton.click();});
   $('.onboarding-later').addEventListener('click',()=>void profilePanel.defer());
@@ -238,8 +241,47 @@
     const follow=atConversationEnd(),article=document.createElement('article'),label=document.createElement('small'),body=document.createElement('div');article.className=role==='user'?'user-message':'assistant-message';label.textContent=role==='user'?'나':'곁에 · 현재 답변';body.textContent=text;article.append(label,body);$('.conversation').append(article);
     while($('.conversation').children.length>limit)$('.conversation').firstElementChild.remove();if(follow)transcript.scrollTop=transcript.scrollHeight;return {article,label,text:body,answer:text,follow};
   }
+  function speechVoice(){try{return synth.getVoices().find(voice=>voice.localService===true&&/^ko([-_]|$)/i.test(voice.lang||''))||null;}catch{return null;}}
+  function speechIdle(button){button.textContent='읽기';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','이 답변 읽어주기');}
+  function stopSpeech(){speechVersion++;const prior=speaking;speaking=null;if(prior)speechIdle(prior);if(speechSupported){try{synth.cancel();}catch{}}}
+  function speechChunks(text){
+    const parts=[];
+    for(const line of text.split(/\n+/)){
+      let rest=line.trim();
+      while(rest){
+        if(rest.length<=180){parts.push(rest);break;}
+        let cut=Math.max(rest.lastIndexOf('. ',180),rest.lastIndexOf(', ',180),rest.lastIndexOf(' ',180));if(cut<60)cut=179;
+        parts.push(rest.slice(0,cut+1).trim());rest=rest.slice(cut+1).trim();
+      }
+    }
+    return parts;
+  }
+  const spokenPhone=phone=>phone.split('-').map(group=>group.split('').join(' ')).join(', ');
+  async function speak(button,read){
+    if(speaking===button){stopSpeech();return;}
+    stopSpeech();
+    if(!speechSupported){setStatus('이 브라우저는 답변 읽어주기를 지원하지 않아요. 화면의 답변을 확인해 주세요.');return;}
+    const version=speechVersion;let voice=speechVoice();
+    if(!voice&&!synth.getVoices().length)voice=await new Promise(resolve=>{const done=()=>{clearTimeout(timer);synth.removeEventListener?.('voiceschanged',done);resolve(speechVoice());};const timer=setTimeout(done,1500);synth.addEventListener?.('voiceschanged',done);});
+    if(version!==speechVersion)return;
+    if(!voice){setStatus('이 기기에 한국어 기기 내 음성이 없어 읽어줄 수 없어요. 외부 음성 서비스로는 보내지 않습니다.');return;}
+    const parts=speechChunks(read());if(!parts.length)return;
+    speaking=button;button.textContent='정지';button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','읽어주기 정지');
+    parts.forEach((part,index)=>{
+      const utterance=new window.SpeechSynthesisUtterance(part);utterance.voice=voice;utterance.lang=voice.lang;
+      utterance.onend=()=>{if(version===speechVersion&&index===parts.length-1)stopSpeech();};
+      utterance.onerror=event=>{if(version!==speechVersion)return;stopSpeech();if(!['interrupted','canceled'].includes(event?.error))setStatus('답변 읽어주기를 마치지 못했어요. 화면의 답변을 확인해 주세요.');};
+      synth.speak(utterance);
+    });
+  }
+  function addSpeech(message,read){
+    const button=document.createElement('button');button.type='button';button.className='speak-answer';speechIdle(button);
+    button.addEventListener('click',()=>void speak(button,read));message.label.after(button);return button;
+  }
   function appendDocumentAnswer(answer,restored=false){
     const message=appendMessage('assistant',answer.text);message.label.textContent=answer.kind==='answer'?'곁에 · 문서 답변':'곁에 · 안내';
+    const spokenContacts=GyeoteProtocol.documentContacts(answer.contacts).map(contact=>`${contact.kind==='general'?'일반 복지상담':'문서 문의처'}, ${contact.label}. 전화 ${spokenPhone(contact.phone)}.${contact.hours?' '+contact.hours+'.':''}`);
+    addSpeech(message,()=>[message.text.textContent,...spokenContacts].join('\n'));
     if(restored){const notice=document.createElement('p');notice.className='muted';notice.textContent='저장한 당시의 답변입니다. 연락처·근거의 현재 유효성은 다시 확인하지 않았습니다.'+(answer.evidenceTruncated?' 근거는 일부 인용·참조만 저장했습니다.':'');message.article.append(notice);}
     if(answer.context_usage?.omitted){const notice=document.createElement('p');notice.className='muted';notice.textContent='이 답변은 입력 예산에 따라 일부 대화 맥락을 제외했습니다.';message.article.append(notice);}
     const contacts=GyeoteProtocol.documentContacts(answer.contacts);
@@ -341,7 +383,7 @@
           removePending();
           const display=apply(source,answer.targets,answer.answer);
           if(answer.targets.length&&!selected.length)throw new Error('invalid_reply');
-          pendingQuestion=null;setStatus('');activeReply=appendMessage('assistant',display);activeReply.answer=answer.answer;
+          pendingQuestion=null;setStatus('');activeReply=appendMessage('assistant',display);activeReply.answer=answer.answer;const spokenReply=activeReply;addSpeech(spokenReply,()=>spokenReply.text.textContent);
           history.push({role:'user',text:question},{role:'assistant',text:answer.answer});while(history.length>4||history.reduce((n,m)=>n+m.text.length,0)>1000)history.shift();
         }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentHistory();void refreshDocumentAccess();}const message=error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply;finishQuestion(message);clear(message);}
         finally{if(version===serial&&requestPort===port){removePending();clearTimeout(requestTimer);busy=false;requestPort=null;updateRequestControl();inputAssist.update();}port.disconnect();}
@@ -457,7 +499,7 @@
   const sizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>{clampPanel();schedule();}):null;
   sizeObserver?.observe(panel);
   addEventListener('scroll',schedule,{passive:true,capture:true});addEventListener('resize',()=>{finishDrag();clampPanel();schedule();});
-  addEventListener('pagehide',()=>{accessVersion++;finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
+  addEventListener('pagehide',()=>{stopSpeech();accessVersion++;finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
   addEventListener('pageshow',event=>{if(event.persisted){profilePanel.resume();savedPanel.resume();inputAssist.resume();if(mode==='document')void refreshDocumentAccess();sizeObserver?.observe(panel);clampPanel();}});
   addEventListener('hashchange',()=>{if(mode==='screen')cancel();else inputAssist.invalidate();snapshot=null;history=[];});
   document.addEventListener('visibilitychange',()=>{

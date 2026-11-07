@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {worker,ui,key,profileKey,profile,expected,answer}=require('./conversation_fixture.cjs');
+const {worker,ui,key,profileKey,profile,expected,answer,source,settle}=require('./conversation_fixture.cjs');
 require('../protocol.js');const policy=require('../conversations.js');
 const timestamp=Date.parse('2026-11-08T00:00:00Z'),iso=value=>new Date(value).toISOString();
 const pairId=value=>String(value).repeat(20),oldId=pairId(1),nextId=pairId(2);
@@ -105,6 +105,21 @@ test('남은 기록에 없는 경계 ID는 자동 맥락을 열지 않고 원본
   const data=seed();data[key].conversations[0].contextBoundary.startAfterPairId=pairId(9);
   const original=JSON.stringify(data),server=create(data,{value:timestamp});
   assert.equal((await server.action('get')).error,'conversation_data_invalid');assert.equal(JSON.stringify(data),original);
+});
+
+test('offscreen도 오래된 통지는 무시하고 더 새 revision에서만 진행 중 요청을 취소한다',async()=>{
+  const vm=require('node:vm'),protocol=require('../protocol.js');let notify,connect,receive,signal;
+  const sent=[],runtime={id:'x',onMessage:{addListener(fn){notify=fn;}},onConnect:{addListener(fn){connect=fn;}},
+    sendMessage:async()=>({mode:'anonymous',accessId:'public-1',origin:protocol.documentOrigin()})};
+  vm.runInNewContext(source('offscreen.js'),{chrome:{runtime},GyeoteProtocol:protocol,AbortController,setTimeout,clearTimeout,Uint8Array,TextDecoder,Blob,
+    fetch:(_url,options)=>{signal=options.signal;return new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('aborted')),{once:true}));}});
+  connect({name:'gyeote:guide',sender:{id:'x',frameId:0,url:'https://www.bokjiro.go.kr/',tab:{url:'https://www.bokjiro.go.kr/'}},postMessage:value=>sent.push(value),disconnect(){},onMessage:{addListener(fn){receive=fn;}},onDisconnect:{addListener(){}}});
+  const pending=receive({requestId:nextId,mode:'document',documentAccess:'anonymous:anonymous:public-1',payload:{query:'후속 질문',history:[]},conversationContext:{revision:3,generation:'initial'}});
+  await settle();assert.ok(signal);
+  for(const revision of [1,2,3])notify({target:'gyeote:offscreen',type:'gyeote:conversations-changed',revision,generation:'initial'},{id:'x'});
+  assert.equal(signal.aborted,false);
+  notify({target:'gyeote:offscreen',type:'gyeote:conversations-changed',revision:4,generation:'initial'},{id:'x'});
+  await pending;assert.equal(signal.aborted,true);assert.equal(sent[0].error,'request_stopped');
 });
 
 test('30쌍 보존에서 경계 쌍이 사라져도 이후 기록과 주제 경계를 함께 제한한다',()=>{

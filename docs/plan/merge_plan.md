@@ -162,6 +162,11 @@ EC2 기동은 사용자가 한다. 기동 확인 뒤 필요한 시험 시점에 
 
 ## 6. 실행 기록
 
+### 2026-11-08 01:06 · W08 offscreen 통지 경계 보완
+
+- `4bcbef7` 후 전송 경로 읽기 검토에서 panel과 달리 offscreen이 옛 revision 통지도 취소로 처리함을 확인했다. `Extension/offscreen.js`도 같은 generation의 이전/동일 revision은 무시하고 새 revision·generation 변경·유효하지 않은 통지만 취소하도록 정정했다.
+- 실제 offscreen fetch 대역 회귀를 `context_expiry.test.cjs`에 추가했다. 신규 15개+원격 연결 검사 결합 **22/22 통과**, skip 없음. 이 보완은 실제 Chrome 결과를 대신하지 않는다. 다음 W10을 계속한다.
+
 ### 2026-11-08 01:04 · W08 7일 자동 맥락 경계
 
 - 기준 `99cf6fc`. `conversations.js`/`conversation-store.js`에 schema v3·active `contextBoundary`·worker 시계 기준 7일 경계를 구현했다. begin은 실제 전송 시각과 새 revision을 먼저 저장하고, worker 소유권·panel 요청이 반환된 revision/상담 ID를 이어받는다. history·요약·batch·직접 사용자 원문·문서 참조를 같은 주제/시간 경계로 제한하며 화면 기록은 보존한다.

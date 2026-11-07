@@ -1,7 +1,7 @@
 let active=null;
 chrome.runtime.onMessage.addListener((packet,sender)=>{
   if(packet?.target==='gyeote:offscreen'&&packet.type==='gyeote:conversations-changed'&&sender.id===chrome.runtime.id&&!sender.tab){
-    if(active?.conversationContext&&(packet.revision!==active.conversationContext.revision||packet.generation!==active.conversationContext.generation))active.controller.abort();
+    if(active?.conversationContext&&(packet.generation!==active.conversationContext.generation||!Number.isSafeInteger(packet.revision)||packet.revision>active.conversationContext.revision))active.controller.abort();
     return;
   }
   if(packet?.target==='gyeote:offscreen'&&packet.type==='gyeote:auth-changed'&&sender.id===chrome.runtime.id&&!sender.tab){if(active?.documentMode)active.controller.abort();return;}

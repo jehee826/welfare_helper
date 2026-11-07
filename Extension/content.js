@@ -441,11 +441,11 @@
     const r=panel.getBoundingClientRect();drag={id:event.pointerId,x:event.clientX-r.left,y:event.clientY-r.top};
     try{head.setPointerCapture(event.pointerId);}catch{drag=null;}
   });
-  head.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id)return;drag.moved=true;clampPanel(event.clientX-drag.x,event.clientY-drag.y);schedule();});
+  head.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id)return;drag.moved=true;uiEditVersion++;clampPanel(event.clientX-drag.x,event.clientY-drag.y);schedule();});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])head.addEventListener(type,finishDrag);
-  head.addEventListener('dblclick',event=>{if(event.target.closest('button'))return;finishDrag();preferred=null;clampPanel();schedule();void saveUi();});
+  head.addEventListener('dblclick',event=>{if(event.target.closest('button'))return;finishDrag();uiEditVersion++;preferred=null;clampPanel();schedule();void saveUi();});
   const limits=GyeoteProtocol.uiLimits,resizeHandle=$('.resize-handle'),uiStatus=$('.ui-status'),opacitySelect=$('.ui-opacity');
-  let ui={...GyeoteProtocol.uiDefaults},uiState=null,uiInvalid=false,uiQueue=Promise.resolve(),resizing=null,keyTimer=null,uiDeferred=false;
+  let ui={...GyeoteProtocol.uiDefaults},uiState=null,uiInvalid=false,uiQueue=Promise.resolve(),resizing=null,keyTimer=null,uiDeferred=false,uiEditVersion=0,uiReadVersion=0;
   const bounded=(value,min,max)=>Math.max(min,Math.min(max,Math.round(value)));
   function showUi(){
     panel.style.setProperty('--gyeote-width',ui.width+'px');panel.style.setProperty('--gyeote-height',ui.height+'px');panel.style.setProperty('--gyeote-background',String(ui.backgroundOpacity/100));
@@ -457,20 +457,34 @@
   }
   async function refreshUi(){
     if(drag||resizing||keyTimer){uiDeferred=true;return;}
-    try{const result=await chrome.runtime.sendMessage({type:'gyeote:ui-preferences-get'});if(result?.ok){uiInvalid=!!result.invalid;applyUi(result.state);}}catch{}
+    const readVersion=++uiReadVersion,editVersion=uiEditVersion;
+    try{
+      const result=await chrome.runtime.sendMessage({type:'gyeote:ui-preferences-get'});
+      if(!result?.ok||readVersion!==uiReadVersion||uiState&&result.state.revision<uiState.revision)return;
+      if(drag||resizing||keyTimer||editVersion!==uiEditVersion){
+        // 초기 읽기는 저장 기준만 확보하고 사용자가 조절한 화면은 유지한다.
+        if(!uiState){uiState=result.state;uiInvalid=!!result.invalid;}
+        if(drag||resizing||keyTimer)uiDeferred=true;
+        return;
+      }
+      uiInvalid=!!result.invalid;applyUi(result.state);
+    }catch{}
   }
   function currentPreferences(){
     const position=preferred?{dock:'free',left:bounded(preferred.left,0,10000),top:bounded(preferred.top,0,10000)}:{dock:'right',left:null,top:null};
     return {width:ui.width,height:ui.height,backgroundOpacity:ui.backgroundOpacity,...position};
   }
   function saveUi(reset=false){
+    if(reset)uiEditVersion++;
+    const preferences=currentPreferences(),editVersion=uiEditVersion;
     const pending=uiQueue.then(async()=>{
+      if(!uiState)await uiInitialRead;
       if(!uiState)return;
       if(uiInvalid&&!reset){setStatus('저장된 화면 설정을 읽지 못해 이번 조절을 저장하지 않았어요. 내 정보의 화면 설정에서 기본값으로 되돌려 주세요.');return;}
       let result;
-      try{result=await chrome.runtime.sendMessage(reset?{type:'gyeote:ui-preferences-reset',expectedRevision:uiState.revision}:{type:'gyeote:ui-preferences-set',expectedRevision:uiState.revision,preferences:currentPreferences()});}
+      try{result=await chrome.runtime.sendMessage(reset?{type:'gyeote:ui-preferences-reset',expectedRevision:uiState.revision}:{type:'gyeote:ui-preferences-set',expectedRevision:uiState.revision,preferences});}
       catch{result=null;}
-      if(result?.ok){uiInvalid=false;if(reset)applyUi(result.state);else{uiState=result.state;showUi();}return;}
+      if(result?.ok){uiInvalid=false;if(reset&&editVersion===uiEditVersion)applyUi(result.state);else{uiState=result.state;showUi();}return;}
       if(result?.error==='ui_preferences_conflict'){await refreshUi();setStatus('다른 탭에서 화면 설정이 바뀌어 최신 설정을 적용했어요. 필요하면 다시 조절해 주세요.');return;}
       setStatus('화면 설정을 저장하지 못했어요. 지금 화면에서는 그대로 쓸 수 있어요.');
     });
@@ -478,9 +492,10 @@
   }
   function settleUi(changed){
     const saved=changed?saveUi():Promise.resolve();
-    if(uiDeferred){uiDeferred=false;void saved.finally(()=>refreshUi());}
+    void saved.finally(()=>{if(uiDeferred){uiDeferred=false;void refreshUi();}});
   }
   function resizeTo(width,height){
+    uiEditVersion++;
     const before=panel.getBoundingClientRect();
     ui.width=bounded(width,limits.minWidth,limits.maxWidth);ui.height=bounded(height,limits.minHeight,limits.maxHeight);showUi();
     if(preferred){const after=panel.getBoundingClientRect();preferred={left:before.left+before.width-after.width,top:before.top+before.height-after.height};}
@@ -504,9 +519,9 @@
     if(!change)return;event.preventDefault();resizeTo(ui.width+change[0],ui.height+change[1]);
     clearTimeout(keyTimer);keyTimer=setTimeout(()=>{keyTimer=null;settleUi(true);},400);
   });
-  opacitySelect.addEventListener('change',()=>{const value=Number(opacitySelect.value);if(!limits.opacities.includes(value))return;ui.backgroundOpacity=value;showUi();void saveUi();});
+  opacitySelect.addEventListener('change',()=>{const value=Number(opacitySelect.value);if(!limits.opacities.includes(value))return;uiEditVersion++;ui.backgroundOpacity=value;showUi();void saveUi();});
   $('.ui-reset').addEventListener('click',()=>{if(!uiState)return;void saveUi(true);});
-  void refreshUi();
+  const uiInitialRead=refreshUi();
   const sizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>{clampPanel();schedule();}):null;
   sizeObserver?.observe(panel);
   addEventListener('scroll',schedule,{passive:true,capture:true});addEventListener('resize',()=>{finishDrag();clampPanel();schedule();});

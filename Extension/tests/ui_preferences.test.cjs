@@ -64,8 +64,8 @@ test('변경 통지는 설정값 없이 revision만 각 탭에 보낸다',async(
   assert.deepEqual(seen,[{type:'gyeote:ui-preferences-changed',revision:1}]);
 });
 
-function panelFixture(data){
-  const server=worker({[profileKey]:profile,...data}),f=ui(server),handle=f.root.querySelector('.resize-handle'),panel=f.root.querySelector('.panel');
+function panelFixture(data,failure={}){
+  const server=worker({[profileKey]:profile,...data},failure),f=ui(server),handle=f.root.querySelector('.resize-handle'),panel=f.root.querySelector('.panel');
   handle.setPointerCapture=()=>{};handle.hasPointerCapture=()=>true;handle.releasePointerCapture=()=>{};
   const pointer=(type,x,y,target=handle)=>{const event=new f.w.Event(type,{bubbles:true});Object.assign(event,{pointerId:1,clientX:x,clientY:y,button:0,isPrimary:true});target.dispatchEvent(event);};
   const uiRequests=()=>f.requests.filter(message=>message.type==='gyeote:ui-preferences-set');
@@ -73,12 +73,58 @@ function panelFixture(data){
 }
 const size=panel=>[panel.style.getPropertyValue('--gyeote-width'),panel.style.getPropertyValue('--gyeote-height'),panel.style.getPropertyValue('--gyeote-background')];
 
+for(const endBeforeRead of [false,true])test(`초기 설정 읽기가 조절 ${endBeforeRead?'종료 후':'중'} 끝나도 조절값을 저장한다`,async()=>{
+  let release,entered=false;
+  const pending=new Promise(resolve=>{release=resolve;});
+  const f=panelFixture(undefined,{beforeGet:async name=>{if(name===uiKey&&!entered){entered=true;await pending;}}});
+  try{
+    await f.ready();assert.equal(entered,true);
+    f.pointer('pointerdown',100,100);f.pointer('pointermove',20,100);
+    assert.equal(size(f.panel)[0],'480px');
+    if(endBeforeRead)f.pointer('pointerup',20,100);
+    release();await settle();assert.equal(size(f.panel)[0],'480px');
+    if(!endBeforeRead)f.pointer('pointerup',20,100);
+    await settle();assert.deepEqual(f.server.data[uiKey],stored(1,{width:480}));
+  }finally{release();f.close();}
+});
+
 test('새로고침 뒤 저장된 크기·투명도·직접 옮긴 위치를 복원한다',async()=>{
   const f=panelFixture({[uiKey]:stored(2,{width:480,height:600,backgroundOpacity:90,dock:'free',left:500,top:200})});
   try{
     await f.ready();assert.deepEqual(size(f.panel),['480px','600px','0.9']);
     assert.equal(f.panel.style.left,'500px');assert.equal(f.panel.style.top,'200px');assert.equal(f.root.querySelector('.ui-opacity').value,'90');
   }finally{f.close();}
+});
+
+test('저장보다 늦게 도착한 옛 설정 읽기는 최신 revision과 화면을 되돌리지 않는다',async()=>{
+  const f=panelFixture();let release;
+  const pending=new Promise(resolve=>{release=resolve;});
+  try{
+    await f.ready();const send=f.w.chrome.runtime.sendMessage;let held=false;
+    f.w.chrome.runtime.sendMessage=async message=>{
+      const result=await send(message);
+      if(message.type==='gyeote:ui-preferences-get'&&!held){held=true;await pending;}
+      return result;
+    };
+    f.notify({type:'gyeote:ui-preferences-changed',revision:1});await settle();
+    f.pointer('pointerdown',100,100);f.pointer('pointermove',20,100);f.pointer('pointerup',20,100);await settle();
+    assert.deepEqual(f.server.data[uiKey],stored(1,{width:480}));
+    release();await settle();assert.equal(size(f.panel)[0],'480px');
+    f.pointer('pointerdown',100,100);f.pointer('pointermove',80,100);f.pointer('pointerup',80,100);await settle();
+    assert.deepEqual(f.server.data[uiKey],stored(2,{width:500}));
+  }finally{release();f.close();}
+});
+
+test('이전 저장이 늦어도 다음 조절을 덮지 않고 마지막 조절값을 순서대로 저장한다',async()=>{
+  let release,held=false;
+  const pending=new Promise(resolve=>{release=resolve;});
+  const f=panelFixture(undefined,{beforeSet:async value=>{if(uiKey in value&&!held){held=true;await pending;}}});
+  try{
+    await f.ready();f.pointer('pointerdown',100,100);f.pointer('pointermove',20,100);f.pointer('pointerup',20,100);await settle();
+    f.pointer('pointerdown',100,100);f.pointer('pointermove',60,100);assert.equal(size(f.panel)[0],'520px');
+    release();await settle();assert.equal(size(f.panel)[0],'520px');
+    f.pointer('pointerup',60,100);await settle();assert.deepEqual(f.server.data[uiKey],stored(2,{width:520}));
+  }finally{release();f.close();}
 });
 
 test('손잡이 끌기는 조절 중에는 저장하지 않고 놓을 때 한 번 저장한다',async()=>{

@@ -80,6 +80,20 @@
     if(age!==null&&(!Number.isInteger(age)||age<0||age>120)||!['under50','under100','under150','over150','unknown'].includes(income)||household!==null&&!['single','couple','withChildren','singleParent','grandparent','other'].includes(household)||region!==null&&!regions.includes(region)||disability!==null&&typeof disability!=='boolean')throw new Error('invalid_profile');
     return {age,income,household,region,disability};
   }
+  const uiDefaults=Object.freeze({width:400,height:720,backgroundOpacity:100,dock:'right',left:null,top:null});
+  const uiLimits=Object.freeze({minWidth:320,maxWidth:640,minHeight:360,maxHeight:900,step:20,opacities:Object.freeze([100,95,90,85])});
+  function uiPreferences(value){
+    if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='backgroundOpacity,dock,height,left,top,width')throw new Error('invalid_ui_preferences');
+    const {width,height,backgroundOpacity,dock,left,top}=value,coordinate=item=>Number.isInteger(item)&&item>=0&&item<=10000;
+    if(!Number.isInteger(width)||width<uiLimits.minWidth||width>uiLimits.maxWidth||!Number.isInteger(height)||height<uiLimits.minHeight||height>uiLimits.maxHeight||!uiLimits.opacities.includes(backgroundOpacity))throw new Error('invalid_ui_preferences');
+    if(dock==='right'?left!==null||top!==null:dock!=='free'||!coordinate(left)||!coordinate(top))throw new Error('invalid_ui_preferences');
+    return {width,height,backgroundOpacity,dock,left,top};
+  }
+  function uiPreferenceRecord(value){
+    if(!value||typeof value!=='object'||Array.isArray(value)||value.schemaVersion!==1||!Number.isSafeInteger(value.revision)||value.revision<0)throw new Error('ui_preferences_invalid');
+    const {schemaVersion,revision,...rest}=value;
+    try{return {schemaVersion:1,revision,...uiPreferences(rest)};}catch{throw new Error('ui_preferences_invalid');}
+  }
   function profileRecord(value){
     if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='onboardingCompleted,profile,revision,schemaVersion'||value.schemaVersion!==1||!Number.isSafeInteger(value.revision)||value.revision<0||typeof value.onboardingCompleted!=='boolean')throw new Error('profile_data_invalid');
     const normalized=profile(value.profile);
@@ -179,6 +193,6 @@
   }
   const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
   const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&value.origin===documentOrigin();
-  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,documentContacts,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
+  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,documentContacts,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,uiDefaults,uiLimits,uiPreferences,uiPreferenceRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

@@ -62,6 +62,7 @@
     }
     if(!name&&node.labels)name=safeText([...node.labels].map(n=>textOf(n,80)).join(" "),80);
     if(!name&&!node.matches('input,textarea,select'))name=textOf(node,80);
+    if(!name&&node.matches('input,textarea'))name=safeText(node.getAttribute("placeholder"),80);
     return name||safeText(node.getAttribute("title"),80);
   }
   const meaningOf=node=>JSON.stringify([node.getAttribute('role'),node.getAttribute('type'),node.tagName==='A'?node.href:null]);
@@ -84,6 +85,19 @@
     }
     return true;
   }
+  const compact=value=>String(value||"").replace(/[\s\p{P}\p{S}]+/gu,"").toLowerCase();
+  function landmarkOf(node){
+    for(let parent=parentOf(node),depth=0;parent&&depth<50;parent=parentOf(parent),depth++){
+      if(parent.matches('[role="search"]'))return safeText(parent.getAttribute('aria-label'),40)||'검색 영역';
+      if(parent.matches('nav,[role="navigation"]'))return safeText(parent.getAttribute('aria-label'),40)||'탐색 메뉴';
+      if(parent.matches('header,[role="banner"]'))return '머리글';
+    }
+    return '';
+  }
+  function matchScore(label,asked,tokens){
+    const name=compact(label);
+    return (name.length>1&&asked.includes(name)?8:0)+3*tokens.filter(token=>name.includes(token)).length+(tokens.some(token=>name.includes(token.slice(0,2)))?1:0);
+  }
   function collect(question="",{bodyOnly=false}={}){
     if(!publicPage())throw new Error("public_screen_required");
     const modal=activeModal(),scope=modal||document.querySelector('main,[role="main"]')||document.body;
@@ -99,14 +113,14 @@
       }
       if(partial)break;
     }
-    const words=question.split(/\s+/).filter(w=>w.length>1).map(w=>w.slice(0,2));
+    const asked=compact(question),tokens=question.split(/\s+/).map(compact).filter(word=>word.length>1);
     const candidates=nodes.map(node=>{
       if(bodyOnly&&!bodyTarget(node))return null;
       if(!usable(node,modal))return null;
       const label=nameOf(node);if(!label)return null;
       const role=ariaRoles[node.getAttribute('role')]||roles.get(node.tagName)||"Button";
-      const context=textOf(node.closest('fieldset')?.querySelector('legend'),100);
-      const score=words.some(word=>label.includes(word))?3:scope.contains(node)?2:1;
+      const context=safeText([textOf(node.closest('fieldset')?.querySelector('legend'),60),landmarkOf(node)].filter(Boolean).join(' · '),100);
+      const score=matchScore(label,asked,tokens)+(scope.contains(node)?0.5:0);
       return {node,label,role,context,score};
     }).filter(Boolean).sort((a,b)=>b.score-a.score);
     if(candidates.length>60)partial=true;

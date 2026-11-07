@@ -5,18 +5,18 @@ description: Manage isolated task branches, selective commits, approved feature 
 
 # 프로젝트 Git 작업
 
-최신 업데이트: 2026-11-04 16:13 KST
+최신 업데이트: 2026-11-07 14:34 KST
 
 사용자 로컬 Git 스킬의 기능별 브랜치·선별 커밋·PR 순서·안전 정리를 이 파일에 반영했다. 다른 개발자는 그 개인 파일 없이 이 프로젝트 스킬만으로 수행한다. 프로젝트는 로컬 기능 커밋 누적을 허용하고, PR 사용자 생성·push 범위별 승인·**main 직접 반영 금지**를 추가 적용한다. 과거 승인3회 예외는 현재 정책이 아니다. 전역 개인 스킬은 자동 수정하지 않는다.
 
 ## 작업 공간과 작성자
 
-1. 협업 개발은 **담당자별 독립 일반 clone + 서로 다른 전용 기능 브랜치**를 사용한다. 같은 브랜치 공동 작성·같은 checkout 병렬 작업·worktree 생성/사용을 금지한다. 브랜치만 나누고 같은 폴더를 공유하는 것은 격리가 아니다.
-2. 착수 시 작업 루트·Git 디렉터리·원격 저장소·담당 브랜치·기준 origin/main 커밋·허용 변경 경로를 계획과 대조한다. 기존 승인된 clone이 있으면 재사용한다. 별도 clone/브랜치가 준비되지 않은 검토 요청에서 임의로 생성하지 않는다.
-   이번 협업의 예정 경로·기능 ref·순서는 docs/plan/collaboration-plan.md 3절을 기준으로 한다. origin/main SHA는 착수 때 다시 읽고, 지침/스킬/계획은 동일한 공유 커밋에서 가져와 버전을 대조한다. 같은 기능 이름의 기존 브랜치가 있으면 reset/덮어쓰기 대신 소유자와 차이를 확인한다.
-3. 쓰기·stage·commit·push 직전 현재 루트/브랜치/status를 확인한다. 다른 담당 브랜치, main, detached HEAD, 출처 불명 staged 변경이면 해당 쓰기를 멈추고 상태를 보고한다. 자동 checkout·reset·stash로 다른 변경을 치우지 않는다.
-4. 구현 브랜치는 확인된 main에서 기능 단위로 만들고 사용자 지정 이름을 우선한다. 기본 예시는 Codex codex/<type>-<task>, Claude claude/<type>-<task>다. 담당별 브랜치 이름과 원격 ref를 겹치지 않게 정한다. docs/Co-op에는 문서만 둔다.
-5. 각 담당자의 다음 독립 기능은 자신의 이전 기능 검증·커밋·사용자 PR 검토/병합 확인 후 새 main 기준으로 시작한다. 이미 배정된 서로 독립적인 Codex/Claude 기능은 각각의 clone에서 병행할 수 있다. 공유 파일/계약 의존 작업은 선행 PR 병합을 기다리고 그동안 계약 리뷰·대역 검사를 한다. 포괄적인 계속 진행 요청으로 이 경계를 해제하지 않는다.
+1. 협업 개발은 **담당자별 전용 기능 브랜치**로 나눠 진행한다. 2026-11-07 사용자 결정으로 독립 clone은 필수가 아니며 각 담당은 자기 기기의 checkout에서 자기 브랜치만 쓴다. 같은 브랜치 공동 작성·한 checkout에서 두 담당의 동시 작업·worktree 생성/사용은 금지한다. 같은 checkout을 넘기거나 브랜치를 바꾸기 전에 자기 변경을 커밋한다.
+2. 착수 시 작업 루트·Git 디렉터리·원격 저장소·담당 브랜치·기준 origin/main 커밋·허용 변경 경로를 계획과 대조한다. 사용자가 지정한 담당 브랜치(Claude: `claude/feat-Extension`)가 있으면 그것을 쓴다. 브랜치가 준비되지 않은 검토 요청에서 임의로 생성하지 않는다.
+   기능 ref·순서는 docs/plan/collaboration-plan.md 3절을 기준으로 하되, 그 절의 독립 clone·예정 폴더 규정은 이 항목의 브랜치 분리 방식으로 대체한다. origin/main SHA는 착수 때 다시 읽고, 지침/스킬/계획은 동일한 공유 커밋에서 가져와 버전을 대조한다. 같은 기능 이름의 기존 브랜치가 있으면 reset/덮어쓰기 대신 소유자와 차이를 확인한다.
+3. 쓰기·stage·commit·push 직전 현재 루트/브랜치/status를 확인한다. 다른 담당 브랜치, main, detached HEAD이면 해당 쓰기를 멈추고 상태를 보고한다. 출처 불명 staged 변경은 건드리지 않고 경로를 지정한 커밋(`git commit -- <경로>`)으로 자기 변경만 커밋하며, 분리할 수 없으면 멈춘다. 자동 checkout·reset·stash로 다른 변경을 치우지 않는다.
+4. 구현 브랜치는 확인된 main에서 만들고 사용자 지정 이름을 우선한다. 기본 예시는 Codex codex/<type>-<task>, Claude claude/<type>-<task>다. 담당별 브랜치 이름과 원격 ref를 겹치지 않게 정한다. 한 담당 브랜치에서 여러 기능을 진행하면 기능(W번호)마다 별도 커밋으로 나눈다. docs/Co-op에는 문서만 둔다.
+5. 각 담당자의 다음 독립 기능은 자신의 이전 기능 검증·커밋·사용자 PR 검토/병합 확인 후 새 main 기준으로 시작한다. 같은 담당 브랜치를 계속 쓰면 병합된 origin/main을 그 브랜치에 fast-forward 또는 merge로 반영한 뒤 시작하며, 공개 이력을 rebase/reset하지 않는다. 이미 배정된 서로 독립적인 Codex/Claude 기능은 각자의 브랜치에서 병행할 수 있다. 공유 파일/계약 의존 작업은 선행 PR 병합을 기다리고 그동안 계약 리뷰·대역 검사를 한다. 포괄적인 계속 진행 요청으로 이 경계를 해제하지 않는다.
 
 ## 로컬 커밋과 변경 경로
 
@@ -31,14 +31,14 @@ description: Manage isolated task branches, selective commits, approved feature 
 - push 직전 remote URL·원격 대상 ref·커밋·소유 브랜치를 재확인한다. 자신의 기능 ref를 명시해서 전송한다. upstream이 main이라고 그대로 push하지 않는다. 무인자 push, --all, --mirror, force push, main 대상 refspec으로 공개 범위를 넓히지 않는다.
 - PR은 사용자가 직접 생성한다. 에이전트는 base main, [Type] 한국어 제목, 핵심 동작·검증·호환·운영 영향과 남은 확인을 담은 본문까지만 준비한다. 초안/API 생성도 하지 않는다.
 - main 대상 각 PR은 사용자 검토·해당 병합 승인 후 PR 경로로만 통합한다. CI 통과나 PR 생성 자체는 병합 승인이 아니다. 사용자가 이미 병합했으면 실제 상태부터 확인하며 중복 병합하지 않는다.
-- 서버/DTO PR→클라이언트 PR처럼 계약 의존 순서를 지킨다. 선행 PR 병합 뒤 후행 담당은 자신의 clone에서 최신 origin/main을 확인하고 자신의 기능 브랜치에 통합해 영향 검사만 한다. 공유/게시된 이력은 임의 rebase/force push하지 않는다.
+- 서버/DTO PR→클라이언트 PR처럼 계약 의존 순서를 지킨다. 선행 PR 병합 뒤 후행 담당은 자신의 checkout에서 최신 origin/main을 확인하고 자신의 기능 브랜치에 통합해 영향 검사만 한다. 공유/게시된 이력은 임의 rebase/force push하지 않는다.
 - Git 충돌이 없어도 API·저장·설정 의미 충돌은 남을 수 있다. 양쪽 변경 파일과 공통 기준에서 결합 검토한다. 최신 코드라는 이유로 ours/theirs 전체 선택이나 파일 덮어쓰기를 하지 않는다.
 
 ## main과 worktree의 절대 금지 범위
 
 - main 직접 commit·push, PR을 우회하는 로컬 main merge/cherry-pick, API/ref 변경을 통한 직접 반영을 금지한다. **승인 횟수 수집으로 우회하지 않는다.** 일반적인 push/merge/계속 진행 요청은 이 규칙 해제가 아니다.
 - 허용되는 main 동작은 읽기, 그리고 **원격에서 이미 승인·병합된 origin/main으로 로컬 main을 fast-forward-only 동기화**하는 것이다. 로컬 새 작업 생성이나 원격 main push를 포함하지 않는다.
-- worktree는 만들거나 사용하지 않는다. 상태 확인을 위한 기존 목록 조회는 생성/사용이 아니다. 별도 일반 clone과 혼동하지 않는다.
+- worktree는 만들거나 사용하지 않는다. 상태 확인을 위한 기존 목록 조회는 생성/사용이 아니다.
 
 ## 병합 뒤 정리와 실제 보호 수준
 

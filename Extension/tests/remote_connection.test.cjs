@@ -39,7 +39,7 @@ test('원격 공개 질문은 연결 JSON·화면 토큰 없이 같은 서버에
   const payload={query:'합성 후속 질문',profile:{age:70},history:[{role:'user',content:'이전 질문'},{role:'assistant',content:'이전 답변'}],conversation_context:context};
   const f=offscreen();await f.run({payload,profileRevision:1});assert.equal(f.sent[0].type,'result');assert.equal(f.calls.length,1);
   const {url,options}=f.calls[0];assert.equal(url,origin+'/api/v1/chat');assert.equal(options.headers.Authorization,undefined);assert.equal(options.credentials,'omit');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');
-  const body=JSON.parse(options.body);assert.equal(body.profile.age,70);assert.deepEqual(body.history,payload.history);assert.deepEqual(body.conversation_context,context);assert.ok(body.timeout_seconds>0&&body.timeout_seconds<=600);assert.ok(!f.messages.some(message=>message.type==='gyeote:connection'));
+  const body=JSON.parse(options.body);assert.equal(Object.hasOwn(payload,'profile'),true);assert.equal(Object.hasOwn(body,'profile'),false);assert.deepEqual(body.history,payload.history);assert.deepEqual(body.conversation_context,context);assert.ok(body.timeout_seconds>0&&body.timeout_seconds<=600);assert.ok(!f.messages.some(message=>message.type==='gyeote:connection'));
 });
 
 test('원격 패널은 화면 DOM을 지원하고 삭제된 캡처·연결 메시지는 응답하지 않는다',async()=>{const server=worker(undefined,{},read),f=ui(server);try{await f.ready();await f.mode('screen');assert.equal(f.root.querySelector('.mode').value,'screen');assert.equal(f.root.querySelector('.image-option'),null);for(const type of ['gyeote:capture','gyeote:connection','gyeote:process-image'])assert.equal(await server.send({type},server.sender(1)),undefined);}finally{f.close();}});

@@ -7,10 +7,10 @@
     :host{all:initial;font:16px/1.6 "Malgun Gothic",sans-serif;color:#171717}*{box-sizing:border-box}
     button,input,select{font:inherit;min-width:0;max-width:100%}button,select{min-height:40px}button{cursor:pointer;padding:7px 11px;border:1px solid #ccc;border-radius:9px;background:#fff;color:#171717;white-space:normal;overflow-wrap:anywhere}
     button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #155bd7;outline-offset:2px}
-    .panel{position:fixed;right:12px;bottom:12px;width:400px;height:720px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:hidden;display:flex;flex-direction:column;pointer-events:auto;background:#fff;border:1px solid #ddd;border-radius:24px;box-shadow:0 12px 48px #0002;font-size:16px;line-height:1.6;overflow-wrap:anywhere}
+    .panel{position:fixed;right:12px;bottom:12px;width:var(--gyeote-width,400px);height:var(--gyeote-height,720px);max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:hidden;display:flex;flex-direction:column;pointer-events:auto;background:rgba(255,255,255,var(--gyeote-background,1));border:1px solid #ddd;border-radius:24px;box-shadow:0 12px 48px #0002;font-size:16px;line-height:1.6;overflow-wrap:anywhere}
     .panel.is-collapsed{height:auto}.head{display:flex;align-items:center;gap:6px;padding:14px 16px;border-bottom:1px solid #eee;flex-shrink:0;cursor:move;touch-action:none;user-select:none}.head strong{font-size:22px;letter-spacing:-1px;flex:1}.head button{font-size:14px;border-color:transparent;border-radius:12px;padding:6px 9px}.head .menu-toggle,.head .collapse{width:40px;font-size:20px;padding:0}.body{display:flex;flex-direction:column;min-height:0;flex:1}.transcript{flex:1;min-height:72px;overflow:auto;overscroll-behavior:contain;padding:16px;scrollbar-width:thin}.panel-tools{padding:12px;background:#f7f7f7;border:1px solid #eee;border-radius:14px;margin-bottom:14px}.panel-tools p{margin:8px 0}.panel-tools label{display:grid;gap:6px}.panel-tools select{width:100%}.muted,small{font-size:13px;color:#666}.status{background:#f5f5f5;padding:9px 16px;margin:0;flex-shrink:0;max-height:100px;overflow:auto;font-size:13px;white-space:pre-wrap}.status:empty,.voice-status:empty,.conversation-warning:empty{display:none}.reply{white-space:pre-wrap}.row{display:flex;gap:6px;flex-wrap:wrap}.row>*{min-width:0}
     [hidden]{display:none!important}.open{position:fixed;right:12px;bottom:12px;pointer-events:auto;background:#171717;color:#fff;border-radius:30px}.badge{position:fixed;pointer-events:none;color:#fff;border:2px solid #fff;border-radius:8px;padding:3px 7px;font-size:13px;font-weight:bold;box-shadow:0 2px 8px #0004;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}details{margin-top:14px}summary{cursor:pointer}
-  </style><section class="panel" aria-label="곁에 복지 상담"><header class="head"><strong>곁에</strong><button class="profile-toggle" aria-expanded="false" aria-controls="gyeote-profile">내 정보</button><button class="menu-toggle" aria-label="상담 메뉴" aria-expanded="false" aria-controls="gyeote-tools">⋯</button><button class="collapse" aria-label="패널 접기" aria-expanded="true" aria-controls="gyeote-body">−</button></header><div class="body" id="gyeote-body"><div class="transcript" tabindex="0" aria-label="상담 내용"><section class="panel-tools" id="gyeote-tools" aria-label="상담 메뉴" hidden><p class="mode-intro muted"></p><div class="tool-actions row"><button class="settings">연결 설정</button><button class="documents" title="관리자 웹을 새 탭으로 엽니다">문서 관리</button><button class="reset">임시 대화 지우기</button><button class="close" aria-label="패널 닫기">패널 닫기</button></div><p class="scope-notice muted"></p></section><div class="profile-slot" id="gyeote-profile"></div><div class="conversation" role="log" aria-label="현재 상담 대화"></div><div class="screen-controls row" hidden><button class="clear">표시 지우기</button></div></div><p class="status" role="status" aria-live="polite"></p><div class="consultation"></div></div></section><button class="open" hidden>곁에 열기</button><div class="badges"></div>`;
+  </style><section class="panel" aria-label="곁에 복지 상담"><header class="head"><button class="resize-handle" aria-label="패널 크기 조절. 방향키로 20픽셀씩 바꿉니다" title="끌거나 방향키로 패널 크기 조절">⤡</button><strong>곁에</strong><button class="profile-toggle" aria-expanded="false" aria-controls="gyeote-profile">내 정보</button><button class="menu-toggle" aria-label="상담 메뉴" aria-expanded="false" aria-controls="gyeote-tools">⋯</button><button class="collapse" aria-label="패널 접기" aria-expanded="true" aria-controls="gyeote-body">−</button></header><div class="body" id="gyeote-body"><div class="transcript" tabindex="0" aria-label="상담 내용"><section class="panel-tools" id="gyeote-tools" aria-label="상담 메뉴" hidden><p class="mode-intro muted"></p><div class="tool-actions row"><button class="settings">연결 설정</button><button class="documents" title="관리자 웹을 새 탭으로 엽니다">문서 관리</button><button class="reset">임시 대화 지우기</button><button class="close" aria-label="패널 닫기">패널 닫기</button></div><p class="scope-notice muted"></p></section><div class="profile-slot" id="gyeote-profile"></div><div class="conversation" role="log" aria-label="현재 상담 대화"></div><div class="screen-controls row" hidden><button class="clear">표시 지우기</button></div></div><p class="status" role="status" aria-live="polite"></p><div class="consultation"></div></div></section><button class="open" hidden>곁에 열기</button><div class="badges"></div>`;
   document.documentElement.append(host);
   const $=query=>shadow.querySelector(query),panel=$('.panel'),status=$('.status'),badges=$('.badges'),transcript=$('.transcript');
   const palette=[{name:'파랑',number:'①',color:'#175cde'},{name:'주황',number:'②',color:'#a74b00'},{name:'보라',number:'③',color:'#743abb'}];
@@ -43,7 +43,9 @@
     pendingReply.innerHTML='<span class="sr-only">곁에가 답변을 준비하고 있습니다.</span><span class="thinking-dots" aria-hidden="true"><span>•</span><span>•</span><span>•</span></span>';
     $('.conversation').append(pendingReply);if(follow)transcript.scrollTop=transcript.scrollHeight;
   }
-  function cancel(message){removePending();finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;updateRequestControl();clear(message);inputAssist?.invalidate();}
+  const synth=window.speechSynthesis,speechSupported=!!synth&&typeof window.SpeechSynthesisUtterance==='function';
+  let speaking=null,speechVersion=0;
+  function cancel(message){stopSpeech();removePending();finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;updateRequestControl();clear(message);inputAssist?.invalidate();}
   function position(){
     frame=0;
     if(!selected.length)return;
@@ -103,6 +105,7 @@
   const listeningOverlay=document.createElement('section');listeningOverlay.className='listening-overlay';listeningOverlay.hidden=true;listeningOverlay.setAttribute('role','dialog');listeningOverlay.setAttribute('aria-label','음성 입력');listeningOverlay.innerHTML='<strong role="status" aria-live="polite">듣고 있습니다...</strong>';panel.append(listeningOverlay);
   formStyle.textContent+=`.compose-row .voice-start{width:40px;height:42px;display:grid;place-items:center;flex-shrink:0;padding:0;border:0;background:transparent;color:#555}.voice-start[aria-pressed=true]{color:#175cde}.listening-overlay{position:absolute;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:#ffffff88;border-radius:inherit}.listening-overlay strong{font-size:22px}.listening-overlay p{font-size:13px;line-height:1.6;margin:0;max-width:270px}.listening-overlay .voice-cancel{background:#171717;color:#fff}.panel.is-listening>.head,.panel.is-listening>.body,.panel.is-listening>.mode-reason{filter:blur(2px);opacity:.55}.panel.is-listening{animation:gyeote-listening-glow 2s ease-in-out infinite;box-shadow:0 0 0 2px #7ab7ff,0 0 28px #176cff66}@keyframes gyeote-listening-glow{0%,100%{box-shadow:0 0 0 2px #7ab7ff,-7px 0 28px #176cff77,7px 0 18px #7acbff44}50%{box-shadow:0 0 0 2px #7ab7ff,7px 0 28px #176cff77,-7px 0 18px #7acbff44}}@media(prefers-reduced-motion:reduce){.panel.is-listening{animation:none}}`;
   function showListening(listening){
+    if(listening)stopSpeech();
     const changed=panel.classList.contains('is-listening')!==listening;panel.classList.toggle('is-listening',listening);listeningOverlay.hidden=!listening;
     $('.head').inert=listening;$('.body').inert=listening;
     if(changed&&listening)listeningOverlay.querySelector('.voice-cancel')?.focus();
@@ -150,9 +153,12 @@
   profilePanel=GyeoteProfilePanel.create(profileSlot,()=>inputAssist?.invalidate(),updateProfileView);
   const profileControls=document.createElement('details');profileControls.className='profile-controls';const managementSummary=document.createElement('summary');managementSummary.textContent='저장·확장 관리';profileControls.append(managementSummary);profileSlot.append(profileControls);
   $('.settings').textContent='확장 옵션';profileControls.append($('.settings'),modeLabel,modeNotice,accessNotice,$('.mode-intro'),$('.scope-notice'),$('.reset'));
+  const uiSettings=document.createElement('section');uiSettings.className='ui-settings';uiSettings.setAttribute('aria-label','화면 설정');
+  uiSettings.innerHTML='<h3>화면 설정</h3><label>패널 배경 불투명도 <select class="ui-opacity"><option value="100">100% (불투명)</option><option value="95">95%</option><option value="90">90%</option><option value="85">85%</option></select></label><p class="muted">크기는 제목줄 왼쪽 ⤡ 손잡이를 끌거나, 손잡이를 선택한 뒤 방향키로 바꿔요. 옮긴 패널은 제목줄을 두 번 누르면 오른쪽 기본 위치로 돌아가요. 글자와 버튼은 투명해지지 않아요.</p><button class="ui-reset">화면 설정 기본값으로</button><p class="ui-status muted" role="status"></p>';
+  profileControls.append(uiSettings);
   const closeButton=$('.close');closeButton.textContent='×';closeButton.title='패널 닫기';$('.head').append(closeButton);$('.documents').textContent='관리자 접근';
   const screenSettings=document.createElement('details'),screenSummary=document.createElement('summary');screenSettings.className='screen-settings';screenSummary.textContent='화면·음성 안내';screenSettings.append(screenSummary);$('.screen-controls').append(screenSettings);
-  formStyle.textContent+='.head{gap:3px;padding:10px 8px}.head .menu-toggle,.head .collapse,.head .close{width:28px;padding:0;font-size:18px;flex-shrink:0}.head .profile-toggle{padding:6px 4px}.head .mode-switch button{padding:4px}.profile-controls{margin-top:12px}.profile-controls>.settings{margin-top:8px}.screen-controls>p,.screen-controls>details{flex-basis:100%;margin:8px 0}';
+  formStyle.textContent+='.head{gap:3px;padding:10px 8px}.head .menu-toggle,.head .collapse,.head .close{width:28px;padding:0;font-size:18px;flex-shrink:0}.head .profile-toggle{padding:6px 4px}.head .mode-switch button{padding:4px}.profile-controls{margin-top:12px}.profile-controls>.settings{margin-top:8px}.screen-controls>p,.screen-controls>details{flex-basis:100%;margin:8px 0}.head .resize-handle{width:28px;padding:0;font-size:16px;flex-shrink:0;cursor:nwse-resize;touch-action:none}.ui-settings{margin-top:12px;padding-top:8px;border-top:1px solid #eee}.ui-settings h3{font-size:15px;margin:0 0 6px}.ui-settings label{display:grid;gap:6px}.ui-settings .ui-status:empty{display:none}.speak-answer{min-height:32px;padding:2px 10px;margin:0 0 4px 8px;font-size:13px}.speak-answer[aria-pressed=true]{background:#eaf1ff;border-color:#aac6ee;color:#174b8d}';
   profilePanel.ready.then(()=>{if(!profilePanel.state){profileOpen=true;updateProfileView();}});
   $('.onboarding-edit').addEventListener('click',()=>{if(!profileOpen)profileButton.click();});
   $('.onboarding-later').addEventListener('click',()=>void profilePanel.defer());
@@ -235,8 +241,56 @@
     const follow=atConversationEnd(),article=document.createElement('article'),label=document.createElement('small'),body=document.createElement('div');article.className=role==='user'?'user-message':'assistant-message';label.textContent=role==='user'?'나':'곁에 · 현재 답변';body.textContent=text;article.append(label,body);$('.conversation').append(article);
     while($('.conversation').children.length>limit)$('.conversation').firstElementChild.remove();if(follow)transcript.scrollTop=transcript.scrollHeight;return {article,label,text:body,answer:text,follow};
   }
+  function speechVoice(){try{return synth.getVoices().find(voice=>voice.localService===true&&/^ko([-_]|$)/i.test(voice.lang||''))||null;}catch{return null;}}
+  function speechIdle(button){button.textContent='읽기';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','이 답변 읽어주기');}
+  function stopSpeech(){speechVersion++;const prior=speaking;speaking=null;if(prior){speechIdle(prior);if(speechSupported){try{synth.cancel();}catch{}}}}
+  function speechText(text){
+    return String(text||'').split('\n').map(line=>line
+      .replace(/[①-⑳]/g,mark=>` ${mark.charCodeAt(0)-0x245f}번 `)
+      .replace(/\s*~\s*/g,'부터 ')
+      .replace(/(\d)([.,:-])(?=\d)/g,'$1\u0000$2')
+      .replace(/\u0000([.,:-])|[^\p{L}\p{N}\s.,?!%]|(?<!\S)[.,:-](?!\S)/gu,(match,kept)=>kept||' ')
+      .replace(/\s+([.,?!%])/g,'$1').replace(/([.,?!])[.,?!]+/g,'$1').replace(/\s+/g,' ').trim()
+    ).filter(line=>line&&!/^[.,?!%\s]+$/.test(line)).join('\n');
+  }
+  function speechChunks(text){
+    const parts=[];
+    for(const line of text.split(/\n+/)){
+      let rest=line.trim();
+      while(rest){
+        if(rest.length<=180){parts.push(rest);break;}
+        let cut=[rest.lastIndexOf('. ',179),rest.lastIndexOf(', ',179),rest.lastIndexOf(' ',179)].find(index=>index>=60)??179;
+        parts.push(rest.slice(0,cut+1).trim());rest=rest.slice(cut+1).trim();
+      }
+    }
+    return parts;
+  }
+  const spokenPhone=phone=>phone.split('-').map(group=>group.split('').join(' ')).join(', ');
+  async function speak(button,read){
+    if(speaking===button){stopSpeech();return;}
+    stopSpeech();
+    if(!speechSupported){setStatus('이 브라우저는 답변 읽어주기를 지원하지 않아요. 화면의 답변을 확인해 주세요.');return;}
+    const version=speechVersion;let voice=speechVoice();
+    if(!voice&&!synth.getVoices().length)voice=await new Promise(resolve=>{const done=()=>{clearTimeout(timer);synth.removeEventListener?.('voiceschanged',done);resolve(speechVoice());};const timer=setTimeout(done,1500);synth.addEventListener?.('voiceschanged',done);});
+    if(version!==speechVersion)return;
+    if(!voice){setStatus('이 기기에 한국어 기기 내 음성이 없어 읽어줄 수 없어요. 외부 음성 서비스로는 보내지 않습니다.');return;}
+    const parts=speechChunks(speechText(read()));if(!parts.length)return;
+    speaking=button;button.textContent='정지';button.setAttribute('aria-pressed','true');button.setAttribute('aria-label','읽어주기 정지');
+    parts.forEach((part,index)=>{
+      const utterance=new window.SpeechSynthesisUtterance(part);utterance.voice=voice;utterance.lang=voice.lang;
+      utterance.onend=()=>{if(version===speechVersion&&index===parts.length-1)stopSpeech();};
+      utterance.onerror=event=>{if(version!==speechVersion)return;stopSpeech();if(!['interrupted','canceled'].includes(event?.error))setStatus('답변 읽어주기를 마치지 못했어요. 화면의 답변을 확인해 주세요.');};
+      synth.speak(utterance);
+    });
+  }
+  function addSpeech(message,read){
+    const button=document.createElement('button');button.type='button';button.className='speak-answer';speechIdle(button);
+    button.addEventListener('click',()=>void speak(button,read));message.label.after(button);return button;
+  }
   function appendDocumentAnswer(answer,restored=false){
     const message=appendMessage('assistant',answer.text);message.label.textContent=answer.kind==='answer'?'곁에 · 문서 답변':'곁에 · 안내';
+    const spokenContacts=GyeoteProtocol.documentContacts(answer.contacts).map(contact=>`${contact.kind==='general'?'일반 복지상담':'문서 문의처'}, ${contact.label}. 전화 ${spokenPhone(contact.phone)}.${contact.hours?' '+contact.hours+'.':''}`);
+    addSpeech(message,()=>[message.text.textContent,...spokenContacts].join('\n'));
     if(restored){const notice=document.createElement('p');notice.className='muted';notice.textContent='저장한 당시의 답변입니다. 연락처·근거의 현재 유효성은 다시 확인하지 않았습니다.'+(answer.evidenceTruncated?' 근거는 일부 인용·참조만 저장했습니다.':'');message.article.append(notice);}
     if(answer.context_usage?.omitted){const notice=document.createElement('p');notice.className='muted';notice.textContent='이 답변은 입력 예산에 따라 일부 대화 맥락을 제외했습니다.';message.article.append(notice);}
     const contacts=GyeoteProtocol.documentContacts(answer.contacts);
@@ -338,7 +392,7 @@
           removePending();
           const display=apply(source,answer.targets,answer.answer);
           if(answer.targets.length&&!selected.length)throw new Error('invalid_reply');
-          pendingQuestion=null;setStatus('');activeReply=appendMessage('assistant',display);activeReply.answer=answer.answer;
+          pendingQuestion=null;setStatus('');activeReply=appendMessage('assistant',display);activeReply.answer=answer.answer;const spokenReply=activeReply;addSpeech(spokenReply,()=>spokenReply.text.textContent);
           history.push({role:'user',text:question},{role:'assistant',text:answer.answer});while(history.length>4||history.reduce((n,m)=>n+m.text.length,0)>1000)history.shift();
         }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentHistory();void refreshDocumentAccess();}const message=error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply;finishQuestion(message);clear(message);}
         finally{if(version===serial&&requestPort===port){removePending();clearTimeout(requestTimer);busy=false;requestPort=null;updateRequestControl();inputAssist.update();}port.disconnect();}
@@ -366,29 +420,97 @@
     finally{managerButton.disabled=false;}
   });
   $('.reset').addEventListener('click',()=>{if(mode==='document'&&currentAccess?.mode==='anonymous')return;cancel();if(mode==='document')resetDocumentHistory();else{history=[];historyUrl='';}conversations[mode]=[];$('.conversation').replaceChildren();snapshot=null;});
-  let drag=null;
+  let drag=null,preferred=null;
   const head=$('.head');
   function clampPanel(left,top){
     if(panel.hidden)return;
+    if(left===undefined&&!preferred){for(const side of ['left','top','right','bottom'])panel.style[side]='';return;}
     const rect=panel.getBoundingClientRect(),width=Math.min(rect.width,innerWidth-8),height=Math.min(rect.height,innerHeight-8);
-    panel.style.left=Math.max(4,Math.min(innerWidth-width-4,left??rect.left))+'px';panel.style.top=Math.max(4,Math.min(innerHeight-height-4,top??rect.top))+'px';panel.style.right='auto';panel.style.bottom='auto';
+    const place=(value,size,limit)=>Math.max(4,Math.min(limit-size-4,value));
+    if(left!==undefined)preferred={left:place(left,width,innerWidth),top:place(top,height,innerHeight)};
+    panel.style.left=place(preferred.left,width,innerWidth)+'px';panel.style.top=place(preferred.top,height,innerHeight)+'px';panel.style.right='auto';panel.style.bottom='auto';
   }
   function finishDrag(event){
     if(!drag||event&&event.pointerId!==drag.id)return;
-    const id=drag.id;drag=null;
+    const {id,moved}=drag;drag=null;
     try{if(head.hasPointerCapture(id))head.releasePointerCapture(id);}catch{}
+    settleUi(moved);
   }
   head.addEventListener('pointerdown',event=>{
     if(drag||event.button!==0||event.isPrimary===false||event.target.closest('button'))return;
     const r=panel.getBoundingClientRect();drag={id:event.pointerId,x:event.clientX-r.left,y:event.clientY-r.top};
     try{head.setPointerCapture(event.pointerId);}catch{drag=null;}
   });
-  head.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id)return;clampPanel(event.clientX-drag.x,event.clientY-drag.y);schedule();});
+  head.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id)return;drag.moved=true;clampPanel(event.clientX-drag.x,event.clientY-drag.y);schedule();});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])head.addEventListener(type,finishDrag);
+  head.addEventListener('dblclick',event=>{if(event.target.closest('button'))return;finishDrag();preferred=null;clampPanel();schedule();void saveUi();});
+  const limits=GyeoteProtocol.uiLimits,resizeHandle=$('.resize-handle'),uiStatus=$('.ui-status'),opacitySelect=$('.ui-opacity');
+  let ui={...GyeoteProtocol.uiDefaults},uiState=null,uiInvalid=false,uiQueue=Promise.resolve(),resizing=null,keyTimer=null,uiDeferred=false;
+  const bounded=(value,min,max)=>Math.max(min,Math.min(max,Math.round(value)));
+  function showUi(){
+    panel.style.setProperty('--gyeote-width',ui.width+'px');panel.style.setProperty('--gyeote-height',ui.height+'px');panel.style.setProperty('--gyeote-background',String(ui.backgroundOpacity/100));
+    opacitySelect.value=String(ui.backgroundOpacity);uiStatus.textContent=uiInvalid?'저장된 화면 설정을 읽지 못해 기본값으로 보여 줍니다. 아래 기본값 버튼을 누르면 정리됩니다.':'';
+  }
+  function applyUi(state){
+    uiState=state;ui={width:state.width,height:state.height,backgroundOpacity:state.backgroundOpacity};
+    preferred=state.dock==='free'?{left:state.left,top:state.top}:null;showUi();clampPanel();schedule();
+  }
+  async function refreshUi(){
+    if(drag||resizing||keyTimer){uiDeferred=true;return;}
+    try{const result=await chrome.runtime.sendMessage({type:'gyeote:ui-preferences-get'});if(result?.ok){uiInvalid=!!result.invalid;applyUi(result.state);}}catch{}
+  }
+  function currentPreferences(){
+    const position=preferred?{dock:'free',left:bounded(preferred.left,0,10000),top:bounded(preferred.top,0,10000)}:{dock:'right',left:null,top:null};
+    return {width:ui.width,height:ui.height,backgroundOpacity:ui.backgroundOpacity,...position};
+  }
+  function saveUi(reset=false){
+    const pending=uiQueue.then(async()=>{
+      if(!uiState)return;
+      if(uiInvalid&&!reset){setStatus('저장된 화면 설정을 읽지 못해 이번 조절을 저장하지 않았어요. 내 정보의 화면 설정에서 기본값으로 되돌려 주세요.');return;}
+      let result;
+      try{result=await chrome.runtime.sendMessage(reset?{type:'gyeote:ui-preferences-reset',expectedRevision:uiState.revision}:{type:'gyeote:ui-preferences-set',expectedRevision:uiState.revision,preferences:currentPreferences()});}
+      catch{result=null;}
+      if(result?.ok){uiInvalid=false;if(reset)applyUi(result.state);else{uiState=result.state;showUi();}return;}
+      if(result?.error==='ui_preferences_conflict'){await refreshUi();setStatus('다른 탭에서 화면 설정이 바뀌어 최신 설정을 적용했어요. 필요하면 다시 조절해 주세요.');return;}
+      setStatus('화면 설정을 저장하지 못했어요. 지금 화면에서는 그대로 쓸 수 있어요.');
+    });
+    uiQueue=pending.catch(()=>{});return pending;
+  }
+  function settleUi(changed){
+    const saved=changed?saveUi():Promise.resolve();
+    if(uiDeferred){uiDeferred=false;void saved.finally(()=>refreshUi());}
+  }
+  function resizeTo(width,height){
+    const before=panel.getBoundingClientRect();
+    ui.width=bounded(width,limits.minWidth,limits.maxWidth);ui.height=bounded(height,limits.minHeight,limits.maxHeight);showUi();
+    if(preferred){const after=panel.getBoundingClientRect();preferred={left:before.left+before.width-after.width,top:before.top+before.height-after.height};}
+    clampPanel();schedule();
+  }
+  function finishResize(event){
+    if(!resizing||event&&event.pointerId!==resizing.id)return;
+    const {id,moved}=resizing;resizing=null;
+    try{if(resizeHandle.hasPointerCapture(id))resizeHandle.releasePointerCapture(id);}catch{}
+    settleUi(moved);
+  }
+  resizeHandle.addEventListener('pointerdown',event=>{
+    if(resizing||event.button!==0||event.isPrimary===false)return;
+    event.preventDefault();resizing={id:event.pointerId,x:event.clientX,y:event.clientY,width:ui.width,height:ui.height,moved:false};
+    try{resizeHandle.setPointerCapture(event.pointerId);}catch{resizing=null;}
+  });
+  resizeHandle.addEventListener('pointermove',event=>{if(!resizing||event.pointerId!==resizing.id)return;resizing.moved=true;resizeTo(resizing.width+resizing.x-event.clientX,resizing.height+resizing.y-event.clientY);});
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])resizeHandle.addEventListener(type,finishResize);
+  resizeHandle.addEventListener('keydown',event=>{
+    const change={ArrowLeft:[limits.step,0],ArrowRight:[-limits.step,0],ArrowUp:[0,limits.step],ArrowDown:[0,-limits.step]}[event.key];
+    if(!change)return;event.preventDefault();resizeTo(ui.width+change[0],ui.height+change[1]);
+    clearTimeout(keyTimer);keyTimer=setTimeout(()=>{keyTimer=null;settleUi(true);},400);
+  });
+  opacitySelect.addEventListener('change',()=>{const value=Number(opacitySelect.value);if(!limits.opacities.includes(value))return;ui.backgroundOpacity=value;showUi();void saveUi();});
+  $('.ui-reset').addEventListener('click',()=>{if(!uiState)return;void saveUi(true);});
+  void refreshUi();
   const sizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>{clampPanel();schedule();}):null;
   sizeObserver?.observe(panel);
   addEventListener('scroll',schedule,{passive:true,capture:true});addEventListener('resize',()=>{finishDrag();clampPanel();schedule();});
-  addEventListener('pagehide',()=>{accessVersion++;finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
+  addEventListener('pagehide',()=>{stopSpeech();accessVersion++;finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
   addEventListener('pageshow',event=>{if(event.persisted){profilePanel.resume();savedPanel.resume();inputAssist.resume();if(mode==='document')void refreshDocumentAccess();sizeObserver?.observe(panel);clampPanel();}});
   addEventListener('hashchange',()=>{if(mode==='screen')cancel();else inputAssist.invalidate();snapshot=null;history=[];});
   document.addEventListener('visibilitychange',()=>{
@@ -409,6 +531,7 @@
   });observer.observe(document.documentElement,observeOptions);
   chrome.runtime.onMessage.addListener((message,_sender,sendResponse)=>{
     if(message?.type==='gyeote:conversations-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){savedPanel.changed(message.revision,message.generation);sendResponse({ok:true});return;}
+    if(message?.type==='gyeote:ui-preferences-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){if(!(Number.isSafeInteger(message.revision)&&uiState&&message.revision<=uiState.revision))void refreshUi();sendResponse({ok:true});return;}
     if(message?.type==='gyeote:profile-changed'&&_sender.id===chrome.runtime.id&&!_sender.tab){profilePanel.changed(message.revision);sendResponse({ok:true});return;}
     if(message?.type==='gyeote:document-access-changed'){
       if(_sender.id!==chrome.runtime.id||_sender.tab)return;

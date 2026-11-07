@@ -19,6 +19,88 @@ def packet(**values):
     return json.dumps({'status':'answer','text':'연 168,000원 지원', **values}, ensure_ascii=False)
 
 
+@pytest.mark.parametrize('catalog',['empty','below_threshold'])
+@pytest.mark.parametrize('query,status',[
+    ('돈버는법 알려줘','out_of_scope'),
+    ('노인 일자리 지원 알려줘','no_evidence'),
+    ('노인 해외여행 항공료 지원이 있나요?','no_evidence'),
+])
+def test_empty_search_uses_one_bounded_scope_response(catalog,query,status):
+    repo,service,calls=components(empty=catalog=='empty')
+    repo.dense_search=lambda *_args,**_kwargs:[replace(repo.snapshot().chunks[0],score=.1)]
+    generated=[]
+    def generate(system,user,*,schema):
+        generated.append((system,user))
+        assert set(schema['properties']['status']['enum'])=={'out_of_scope','no_evidence'}
+        assert json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])==[]
+        return {'status':status,'text':'등록된 자료에서 확인하지 못했습니다.'}
+    service.llm.chat=generate
+    result,trace=answer_document(repo,service,query)
+    assert result['reason']==status and trace['reason']==status and len(generated)==1
+    assert calls['embeddings']==(0 if catalog=='empty' else 1)
+    assert result['kind']=='fallback'
+    assert all(result[key]==[] for key in ('evidence','contacts','services','suggestions'))
+    if status=='out_of_scope':
+        assert result['text']=='저는 복지서비스 챗봇입니다. 해당질문에는 답해드릴수 없습니다'
+
+
+@pytest.mark.parametrize('status',['answer','clarify','invalid'])
+def test_empty_search_rejects_unavailable_factual_or_invalid_status(status):
+    repo,service,_=components(empty=True)
+    service.llm.chat=lambda *_args,**_kwargs:{'status':status,'text':'제공할 수 없는 합성 혜택'}
+    result,trace=answer_document(repo,service,'복지 지원이 있나요?')
+    assert result['reason']==trace['reason']=='invalid_evidence_answer'
+    assert '합성 혜택' not in result['text'] and result['evidence']==result['contacts']==[]
+
+
+def test_empty_search_generation_failure_is_not_a_scope_decision():
+    repo,service,_=components(empty=True)
+    def fail(*_args,**_kwargs):raise RuntimeError('합성 모델 장애')
+    service.llm.chat=fail
+    with pytest.raises(DocumentError,match='document_generation_failed'):
+        answer_document(repo,service,'복지 지원이 있나요?')
+
+
+@pytest.mark.parametrize('error_name',['ExecutionTimeoutError','ExecutionCancelledError'])
+def test_empty_search_preserves_timeout_and_cancellation(error_name):
+    from BackEnd.core import execution
+    error=getattr(execution,error_name)
+    repo,service,_=components(empty=True)
+    def fail(*_args,**_kwargs):raise error()
+    service.llm.chat=fail
+    with pytest.raises(error):answer_document(repo,service,'복지 지원이 있나요?')
+
+
+def test_empty_search_checks_budget_before_scope_generation():
+    from unittest.mock import Mock
+    repo,service,_=components(empty=True)
+    service.llm.input_cost=lambda *_args:100000
+    service.llm.chat=Mock()
+    result,_=answer_document(repo,service,'돈버는법 알려줘')
+    assert result['reason']=='document_input_budget' and result['evidence']==[]
+    service.llm.chat.assert_not_called()
+
+
+def test_empty_search_rechecks_snapshot_after_scope_generation():
+    from unittest.mock import Mock
+    repo,service,_=components(empty=True);snapshot=repo.snapshot()
+    repo.snapshot=Mock(side_effect=[snapshot,replace(snapshot,stamp='changed')])
+    service.llm.chat=Mock(return_value={'status':'no_evidence','text':'자료에서 확인하지 못했습니다.'})
+    with pytest.raises(DocumentError,match='document_changed_during_search'):
+        answer_document(repo,service,'복지 지원이 있나요?')
+    service.llm.chat.assert_called_once()
+
+
+def test_failed_snapshot_never_becomes_empty_search_generation():
+    from unittest.mock import Mock
+    repo,service,_=components(empty=True)
+    repo.snapshot=Mock(side_effect=DocumentError('invalid_document_provenance'))
+    service.llm.chat=Mock()
+    with pytest.raises(DocumentError,match='invalid_document_provenance'):
+        answer_document(repo,service,'복지 지원이 있나요?')
+    service.llm.chat.assert_not_called()
+
+
 SOURCE = {'id':'a','text':'연 168,000원 지원. 단, 조건 확인 필요.', 'source_url':'https://example.invalid'}
 
 def test_confirmed_official_contact_requires_included_matching_source_and_deduplicates():
@@ -86,8 +168,8 @@ def test_csv_contacts_reuse_source_match_deduplication_and_three_contact_limit()
 def test_missing_contacts_safe_fallback_and_technical_failures_stay_distinct():
     repo,service,calls=components();repo.dense_search=lambda *args,**kwargs:[replace(repo.snapshot().chunks[0],score=.1)]
     response,trace=answer_document(repo,service,'질문')
-    assert trace['reason']=='low_similarity' and calls['prompts']==[]
-    assert response['contacts']==[] and '연락처를 제공하지 못했습니다' in response['text']
+    assert trace['reason']=='no_evidence' and trace['retrieval_reason']=='low_similarity' and len(calls['prompts'])==1
+    assert response['contacts']==[] and response['evidence']==[]
     repo.dense_search=lambda *_args,**_kwargs: (_ for _ in ()).throw(RuntimeError('합성 오류'))
     with pytest.raises(DocumentError,match='document_embedding_failed'):answer_document(repo,service,'질문')
 
@@ -148,10 +230,14 @@ def test_normal_generation_preserves_text_and_returns_server_references(status):
         seen.append(kwargs['schema']);return {'status':status,'text':text}
     service.llm.chat=generate
     result,trace=answer_document(repo,service,'질문')
-    assert result['text']==text and len(seen)==1
+    assert result['text']==('저는 복지서비스 챗봇입니다. 해당질문에는 답해드릴수 없습니다' if status=='out_of_scope' else text)
+    assert len(seen)==1
     assert result['kind']==('answer' if status=='answer' else 'fallback')
-    assert result['evidence'][0]['chunk_id']==repo.snapshot().chunks[0].chunk_id
-    assert result['evidence'][0]['role']=='retrieved' and result['evidence'][0]['quote']==''
+    if status=='out_of_scope':
+        assert result['evidence']==result['contacts']==[]
+    else:
+        assert result['evidence'][0]['chunk_id']==repo.snapshot().chunks[0].chunk_id
+        assert result['evidence'][0]['role']=='retrieved' and result['evidence'][0]['quote']==''
     assert trace['answer_validation']=='accepted'
     schema=seen[0]
     assert set(schema['required'])=={'status','text'} and schema['additionalProperties'] is False

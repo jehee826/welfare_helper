@@ -1,6 +1,6 @@
 # 프로젝트 문서
 
-작성: 2026-11-04. 최신 업데이트: 2026-11-06 15:16 KST
+작성: 2026-11-04. 최신 업데이트: 2026-11-08 00:08 KST
 
 ## 목차
 
@@ -14,6 +14,7 @@
 
 1. **현재 구현을 이해하려면:** [전체 구조](design/architecture.md) → [RAG](design/rag.md) / [확장](design/extension.md) / [관리자](design/admin.md).
 2. **앞으로 할 일을 보려면:** [협업·후속 개발 계획](plan/collaboration-plan.md). 담당자·순서·완료 기준을 이 문서에서 정한다. [교차검증 기록](plan/collaboration-plan-review.md)은 검토 근거이며 별도 개발 지시서가 아니다.
+   병합 이후 결함 수정·요구사항 충족·Vercel/EC2 검증과 최종 PR은 [병합 후 실행 계획](plan/merge_plan.md)에서 추적한다. 기존 W00~W16 요구는 유지한다.
 3. **왜 이렇게 바뀌었는지 보려면:** 설계 담당의 로컬 개발일지(`docs/log/development.md`)와 [과거 문서](archive/README.md). 실패·수정 이력은 삭제하지 않는다.
 
 4. **복지 자료를 준비하려면:** [수집 방법](data/수집방법.md) → [문서 포맷](data/문서포맷.md) → [실제 문서 모음](data/문서모음/).
@@ -35,7 +36,8 @@ docs/
 │  └─ database/              # 현재 ERD·기존 DB 작업 SQL
 ├─ plan/
 │  ├─ collaboration-plan.md  # 앞으로 할 일·담당·선행 관계·결과
-│  └─ collaboration-plan-review.md # 순차 교차검증·최종 판정 이력
+│  ├─ collaboration-plan-review.md # 순차 교차검증·최종 판정 이력
+│  └─ merge_plan.md          # 병합 후 결함·요구사항·배포 검증과 최종 PR
 ├─ log/
 │  ├─ development.md         # 날짜별 개발·실패·수정 기록
 │  └─ handoff.md             # 현재 작업·환경·복구 메모
@@ -72,6 +74,6 @@ Codex·Claude는 같은 계획을 읽고 지정된 작성자만 갱신한다. �
 
 루트 CSV는 기존 CSV 로더가 경로를 참조하므로 유지했다. DB 작업 SQL도 실행 파일이므로 이번 문서 정리에서 이동·수정하지 않았다. 현재 ERD 파일은 [복지챗봇.erd](design/database/복지챗봇.erd)에 있다.
 
-자료 가이드와 공개 복지 문서는 `docs/data/`에서 Git으로 공유한다. 현재 설계4개·기존 공유 보관본, `docs/plan/collaboration-plan.md`와 `collaboration-plan-review.md`를 공유한다. 루트 AGENTS.md·CLAUDE.md와 공통 스킬7개·Claude 진입점7개도 Git으로 전달한다. 교차검증은 협업 계획의 시작 안내를 따른다. 개인 개발일지·인계·태스크 원기록·시험 원자료·다른 계획은 계속 제외하며 새 clone에 없어도 된다.
+자료 가이드와 공개 복지 문서는 `docs/data/`에서 Git으로 공유한다. 현재 설계4개·기존 공유 보관본, `docs/plan/collaboration-plan.md`·`collaboration-plan-review.md`·`merge_plan.md`를 공유한다. 루트 AGENTS.md·CLAUDE.md와 공통 스킬7개·Claude 진입점7개도 Git으로 전달한다. 교차검증은 협업 계획의 시작 안내를 따른다. 개인 개발일지·인계·태스크 원기록·시험 원자료·다른 계획은 계속 제외하며 새 clone에 없어도 된다.
 
 명시적으로 공유한 프로젝트 지침/스킬 외의 개인 설정·백업·Word·실제 `.env`·키·모델/DB 데이터는 공개하거나 삭제하지 않는다. 문서 경로가 바뀐 것만으로 코드·DB·배포를 변경하지 않는다.

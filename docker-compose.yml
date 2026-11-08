@@ -83,7 +83,7 @@ services:
       OLLAMA_PULL_MODELS: "${OLLAMA_LLM-qwen2.5:1.5b-instruct} ${OLLAMA_EMBED-bge-m3}"
       # 검색 임베딩 때문에 상주 LLM을 축출하지 않도록 두 모델을 허용한다.
       OLLAMA_MAX_LOADED_MODELS: "2"
-      OLLAMA_NUM_PARALLEL: "3"
+      OLLAMA_NUM_PARALLEL: "1"
       OLLAMA_MAX_QUEUE: "3"
       OLLAMA_KEEP_ALIVE: "-1"
     healthcheck:

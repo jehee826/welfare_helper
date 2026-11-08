@@ -22,7 +22,7 @@
   let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
   let configurationReady=false,pendingQuestion=null,pendingReply=null,accessVersion=0;
   let summaryAvailable=false,summaryBusy=false,summaryPort=null,summaryVersion=0,summaryTimer;
-  let profileUsageState=null,profileUsageSupported=false,profileUsageValid=false,profileUsageBusy=false,profileUsageDeferred=false,profileUsageVersion=0,profileUsageError='';
+  let profileUsageState=null,profileUsageSupported=false,profileUsageValid=false,profileUsageBusy=false,profileUsageLoading=false,profileUsageDeferred=false,profileUsageVersion=0,profileUsageError='';
   let publicNoticeVersion=0;
   try{GyeoteProtocol.documentOrigin();configurationReady=true;}catch{}
   const conversations={screen:[],document:[]};
@@ -248,25 +248,40 @@
   profilePanel=GyeoteProfilePanel.create(profileSlot,()=>{inputAssist?.invalidate();if(profileUsageState?.enabled)cancel();},()=>{if(profileSlot.querySelector('.profile-error')?.textContent)profileOpen=true;updateProfileView();});
   const profileControls=document.createElement('details');profileControls.className='profile-controls';const managementSummary=document.createElement('summary');managementSummary.textContent='저장·확장 관리';profileControls.append(managementSummary);profileSlot.append(profileControls);
   const profileUsageSection=document.createElement('section');profileUsageSection.className='profile-usage';profileUsageSection.hidden=true;
-  profileUsageSection.innerHTML='<label><input type="checkbox" class="profile-usage-toggle"> 저장한 내 정보 사용</label><details><summary>정보 전송 안내</summary><p class="muted">기본은 꺼짐입니다. 켜면 나이·소득·가구·지역·장애 여부의 저장 정보가 상담 서버로 전송되어 답변 생성에만 사용됩니다. 문서 검색에는 쓰지 않습니다. 끄면 자동 대화 맥락은 새로 시작하고 화면 기록은 남깁니다.</p></details><p class="profile-usage-status muted" role="status"></p>';
+  profileUsageSection.innerHTML='<label><input type="checkbox" role="switch" class="profile-usage-toggle" aria-describedby="gyeote-profile-usage-status"> 저장한 내 정보 사용 <span class="profile-usage-value" aria-hidden="true">OFF</span></label><details><summary>정보 전송 안내</summary><p class="muted">기본은 꺼짐입니다. 켜면 나이·소득·가구·지역·장애 여부의 저장 정보가 상담 서버로 전송되어 답변 생성에만 사용됩니다. 문서 검색에는 쓰지 않습니다. 끄면 자동 대화 맥락은 새로 시작하고 화면 기록은 남깁니다.</p></details><p id="gyeote-profile-usage-status" class="profile-usage-status muted" role="status" tabindex="0"></p>';
   questionForm.querySelector('.compose-row').before(profileUsageSection);
   const profileUsageToggle=profileUsageSection.querySelector('input'),profileUsageStatus=profileUsageSection.querySelector('.profile-usage-status');
   function renderProfileUsage(){
-    profileUsageSection.hidden=mode!=='document'||currentAccess?.mode!=='anonymous'||(!profileUsageSupported&&!profileUsageState?.enabled&&!profileUsageError);
-    profileUsageToggle.checked=profileUsageState?.enabled===true;
-    profileUsageToggle.disabled=profileOverlayVisible||profileUsageBusy||!profileUsageState||!profileUsageState.enabled&&(!profileUsageSupported||!profilePanel.state?.profile||!profilePanel.allowed);
-    profileUsageStatus.textContent=profileUsageError||(profileUsageState?.enabled?(!profileUsageSupported?'서버가 저장 정보 사용을 지원하지 않아 지금은 정보 없이 질문합니다. 사용 선택을 끌 수 있습니다.':!profileUsageValid?'제공 동의와 현재 저장 정보를 다시 확인해야 합니다. 현재 질문에는 저장 정보를 보내지 않습니다.':'저장 정보를 답변 생성에 사용합니다. 질문에서 다른 상담 대상을 말하면 그 대상의 조건을 우선합니다.'):'저장 정보는 답변 생성에 보내지 않습니다. 켜려면 내 정보를 먼저 저장해 주세요.');
+    const anonymous=currentAccess?.mode==='anonymous',enabled=anonymous&&profileUsageState?.enabled===true;
+    profileUsageSection.hidden=mode!=='document';
+    profileUsageToggle.checked=enabled;profileUsageToggle.setAttribute('aria-checked',String(enabled));
+    profileUsageSection.querySelector('.profile-usage-value').textContent=enabled?'ON':'OFF';
+    profileUsageToggle.disabled=!anonymous||profileOverlayVisible||profileUsageBusy||profileUsageLoading||!profileUsageState||!profileUsageState.enabled&&(!profileUsageSupported||!profilePanel.state?.profile||!profilePanel.allowed);
+    let message;
+    if(!currentAccess)message='문서 접근 상태를 확인 중입니다. 확인 전에는 저장 정보를 보내지 않습니다.';
+    else if(!anonymous)message='관리자 상담에서는 내 정보를 보내지 않습니다. 공개 상담에서 사용할 수 있습니다.';
+    else if(profileUsageError)message=profileUsageError;
+    else if(profileUsageLoading||!profileUsageState)message='정보 사용 설정을 확인 중입니다. 확인 전에는 저장 정보를 제공하지 않습니다.';
+    else if(profileUsageBusy)message='정보 사용 선택을 저장하고 있습니다.';
+    else if(!profileUsageSupported)message='서버가 내 정보 사용을 지원하지 않거나 지원 여부를 확인하지 못했습니다. 저장 정보는 보내지 않습니다.'+(enabled?' ON 선택을 끌 수 있습니다.':'');
+    else if(enabled)message=profileUsageValid?'저장 정보를 답변 생성에 사용합니다. 질문에서 다른 상담 대상을 말하면 그 대상의 조건을 우선합니다.':'ON 선택이지만 제공 동의와 현재 저장 정보를 다시 확인해야 합니다. 현재 질문에는 저장 정보를 보내지 않습니다.';
+    else if(!profilePanel.state)message='내 정보를 확인하지 못해 사용할 수 없습니다. 내 정보에서 다시 불러오세요.';
+    else if(!profilePanel.state.profile)message='내 정보에서 조건을 먼저 저장해 주세요. 지금은 저장 정보를 보내지 않습니다.';
+    else if(!profilePanel.allowed)message='내 정보 저장 또는 수정 취소를 마친 뒤 사용할 수 있습니다. 지금은 저장 정보를 보내지 않습니다.';
+    else message='저장 정보를 보내지 않습니다. 켜면 저장한 5가지 조건을 서버에 보내 답변 생성에만 사용합니다.';
+    profileUsageStatus.textContent=message;
   }
   async function refreshProfileUsage(){
     if(profileUsageBusy){profileUsageDeferred=true;return;}
-    if(currentAccess?.mode!=='anonymous'){renderProfileUsage();return;}
+    if(currentAccess?.mode!=='anonymous'){profileUsageVersion++;profileUsageLoading=false;renderProfileUsage();return;}
     const version=++profileUsageVersion;
+    profileUsageLoading=true;renderProfileUsage();
     try{
       const response=await chrome.runtime.sendMessage({type:'gyeote:profile-usage-get'});if(version!==profileUsageVersion)return;
       if(!response?.ok)throw new Error(response?.error||'profile_usage_storage_failed');
       profileUsageState=GyeoteProtocol.profileUsageRecord(response.state);profileUsageSupported=response.supported===true;profileUsageValid=response.valid===true;profileUsageError='';
     }catch{if(version===profileUsageVersion){profileUsageState=null;profileUsageError='정보 사용 설정을 읽지 못해 저장 정보를 제공하지 않습니다. 원본 설정은 유지했습니다.';}}
-    if(version===profileUsageVersion)renderProfileUsage();
+    if(version===profileUsageVersion){profileUsageLoading=false;renderProfileUsage();}
   }
   profileUsageToggle.addEventListener('change',async()=>{
     if(profileUsageToggle.disabled||profileUsageBusy||!profileUsageState){renderProfileUsage();return;}
@@ -291,6 +306,7 @@
     .profile-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;border-bottom:1px solid #d9e1ef}.profile-heading strong{font-size:18px}.profile-dismiss{flex-shrink:0;font-size:13px}
     .profile-panel h2{font-size:18px;margin:12px 0 6px}.profile-panel form{display:grid;gap:10px}.profile-panel label{display:grid;gap:4px}.profile-panel input,.profile-panel select{width:100%;min-height:40px}.profile-panel .profile-error:empty{display:none}
     .profile-usage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;max-height:150px;overflow:auto;padding:6px 8px;border:1px solid #b9c8e0;border-radius:10px;background:var(--gyeote-soft);font-size:13px}.profile-usage label{display:flex;align-items:center;gap:5px;font-weight:bold}.profile-usage input{width:18px;height:18px;flex-shrink:0}.profile-usage details{margin:0}.profile-usage details[open]{grid-column:1/-1}.profile-usage summary{min-height:28px}.profile-usage p{margin:2px 0}.profile-usage-status{grid-column:1/-1;max-height:3.2em;overflow:auto}
+    .profile-usage .profile-usage-toggle{appearance:none;position:relative;width:36px;height:22px;margin:0;border:1px solid #7f8ea8;border-radius:14px;background:#d7dfec}.profile-usage-toggle::before{content:'';position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#fff}.profile-usage .profile-usage-toggle:checked{background:var(--gyeote-accent);border-color:var(--gyeote-accent)}.profile-usage-toggle:checked::before{transform:translateX(14px)}.profile-usage-toggle:disabled{opacity:.6}.profile-usage-value{flex-shrink:0;min-width:2em;font-weight:bold}.profile-usage-status:focus-visible{outline:2px solid var(--gyeote-accent);outline-offset:2px}
     .panel{container-type:inline-size;color:var(--gyeote-ink);border-color:#b9c8e0;box-shadow:0 12px 48px #22314d26}
     button{color:var(--gyeote-ink);border-color:#7f8ea8}button:hover:not(:disabled){background:#edf2ff}button:disabled{cursor:not-allowed}
     .head{background:var(--gyeote-soft);border-bottom-color:#d9e1ef}.head strong{color:#334faf;white-space:nowrap}.head .mode-switch{background:#e8eefb;border-color:#b9c8e0}

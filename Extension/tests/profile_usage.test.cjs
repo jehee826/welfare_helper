@@ -109,6 +109,74 @@ test('입력란의 정보 사용 선택은 화면 안내에서 숨기고 복지 
   }finally{panel.close();}
 });
 
+for(const capability of ['unsupported','404','offline'])test(`질문 모드의 사용 선택은 ${capability}에서도 OFF·불가 사유를 보인다`,async()=>{
+  const f=worker({[profileKey]:savedProfile},{},undefined,async()=>{
+    if(capability==='offline')throw Error('격리 통신 실패');
+    return new Response(JSON.stringify({profile_context_supported:false}),{status:capability==='404'?404:200});
+  }),panel=ui(f);
+  try{
+    await panel.ready();const section=panel.root.querySelector('.profile-usage'),toggle=section.querySelector('input');
+    assert.equal(section.hidden,false);assert.equal(section.closest('[hidden]'),null);assert.equal(toggle.disabled,true);assert.equal(toggle.checked,false);
+    assert.match(section.querySelector('.profile-usage-status').textContent,/서버.*지원/);assert.equal(section.querySelector('.profile-usage-value').textContent,'OFF');
+    const writes=f.calls.set.length;toggle.click();await settle();assert.equal(f.calls.set.length,writes);assert.equal(panel.ports.length,0);
+  }finally{panel.close();}
+});
+
+test('질문 모드의 사용 선택은 지원 응답 지연 동안 보이고 확인 뒤에만 켤 수 있다',async()=>{
+  let release;const pending=new Promise(resolve=>{release=resolve;}),f=worker({[profileKey]:savedProfile},{},undefined,async()=>{await pending;return new Response(JSON.stringify({profile_context_supported:true}));}),panel=ui(f);
+  try{
+    await panel.ready();const section=panel.root.querySelector('.profile-usage'),toggle=section.querySelector('input');
+    assert.equal(section.hidden,false);assert.equal(toggle.disabled,true);assert.match(section.textContent,/확인 중/);
+    release();await settle();assert.equal(section.hidden,false);assert.equal(toggle.disabled,false);assert.equal(toggle.getAttribute('role'),'switch');
+    toggle.click();await settle();assert.equal(toggle.checked,true);assert.equal(toggle.getAttribute('aria-checked'),'true');assert.equal(section.querySelector('.profile-usage-value').textContent,'ON');
+    assert.equal(f.data[usageKey].enabled,true);
+  }finally{release();panel.close();}
+});
+
+test('질문 모드의 사용 선택은 프로필 미등록·설정 읽기 실패를 숨기지 않는다',async()=>{
+  for(const failed of [false,true]){
+    const f=server({[profileKey]:profile},failed?{get:true}:{}),panel=ui(f);
+    try{
+      await panel.ready();if(panel.root.querySelector('.profile-toggle').getAttribute('aria-expanded')==='true')await panel.click('내 정보');
+      const section=panel.root.querySelector('.profile-usage');assert.equal(section.hidden,false);assert.equal(section.querySelector('input').disabled,true);
+      assert.match(section.querySelector('.profile-usage-status').textContent,failed?/읽지 못|확인하지 못/:/내 정보.*저장/);
+      assert.equal(panel.ports.length,0);
+    }finally{panel.close();}
+  }
+});
+
+test('질문 모드의 사용 선택은 관리자에게 비활성 OFF를 보이며 저장 동의를 바꾸지 않는다',async()=>{
+  const f=server({[profileKey]:savedProfile,[usageKey]:{schemaVersion:1,revision:1,enabled:true,profileRevision:1}});f.session.documentAccess='admin';f.session.documentAccessId='admin-1';
+  const panel=ui(f);try{
+    await panel.ready();const section=panel.root.querySelector('.profile-usage'),toggle=section.querySelector('input');
+    assert.equal(section.hidden,false);assert.equal(toggle.disabled,true);assert.equal(toggle.checked,false);assert.match(section.textContent,/관리자/);
+    assert.equal(f.data[usageKey].enabled,true);assert.equal(panel.ports.length,0);
+  }finally{panel.close();}
+});
+
+test('지원 확인이 안 된 기존 ON 선택은 끌 수 있고 끈 뒤에는 다시 켜지지 않는다',async()=>{
+  const f=worker({[profileKey]:savedProfile,[usageKey]:{schemaVersion:1,revision:1,enabled:true,profileRevision:1}},{},undefined,async()=>new Response('{}',{status:404})),panel=ui(f);
+  try{
+    await panel.ready();const section=panel.root.querySelector('.profile-usage'),toggle=section.querySelector('input');
+    assert.equal(section.hidden,false);assert.equal(toggle.checked,true);assert.equal(toggle.disabled,false);assert.match(section.textContent,/저장 정보는 보내지 않습니다/);
+    toggle.click();await settle();assert.equal(f.data[usageKey].enabled,false);assert.equal(toggle.checked,false);assert.equal(toggle.disabled,true);assert.equal(section.hidden,false);
+    assert.equal(panel.ports.length,0);
+  }finally{panel.close();}
+});
+
+test('질문 모드의 사용 선택은 긴 대화·접기와 다른 탭 동의 변경 뒤에도 표시·상태를 유지한다',async()=>{
+  const f=server();let state=(await f.action('get')).state;state=(await append(f,state,id(1),'긴 대화',{...answer,text:'합성 안내 '.repeat(150)})).state;
+  const panel=ui(f);try{
+    await panel.ready();const section=panel.root.querySelector('.profile-usage'),toggle=section.querySelector('input');
+    assert.equal(section.hidden,false);assert.match(panel.root.querySelector('.conversation').textContent,/합성 안내/);
+    toggle.click();await settle();assert.equal(section.querySelector('.profile-usage-value').textContent,'ON');
+    panel.root.querySelector('.collapse').click();panel.root.querySelector('.collapse').click();await settle();
+    assert.equal(section.closest('[hidden]'),null);assert.equal(section.hidden,false);assert.equal(toggle.checked,true);
+    assert.equal((await set(f,1,false)).ok,true);await settle();assert.equal(section.hidden,false);assert.equal(toggle.checked,false);assert.equal(section.querySelector('.profile-usage-value').textContent,'OFF');
+    assert.equal(panel.ports.length,0);
+  }finally{panel.close();}
+});
+
 test('ON DTO는 동의·revision·허용 프로필 없이는 만들지 않으며 원래 profile 필드는 계속 무시한다',()=>{
   assert.deepEqual(protocol.documentRequest({query:'질문',profile_context:consent(1)}).profile_context,consent(1));
   assert.equal(Object.hasOwn(protocol.documentRequest({query:'질문',profile:values}),'profile_context'),false);

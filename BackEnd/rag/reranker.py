@@ -85,9 +85,38 @@ class LocalReranker:
 
                 scores, diagnostics = [], []
                 import numpy as np
-                for passage in passages:
+                input_args = self._session.get_inputs()
+                pad_id = self._tokenizer.token_to_id("<pad>") if hasattr(self._tokenizer, "token_to_id") else None
+                # 실제 pad ID와 가변 batch를 확인한 모델만 묶고, 그 외는 기존 단건을 유지한다.
+                batch_size = 4 if pad_id is not None and all(
+                    not isinstance((getattr(arg, "shape", None) or [1])[0], int) for arg in input_args) else 1
+                pending = []
+                special = len(self._tokenizer.encode(query, "").ids) - query_tokens
+
+                def score_pending():
+                    if not pending:
+                        return
                     checkpoint()
-                    special = len(self._tokenizer.encode(query, "").ids) - query_tokens
+                    width = max(len(encoded.ids) for _, encoded in pending)
+                    rows = [{"input_ids": encoded.ids, "attention_mask": encoded.attention_mask,
+                             "token_type_ids": encoded.type_ids} for _, encoded in pending]
+                    inputs = {arg.name: np.asarray([
+                        row[arg.name] + [pad_id if arg.name == "input_ids" else 0] * (width - len(row[arg.name]))
+                        for row in rows], dtype=np.int64) for arg in input_args}
+                    logits = self._session.run(None, inputs)[0].reshape(-1)
+                    checkpoint()
+                    if len(logits) != len(pending) or any(not math.isfinite(float(value)) for value in logits):
+                        raise ValueError("리랭커 점수가 유효하지 않습니다.")
+                    for (owner, _), value in zip(pending, logits):
+                        value = float(value)
+                        probability = (1 / (1 + math.exp(-value)) if value >= 0
+                                       else math.exp(value) / (1 + math.exp(value)))
+                        scores[owner] = max(scores[owner], probability)
+                    pending.clear()
+
+                for owner, passage in enumerate(passages):
+                    checkpoint()
+                    scores.append(float("-inf"))
                     budget = min(400, self.max_length - query_tokens - special - 16)
                     header, body = "", passage
                     lines = passage.split("\n", 2)
@@ -104,26 +133,20 @@ class LocalReranker:
                                                max_tokens=budget, overlap=False)
                     except ValueError:
                         raise RerankerInputError("원문을 빠짐없이 입력 창으로 나누지 못했습니다.") from None
-                    window_scores, lengths = [], []
+                    lengths = []
                     for window in windows:
                         checkpoint()
                         encoded = self._tokenizer.encode(query, header + body[window.start:window.end])
                         if len(encoded.ids) > self.max_length - 16:
                             raise RerankerInputError("리랭커 쌍 입력 한도를 넘었습니다.")
                         lengths.append(len(encoded.ids))
-                        values = {"input_ids": encoded.ids, "attention_mask": encoded.attention_mask,
-                                  "token_type_ids": encoded.type_ids}
-                        inputs = {arg.name: np.asarray([values[arg.name]], dtype=np.int64)
-                                  for arg in self._session.get_inputs()}
-                        logits = self._session.run(None, inputs)[0].reshape(-1)
-                        checkpoint()
-                        if len(logits) != 1 or not math.isfinite(float(logits[0])):
-                            raise ValueError("리랭커 점수가 유효하지 않습니다.")
-                        value = float(logits[0])
-                        window_scores.append(1 / (1 + math.exp(-value)) if value >= 0
-                                             else math.exp(value) / (1 + math.exp(value)))
-                    scores.append(max(window_scores))
+                        pending.append((owner, encoded))
+                        if len(pending) == batch_size:
+                            score_pending()
                     diagnostics.append({"windows": len(windows), "pair_tokens": lengths, "truncated": False})
+                score_pending()
+                if any(not math.isfinite(value) for value in scores):
+                    raise ValueError("리랭커 점수가 유효하지 않습니다.")
                 return scores, diagnostics
             except (ExecutionTimeoutError, ExecutionCancelledError, RerankerInputError):
                 raise

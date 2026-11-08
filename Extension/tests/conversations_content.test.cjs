@@ -7,6 +7,9 @@ test('빈 발췌 참고자료는 저장과 재열기 뒤 다음 요청의 문서
   await f.ready();await f.question('첫 질문');await f.answer({kind:'answer',text:'합성 답변',evidence:[ref]});
   assert.equal(server.data[key].conversations[0].messages.at(-1).evidence[0].quote,'');
   assert.match(f.root.querySelector('.conversation').textContent,/참고자료/);
+  assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/원문 블록/);
+  assert.deepEqual(server.data[key].conversations[0].messages.at(-1).evidence[0].source_blocks,['block']);
+  assert.match(f.root.querySelector('.conversation').textContent,/쪽: 1/);assert.equal(f.root.querySelector('.conversation a').href,'https://example.invalid/');
   assert.equal(f.root.querySelector('.conversation b'),null);
  }finally{f.close();}
  const restored=ui(server);try{

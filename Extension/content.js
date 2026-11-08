@@ -82,14 +82,15 @@
   }
   $('.clear').addEventListener('click',()=>cancel());
   function focusPanel(){
-    const target=collapsed?$('.collapse'):mode==='document'&&profileOpen?[...profileSlot.querySelectorAll('input,select,button')].find(node=>!node.disabled&&!node.closest('[hidden]')&&!node.closest('details:not([open])')):$('#gyeote-question');
+    if(!collapsed&&profileOverlayVisible){focusProfile();return;}
+    const target=collapsed?$('.collapse'):$('#gyeote-question');
     (target||$('.collapse')).focus();
   }
   function openPanel(){panel.hidden=false;$('.open').hidden=true;clampPanel();inputAssist?.update();focusPanel();}
   function closePanel(){finishDrag();cancel();panel.hidden=true;$('.open').hidden=false;$('.open').focus();}
   $('.close').addEventListener('click',closePanel);
   $('.open').addEventListener('click',openPanel);
-  $('.collapse').addEventListener('click',()=>{finishDrag();collapsed=!collapsed;$('.body').hidden=collapsed;panel.classList.toggle('is-collapsed',collapsed);const button=$('.collapse');button.textContent=collapsed?'+':'−';button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'패널 펼치기':'패널 접기');cancel();clampPanel();if(!collapsed)focusPanel();});
+  $('.collapse').addEventListener('click',()=>{finishDrag();collapsed=!collapsed;$('.body').hidden=collapsed;panel.classList.toggle('is-collapsed',collapsed);const button=$('.collapse');button.textContent=collapsed?'+':'−';button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'패널 펼치기':'패널 접기');cancel();updateProfileView();clampPanel();if(!collapsed)focusPanel();});
   const formStyle=document.createElement('style');formStyle.textContent=`
     .consultation{flex-shrink:0;padding:12px 16px 14px;border-top:1px solid #eee;background:#fff}.consultation form{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:8px;margin:0}.question-label{font-size:13px;font-weight:bold;color:#555}.compose-row{display:flex;align-items:center;min-width:0;width:100%;gap:4px;padding:5px;border:1px solid #d8d8d8;background:#fafafa;border-radius:16px}.compose-row:focus-within{border-color:#777}.compose-row input[type=text]{min-width:0;flex:1;padding:8px;border:0;background:transparent;border-radius:8px}.consultation button[type=submit]{background:#171717;color:#fff;border:0;border-radius:11px;flex-shrink:0;width:42px;height:42px;display:grid;place-items:center;padding:0}.send-notice{margin:0;font-size:13px;color:#666}.voice-input{margin:0;flex:1;font-size:13px}.voice-input summary{min-height:32px;padding:4px 0}.voice-input p{margin:6px 0}.voice-status{margin:0;font-size:13px}.question-suggestions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.question-suggestions button{padding:8px 6px;border-color:#e7e7e7;background:#f7f7f7;font-size:13px;line-height:1.45;border-radius:12px}
     .onboarding{background:#f7f7f7;padding:12px;border-radius:14px;margin-bottom:12px;font-size:14px}.onboarding p{margin:0 0 10px}.onboarding button{font-size:14px}.conversation{white-space:pre-wrap;min-height:100px}.conversation:empty::before{content:'무엇을 도와드릴까요?';display:block;padding:50px 8px;color:#777;text-align:center;font-size:18px}.conversation article{width:fit-content;max-width:94%;padding:12px 14px;margin:0 0 14px;background:#f5f5f5;border-radius:16px 16px 16px 4px}.conversation article.user-message{margin-left:auto;background:#202020;color:#fff;border-radius:16px 16px 4px 16px}.conversation article.user-message small{color:#ddd}.conversation small{display:block;margin-bottom:4px;color:#666;font-size:13px}.conversation article p{margin:8px 0}.conversation details{font-size:13px;margin-top:8px}.conversation-warning{padding:10px;border:1px solid #bbb;border-radius:10px;font-size:13px}.conversation-alerts:empty{display:none}
@@ -192,34 +193,68 @@
   const onboarding=document.createElement('section');onboarding.className='onboarding';onboarding.setAttribute('aria-label','상담 시작 안내');onboarding.hidden=true;
   onboarding.innerHTML='<p>바로 질문할 수 있어요. 내 정보는 선택이며 추천 질문 초안에만 사용해요.</p><div class="row"><button class="onboarding-edit">내 정보 입력</button><button class="onboarding-later">나중에 입력</button></div>';
   profileSlot.before(onboarding);
-  let profilePanel,profileOpen=false,profileWasAllowed=false;
+  $('.body').append(profileSlot);
+  // 호스트 페이지와 제목줄은 유지하고 패널 본문만 가린다.
+  profileSlot.setAttribute('role','dialog');profileSlot.setAttribute('aria-modal','false');profileSlot.setAttribute('aria-labelledby','gyeote-profile-title');
+  const profileHeading=document.createElement('div');profileHeading.className='profile-heading';
+  profileHeading.innerHTML='<strong id="gyeote-profile-title" tabindex="-1">내 정보 설정</strong><button type="button" class="profile-dismiss">설정 닫기</button>';
+  profileSlot.append(profileHeading);
+  let profilePanel,profileOpen=false,profileOverlayVisible=false,profileReturnFocus=null,profileScroll=null;
+  function profileFocusTargets(){
+    return [...panel.querySelectorAll('.head button,.profile-slot button,.profile-slot input,.profile-slot select,.profile-slot summary,.profile-slot a[href]')].filter(node=>{
+      if(node.disabled||node.closest('[hidden],[inert]'))return false;
+      const closed=node.closest('details:not([open])');return !closed||closed.querySelector('summary')===node;
+    });
+  }
+  function focusProfile(){
+    const error=profileSlot.querySelector('.profile-error');
+    const targets=profileFocusTargets().filter(node=>profileSlot.contains(node));
+    const target=error?.textContent?error:targets.find(node=>node.matches('input,select'))||targets.find(node=>node!==profileHeading.querySelector('button'))||$('#gyeote-profile-title');
+    target.focus({preventScroll:true});
+  }
+  function closeProfile(){profileOpen=false;updateProfileView();}
   function updateProfileView(){
     if(!profilePanel)return;
-    const allowed=profilePanel.allowed;
-    if(profileSlot.querySelector('.profile-error')?.textContent)profileOpen=true;
-    if(allowed&&!profileWasAllowed)profileOpen=false;
-    profileWasAllowed=allowed;
-    profileSlot.hidden=mode!=='document'||!profileOpen;
-    profilePanel.setVisible(mode==='document'&&profileOpen);profileButton.hidden=mode!=='document';
-    profileButton.setAttribute('aria-expanded',String(mode==='document'&&profileOpen));
+    const visible=mode==='document'&&profileOpen&&!collapsed,changed=visible!==profileOverlayVisible,body=$('.body');
+    if(changed&&visible){profileReturnFocus=shadow.activeElement;profileScroll={transcript:transcript.scrollTop,body:body.scrollTop};showMenu(false);body.scrollTop=0;}
+    profileOverlayVisible=visible;profileSlot.hidden=!visible;
+    body.classList.toggle('has-profile',visible);
+    for(const node of [transcript,status,$('.consultation')]){node.inert=visible;node.toggleAttribute('inert',visible);if(visible)node.setAttribute('aria-hidden','true');else node.removeAttribute('aria-hidden');}
+    menuButton.disabled=visible;profilePanel.setVisible(visible);profileButton.hidden=mode!=='document';
+    profileButton.setAttribute('aria-expanded',String(visible));
     onboarding.hidden=mode!=='document'||!profilePanel.state||profilePanel.state.onboardingCompleted||profileOpen;
     updateRequestControl();
     $('.onboarding-later').disabled=!profilePanel.state||profilePanel.busy;
     inputAssist?.update();
     renderProfileUsage();
+    if(visible&&(changed||!profileSlot.contains(shadow.activeElement)&&!$('.head').contains(shadow.activeElement)))focusProfile();
+    if(changed&&!visible){
+      if(profileScroll){transcript.scrollTop=profileScroll.transcript;body.scrollTop=profileScroll.body;profileScroll=null;}
+      const target=profileReturnFocus?.isConnected&&!profileReturnFocus.closest('[hidden],[inert]')?profileReturnFocus:profileButton;
+      if(!target.hidden)target.focus({preventScroll:true});else focusPanel();
+    }
   }
-  profileButton.addEventListener('click',()=>{if(collapsed)$('.collapse').click();profileOpen=!profileOpen;updateProfileView();if(profileOpen){showMenu(false);transcript.scrollTop=0;const target=profileSlot.querySelector('input')||profileSlot.querySelector('h2');if(target){if(target.tagName==='H2')target.tabIndex=-1;target.focus();}}else focusPanel();});
-  transcript.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(profileSlot.contains(event.target)){profileOpen=false;updateProfileView();profileButton.focus();}else if(tools.contains(event.target)){showMenu(false);menuButton.focus();}});
-  profilePanel=GyeoteProfilePanel.create(profileSlot,()=>{inputAssist?.invalidate();if(profileUsageState?.enabled)cancel();},updateProfileView);
+  profileButton.addEventListener('click',()=>{if(collapsed){profileOpen=false;$('.collapse').click();}profileOpen=!profileOpen;updateProfileView();});
+  profileHeading.querySelector('button').addEventListener('click',closeProfile);
+  panel.addEventListener('keydown',event=>{
+    if(!profileOverlayVisible)return;
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeProfile();return;}
+    if(event.key!=='Tab')return;
+    const targets=profileFocusTargets(),first=targets[0],last=targets.at(-1),active=shadow.activeElement;
+    if(event.shiftKey&&(active===first||!targets.includes(active))){event.preventDefault();last?.focus();}
+    else if(!event.shiftKey&&(active===last||!targets.includes(active))){event.preventDefault();first?.focus();}
+  });
+  transcript.addEventListener('keydown',event=>{if(event.key==='Escape'&&tools.contains(event.target)){showMenu(false);menuButton.focus();}});
+  profilePanel=GyeoteProfilePanel.create(profileSlot,()=>{inputAssist?.invalidate();if(profileUsageState?.enabled)cancel();},()=>{if(profileSlot.querySelector('.profile-error')?.textContent)profileOpen=true;updateProfileView();});
   const profileControls=document.createElement('details');profileControls.className='profile-controls';const managementSummary=document.createElement('summary');managementSummary.textContent='저장·확장 관리';profileControls.append(managementSummary);profileSlot.append(profileControls);
   const profileUsageSection=document.createElement('section');profileUsageSection.className='profile-usage';profileUsageSection.hidden=true;
-  profileUsageSection.innerHTML='<label><input type="checkbox" class="profile-usage-toggle"> 저장한 내 정보 사용</label><p class="muted">기본은 꺼짐입니다. 켜면 나이·소득·가구·지역·장애 여부의 저장 정보가 상담 서버로 전송되어 답변 생성에만 사용됩니다. 문서 검색에는 쓰지 않습니다. 끄면 자동 대화 맥락은 새로 시작하고 화면 기록은 남깁니다.</p><p class="profile-usage-status muted" role="status"></p>';
-  profileControls.before(profileUsageSection);
+  profileUsageSection.innerHTML='<label><input type="checkbox" class="profile-usage-toggle"> 저장한 내 정보 사용</label><details><summary>정보 전송 안내</summary><p class="muted">기본은 꺼짐입니다. 켜면 나이·소득·가구·지역·장애 여부의 저장 정보가 상담 서버로 전송되어 답변 생성에만 사용됩니다. 문서 검색에는 쓰지 않습니다. 끄면 자동 대화 맥락은 새로 시작하고 화면 기록은 남깁니다.</p></details><p class="profile-usage-status muted" role="status"></p>';
+  questionForm.querySelector('.compose-row').before(profileUsageSection);
   const profileUsageToggle=profileUsageSection.querySelector('input'),profileUsageStatus=profileUsageSection.querySelector('.profile-usage-status');
   function renderProfileUsage(){
-    profileUsageSection.hidden=currentAccess?.mode!=='anonymous'||(!profileUsageSupported&&!profileUsageState?.enabled&&!profileUsageError);
+    profileUsageSection.hidden=mode!=='document'||currentAccess?.mode!=='anonymous'||(!profileUsageSupported&&!profileUsageState?.enabled&&!profileUsageError);
     profileUsageToggle.checked=profileUsageState?.enabled===true;
-    profileUsageToggle.disabled=profileUsageBusy||!profileUsageState||!profileUsageState.enabled&&(!profileUsageSupported||!profilePanel.state?.profile||!profilePanel.allowed);
+    profileUsageToggle.disabled=profileOverlayVisible||profileUsageBusy||!profileUsageState||!profileUsageState.enabled&&(!profileUsageSupported||!profilePanel.state?.profile||!profilePanel.allowed);
     profileUsageStatus.textContent=profileUsageError||(profileUsageState?.enabled?(!profileUsageSupported?'서버가 저장 정보 사용을 지원하지 않아 지금은 정보 없이 질문합니다. 사용 선택을 끌 수 있습니다.':!profileUsageValid?'제공 동의와 현재 저장 정보를 다시 확인해야 합니다. 현재 질문에는 저장 정보를 보내지 않습니다.':'저장 정보를 답변 생성에 사용합니다. 질문에서 다른 상담 대상을 말하면 그 대상의 조건을 우선합니다.'):'저장 정보는 답변 생성에 보내지 않습니다. 켜려면 내 정보를 먼저 저장해 주세요.');
   }
   async function refreshProfileUsage(){
@@ -234,7 +269,7 @@
     if(version===profileUsageVersion)renderProfileUsage();
   }
   profileUsageToggle.addEventListener('change',async()=>{
-    if(profileUsageBusy||!profileUsageState)return;
+    if(profileUsageToggle.disabled||profileUsageBusy||!profileUsageState){renderProfileUsage();return;}
     const enabled=profileUsageToggle.checked;cancel();profileUsageVersion++;profileUsageBusy=true;profileUsageError='';renderProfileUsage();let conflict=false;
     try{
       const response=await chrome.runtime.sendMessage({type:'gyeote:profile-usage-set',expectedRevision:profileUsageState.revision,enabled,profileRevision:enabled?profilePanel.state?.revision:null});
@@ -251,6 +286,11 @@
   const screenSettings=document.createElement('details'),screenSummary=document.createElement('summary');screenSettings.className='screen-settings';screenSummary.textContent='화면·음성 안내';screenSettings.append(screenSummary);$('.screen-controls').append(screenSettings);
   formStyle.textContent+='.head{gap:3px;padding:10px 8px}.head .menu-toggle,.head .collapse,.head .close{width:28px;padding:0;font-size:18px;flex-shrink:0}.head .profile-toggle{padding:6px 4px}.head .mode-switch button{padding:4px}.profile-controls{margin-top:12px}.profile-controls>.settings{margin-top:8px}.screen-controls>p,.screen-controls>details{flex-basis:100%;margin:8px 0}.head .resize-handle{width:28px;padding:0;font-size:16px;flex-shrink:0;cursor:nwse-resize;touch-action:none}.ui-settings{margin-top:12px;padding-top:8px;border-top:1px solid #eee}.ui-settings h3{font-size:15px;margin:0 0 6px}.ui-settings label{display:grid;gap:6px}.ui-settings .ui-status:empty{display:none}.speak-answer{min-height:32px;padding:2px 10px;margin:0 0 4px 8px;font-size:13px}.speak-answer[aria-pressed=true]{background:#eaf1ff;border-color:#aac6ee;color:#174b8d}';
   formStyle.textContent+=`
+    .body{position:relative;overflow:auto;overscroll-behavior:contain}.body.has-profile{overflow:hidden}
+    .profile-slot{position:absolute;inset:0;z-index:2;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 16px;background:#fff;border:2px solid #725bed;border-radius:0 0 20px 20px;scrollbar-width:thin}
+    .profile-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;border-bottom:1px solid #d9e1ef}.profile-heading strong{font-size:18px}.profile-dismiss{flex-shrink:0;font-size:13px}
+    .profile-panel h2{font-size:18px;margin:12px 0 6px}.profile-panel form{display:grid;gap:10px}.profile-panel label{display:grid;gap:4px}.profile-panel input,.profile-panel select{width:100%;min-height:40px}.profile-panel .profile-error:empty{display:none}
+    .profile-usage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;max-height:150px;overflow:auto;padding:6px 8px;border:1px solid #b9c8e0;border-radius:10px;background:var(--gyeote-soft);font-size:13px}.profile-usage label{display:flex;align-items:center;gap:5px;font-weight:bold}.profile-usage input{width:18px;height:18px;flex-shrink:0}.profile-usage details{margin:0}.profile-usage details[open]{grid-column:1/-1}.profile-usage summary{min-height:28px}.profile-usage p{margin:2px 0}.profile-usage-status{grid-column:1/-1;max-height:3.2em;overflow:auto}
     .panel{container-type:inline-size;color:var(--gyeote-ink);border-color:#b9c8e0;box-shadow:0 12px 48px #22314d26}
     button{color:var(--gyeote-ink);border-color:#7f8ea8}button:hover:not(:disabled){background:#edf2ff}button:disabled{cursor:not-allowed}
     .head{background:var(--gyeote-soft);border-bottom-color:#d9e1ef}.head strong{color:#334faf;white-space:nowrap}.head .mode-switch{background:#e8eefb;border-color:#b9c8e0}
@@ -330,6 +370,7 @@
   }
   function updateMode(){
     const documentMode=mode==='document',input=$('#gyeote-question');
+    if(!documentMode)profileOpen=false;
     (documentMode?profileControls:$('.screen-controls')).append($('.reset'));screenSettings.hidden=documentMode;const voiceHelp=$('.voice-input');if(voiceHelp)(documentMode?profileControls:screenSettings).append(voiceHelp);
     retentionNotice.hidden=!documentMode||currentAccess?.mode==='admin';
     if(!documentMode||currentAccess?.mode!=='anonymous')referralNotice.hidden=true;
@@ -443,7 +484,7 @@
     for(const item of answer.evidence){
       const section=document.createElement('section');
       if(item.redacted){const notice=document.createElement('p');notice.textContent='개인정보 형식을 가린 자료입니다. 원문 그대로의 인용이 아닙니다.';section.append(notice);}
-      const lines=['답변에 제공한 참고자료입니다. 답변의 사실 정확도를 검증한 표시는 아닙니다.',item.quote,item.context,`쪽: ${item.pages.length?item.pages.join(', '):'미확인'} · 원문 블록: ${item.source_blocks.join(', ')}`,`출처: ${item.source_url||'미확인'}`,`지역: ${item.region_scope||'미확인'} · 자료 수정일: ${item.source_updated_at||'미확인'} · 기준연도: ${item.basis_year||'미기재'}`,'자료 수정일은 현행 운영 확인일이 아닙니다. 신청 전 관할 기관의 최신 기준을 확인하세요.'];
+      const lines=['답변에 제공한 참고자료입니다. 답변의 사실 정확도를 검증한 표시는 아닙니다.',item.quote,item.context,`쪽: ${item.pages.length?item.pages.join(', '):'미확인'}`,`출처: ${item.source_url||'미확인'}`,`지역: ${item.region_scope||'미확인'} · 자료 수정일: ${item.source_updated_at||'미확인'} · 기준연도: ${item.basis_year||'미기재'}`,'자료 수정일은 현행 운영 확인일이 아닙니다. 신청 전 관할 기관의 최신 기준을 확인하세요.'];
       for(const text of lines){if(!text)continue;const p=document.createElement('p');p.textContent=text;section.append(p);}
       const url=GyeoteConversations.sourceUrl(item.source_url);
       if(url){const link=document.createElement('a');link.textContent='출처 열기';link.href=url;link.target='_blank';link.rel='noopener noreferrer';section.append(link);}

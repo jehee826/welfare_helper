@@ -11,6 +11,49 @@ function dragFixture(setup){
   return {...f,panel,head,captured};
 }
 
+test('내 정보는 채팅을 가리는 설정 화면이며 닫아도 요청·초안·스크롤·미저장 입력을 보존한다',async()=>{
+  const server=worker(),f=ui(server);try{
+    await f.ready();await f.question('진행 중인 합성 질문');const port=f.ports.at(-1);
+    const input=f.root.querySelector('#gyeote-question'),transcript=f.root.querySelector('.transcript'),body=f.root.querySelector('.body'),slot=f.root.querySelector('.profile-slot'),toggle=f.root.querySelector('.profile-toggle');
+    input.value='아직 보내지 않은 초안';transcript.scrollTop=73;body.scrollTop=11;toggle.focus();
+    const writes=server.calls.set.length;toggle.click();
+    assert.equal(slot.parentElement,body);assert.equal(slot.getAttribute('role'),'dialog');assert.equal(slot.hidden,false);
+    for(const node of [transcript,f.root.querySelector('.consultation'),f.root.querySelector('.status')]){assert.equal(node.inert,true);assert.equal(node.getAttribute('aria-hidden'),'true');}
+    assert.equal(slot.contains(f.root.activeElement),true);assert.equal(toggle.disabled,false);
+    await f.click('내 정보 수정');f.root.querySelector('.profile-panel input').value='61';
+    f.root.querySelector('.profile-dismiss').click();
+    assert.equal(slot.hidden,true);assert.equal(transcript.inert,false);assert.equal(f.root.activeElement,toggle);
+    assert.equal(transcript.scrollTop,73);assert.equal(body.scrollTop,11);assert.equal(input.value,'아직 보내지 않은 초안');
+    assert.notEqual(port.disconnected,true);assert.equal(server.calls.set.length,writes);
+    toggle.click();assert.equal(f.root.querySelector('.profile-panel input').value,'61');toggle.click();assert.equal(slot.hidden,true);
+  }finally{f.close();}
+});
+
+test('설정 화면은 키보드 이동·Esc·접기·모드 변경 뒤 가려진 채팅 포커스를 남기지 않는다',async()=>{
+  const f=ui(worker());try{
+    await f.ready();const toggle=f.root.querySelector('.profile-toggle'),slot=f.root.querySelector('.profile-slot'),resize=f.root.querySelector('.resize-handle');
+    toggle.focus();toggle.click();resize.focus();
+    resize.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));
+    assert.equal(slot.contains(f.root.activeElement),true);
+    f.root.activeElement.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+    assert.equal(slot.hidden,true);assert.equal(f.root.activeElement,toggle);
+    toggle.click();f.root.querySelector('.collapse').click();assert.equal(f.root.querySelector('.body').hidden,true);
+    f.root.querySelector('.collapse').click();assert.equal(slot.hidden,false);assert.equal(slot.contains(f.root.activeElement),true);
+    await f.mode('screen');assert.equal(slot.hidden,true);assert.equal(f.root.querySelector('.transcript').inert,false);
+    await f.mode('document');assert.equal(slot.hidden,true);
+  }finally{f.close();}
+});
+
+test('설정 저장 뒤에도 화면은 사용자가 닫을 때까지 열려 있고 포커스를 유지한다',async()=>{
+  const server=worker(),f=ui(server);try{
+    await f.ready();await f.click('내 정보');await f.click('내 정보 수정');f.root.querySelector('.profile-panel input').value='70';
+    await f.click('내 정보 저장');
+    const slot=f.root.querySelector('.profile-slot');assert.equal(slot.hidden,false);assert.equal(server.data[profileKey].profile.age,70);
+    assert.equal(slot.contains(f.root.activeElement),true);assert.equal(f.root.querySelector('.consultation').inert,true);
+    await f.click('설정 닫기');assert.equal(slot.hidden,true);assert.equal(f.root.querySelector('.consultation').inert,false);
+  }finally{f.close();}
+});
+
 test('기본 상담은 문서 안내와 텍스트 입력을 제공하고 개발 강제 표시 경로가 없다',async()=>{
   const f=ui(worker());try{
     await f.ready();assert.match(f.root.querySelector('.panel').getAttribute('aria-label'),/복지 상담/);

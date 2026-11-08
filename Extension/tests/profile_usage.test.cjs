@@ -89,12 +89,24 @@ test('손상된 동의와 서버 미지원에서는 저장 정보를 보내지 �
 test('ON/OFF UI는 저장 성공 상태만 표시하고 새 패널에서도 선택을 복원한다',async()=>{
   const f=server(),panel=ui(f);
   try{
-    await panel.ready();await panel.click('내 정보');const toggle=panel.root.querySelector('.profile-usage-toggle');assert.equal(toggle.disabled,false);assert.equal(toggle.checked,false);
+    await panel.ready();const toggle=panel.root.querySelector('.profile-usage-toggle');assert.equal(toggle.disabled,false);assert.equal(toggle.checked,false);
+    const section=toggle.closest('.profile-usage'),compose=panel.root.querySelector('.compose-row');
+    assert.equal(section.nextElementSibling,compose);assert.equal(panel.root.querySelectorAll('.profile-usage-toggle').length,1);assert.equal(section.closest('.profile-slot'),null);
+    await panel.click('내 정보');assert.equal(toggle.disabled,true);assert.equal(section.closest('[inert]')!==null,true);
+    await panel.click('내 정보');assert.equal(toggle.disabled,false);
     toggle.checked=true;toggle.dispatchEvent(new panel.w.Event('change'));await settle();assert.equal(toggle.checked,true);assert.equal(f.data[usageKey].enabled,true);
     f.failure.set=true;toggle.checked=false;toggle.dispatchEvent(new panel.w.Event('change'));await settle();assert.equal(toggle.checked,true);assert.match(panel.root.querySelector('.profile-usage-status').textContent,/저장하지 못/);
     f.failure.set=false;
   }finally{panel.close();}
   const restored=ui(f);try{await restored.ready();assert.equal(restored.root.querySelector('.profile-usage-toggle').checked,true);}finally{restored.close();}
+});
+
+test('입력란의 정보 사용 선택은 화면 안내에서 숨기고 복지 상담으로 돌아오면 복원한다',async()=>{
+  const panel=ui(server());try{
+    await panel.ready();const section=panel.root.querySelector('.profile-usage');assert.equal(section.hidden,false);
+    await panel.mode('screen');assert.equal(section.hidden,true);
+    await panel.mode('document');assert.equal(section.hidden,false);assert.equal(panel.root.querySelector('.profile-slot').hidden,true);
+  }finally{panel.close();}
 });
 
 test('ON DTO는 동의·revision·허용 프로필 없이는 만들지 않으며 원래 profile 필드는 계속 무시한다',()=>{

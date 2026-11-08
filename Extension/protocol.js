@@ -90,7 +90,7 @@
     const normalized=profile(value.profile);if(!normalized)throw new Error('invalid_profile');
     return {enabled:true,consent_revision:value.consent_revision,profile_revision:value.profile_revision,profile:normalized};
   }
-  const uiLimits=Object.freeze({minWidth:320,maxWidth:640,minHeight:360,maxHeight:900,step:20,opacities:Object.freeze([100,95,90,85])});
+  const uiLimits=Object.freeze({minWidth:320,maxWidth:16384,minHeight:360,maxHeight:16384,step:20,opacities:Object.freeze([100,95,90,85])});
   function uiPreferences(value){
     if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='backgroundOpacity,dock,height,left,top,width')throw new Error('invalid_ui_preferences');
     const {width,height,backgroundOpacity,dock,left,top}=value,coordinate=item=>Number.isInteger(item)&&item>=0&&item<=10000;

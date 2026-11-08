@@ -17,12 +17,12 @@ test('내 정보는 채팅을 가리는 설정 화면이며 닫아도 요청·�
     const input=f.root.querySelector('#gyeote-question'),transcript=f.root.querySelector('.transcript'),body=f.root.querySelector('.body'),slot=f.root.querySelector('.profile-slot'),toggle=f.root.querySelector('.profile-toggle');
     input.value='아직 보내지 않은 초안';transcript.scrollTop=73;body.scrollTop=11;toggle.focus();
     const writes=server.calls.set.length;toggle.click();
-    assert.equal(slot.parentElement,body);assert.equal(slot.getAttribute('role'),'dialog');assert.equal(slot.hidden,false);
-    for(const node of [transcript,f.root.querySelector('.consultation'),f.root.querySelector('.status')]){assert.equal(node.inert,true);assert.equal(node.getAttribute('aria-hidden'),'true');}
+    assert.equal(slot.parentElement,f.root.querySelector('.modal-layer'));assert.equal(slot.getAttribute('role'),'dialog');assert.equal(slot.getAttribute('aria-modal'),'true');assert.equal(slot.hidden,false);
+    assert.equal(f.root.querySelector('.panel').inert,true);assert.equal(f.root.querySelector('.panel').getAttribute('aria-hidden'),'true');assert.equal(f.w.document.body.inert,true);
     assert.equal(slot.contains(f.root.activeElement),true);assert.equal(toggle.disabled,false);
     await f.click('내 정보 수정');f.root.querySelector('.profile-panel input').value='61';
     f.root.querySelector('.profile-dismiss').click();
-    assert.equal(slot.hidden,true);assert.equal(transcript.inert,false);assert.equal(f.root.activeElement,toggle);
+    assert.equal(slot.hidden,true);assert.equal(f.root.querySelector('.panel').inert,false);assert.equal(f.w.document.body.hasAttribute('inert'),false);assert.equal(f.root.activeElement,toggle);
     assert.equal(transcript.scrollTop,73);assert.equal(body.scrollTop,11);assert.equal(input.value,'아직 보내지 않은 초안');
     assert.notEqual(port.disconnected,true);assert.equal(server.calls.set.length,writes);
     toggle.click();assert.equal(f.root.querySelector('.profile-panel input').value,'61');toggle.click();assert.equal(slot.hidden,true);
@@ -38,8 +38,8 @@ test('설정 화면은 키보드 이동·Esc·접기·모드 변경 뒤 가려�
     f.root.activeElement.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
     assert.equal(slot.hidden,true);assert.equal(f.root.activeElement,toggle);
     toggle.click();f.root.querySelector('.collapse').click();assert.equal(f.root.querySelector('.body').hidden,true);
-    f.root.querySelector('.collapse').click();assert.equal(slot.hidden,false);assert.equal(slot.contains(f.root.activeElement),true);
-    await f.mode('screen');assert.equal(slot.hidden,true);assert.equal(f.root.querySelector('.transcript').inert,false);
+    f.root.querySelector('.collapse').click();assert.equal(slot.hidden,true);toggle.click();assert.equal(slot.hidden,false);
+    await f.mode('screen');assert.equal(slot.hidden,true);assert.equal(f.root.querySelector('.panel').inert,false);assert.equal(f.w.document.body.hasAttribute('inert'),false);
     await f.mode('document');assert.equal(slot.hidden,true);
   }finally{f.close();}
 });
@@ -49,8 +49,28 @@ test('설정 저장 뒤에도 화면은 사용자가 닫을 때까지 열려 있
     await f.ready();await f.click('내 정보');await f.click('내 정보 수정');f.root.querySelector('.profile-panel input').value='70';
     await f.click('내 정보 저장');
     const slot=f.root.querySelector('.profile-slot');assert.equal(slot.hidden,false);assert.equal(server.data[profileKey].profile.age,70);
-    assert.equal(slot.contains(f.root.activeElement),true);assert.equal(f.root.querySelector('.consultation').inert,true);
-    await f.click('설정 닫기');assert.equal(slot.hidden,true);assert.equal(f.root.querySelector('.consultation').inert,false);
+    assert.equal(slot.contains(f.root.activeElement),true);assert.equal(f.root.querySelector('.panel').inert,true);
+    await f.click('설정 닫기');assert.equal(slot.hidden,true);assert.equal(f.root.querySelector('.panel').inert,false);
+  }finally{f.close();}
+});
+
+test('상담 메뉴도 사이트 전체를 막는 단일 모달이며 전환·Esc·바깥 클릭은 원래 상태로 돌아온다',async()=>{
+  const f=ui(worker());try{
+    await f.ready();await f.question('메뉴를 연 동안 유지할 질문');const port=f.ports.at(-1),input=f.root.querySelector('#gyeote-question'),menu=f.root.querySelector('.menu-toggle'),tools=f.root.querySelector('.panel-tools'),layer=f.root.querySelector('.modal-layer');
+    input.value='메뉴 뒤의 초안';f.root.querySelector('.transcript').scrollTop=91;menu.focus();menu.click();
+    assert.equal(tools.parentElement,layer);assert.equal(tools.hidden,false);assert.equal(tools.getAttribute('aria-modal'),'true');assert.equal(f.w.document.body.inert,true);assert.equal(tools.contains(f.root.activeElement),true);
+    const last=[...tools.querySelectorAll('button')].at(-1);last.focus();last.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));assert.equal(f.root.activeElement,tools.querySelector('button'));
+    f.root.querySelector('.profile-toggle').click();assert.equal(tools.hidden,true);assert.equal(f.root.querySelector('.profile-slot').hidden,false);assert.equal(layer.hidden,false);
+    f.root.activeElement.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert.equal(layer.hidden,true);assert.equal(f.w.document.body.hasAttribute('inert'),false);
+    menu.focus();menu.click();layer.click();assert.equal(layer.hidden,true);assert.equal(f.root.activeElement,menu);assert.equal(input.value,'메뉴 뒤의 초안');assert.equal(f.root.querySelector('.transcript').scrollTop,91);assert.notEqual(port.disconnected,true);
+  }finally{f.close();}
+});
+
+test('모달은 기존 사이트 inert를 보존하고 페이지 종료 때 자신이 추가한 차단을 해제한다',async()=>{
+  const f=ui(worker());try{
+    await f.ready();f.w.document.documentElement.style.setProperty('overflow','auto','important');f.w.document.body.inert=true;f.w.document.body.setAttribute('inert','site-owned');f.root.querySelector('.menu-toggle').click();assert.equal(f.w.document.documentElement.style.overflow,'hidden');f.root.querySelector('.menu-dismiss').click();assert.equal(f.w.document.body.inert,true);assert.equal(f.w.document.body.getAttribute('inert'),'site-owned');assert.equal(f.w.document.documentElement.style.overflow,'auto');assert.equal(f.w.document.documentElement.style.getPropertyPriority('overflow'),'important');
+    const pageStyle=f.w.document.documentElement.style;pageStyle.removeProperty('overflow');pageStyle.setProperty('overflow-x','hidden','important');pageStyle.setProperty('overflow-y','scroll');f.root.querySelector('.menu-toggle').click();f.root.querySelector('.menu-dismiss').click();assert.equal(pageStyle.getPropertyValue('overflow-x'),'hidden');assert.equal(pageStyle.getPropertyPriority('overflow-x'),'important');assert.equal(pageStyle.getPropertyValue('overflow-y'),'scroll');assert.equal(pageStyle.getPropertyPriority('overflow-y'),'');
+    f.w.document.body.inert=false;f.w.document.body.removeAttribute('inert');f.root.querySelector('.profile-toggle').click();f.w.dispatchEvent(new f.w.Event('pagehide'));assert.equal(f.w.document.body.hasAttribute('inert'),false);assert.equal(f.root.querySelector('.modal-layer').hidden,true);
   }finally{f.close();}
 });
 
@@ -85,7 +105,7 @@ test('첫 이용 폼이 열려 있으면 다시 열 때 조작 가능한 조건 
   const f=ui(worker({[profileKey]:{schemaVersion:1,revision:0,onboardingCompleted:false,profile:null}}));try{
     await f.ready();assert.equal(f.root.querySelector('#gyeote-question').closest('form').hidden,false);assert.equal(f.root.querySelector('.profile-panel').hidden,true);
     f.root.querySelector('.close').click();f.root.querySelector('.open').click();assert.equal(f.root.activeElement,f.root.querySelector('#gyeote-question'));
-    f.root.querySelector('.profile-toggle').click();f.root.querySelector('.close').click();f.root.querySelector('.open').click();assert.equal(f.root.activeElement,f.root.querySelector('.profile-panel input'));
+    f.root.querySelector('.profile-toggle').click();f.root.querySelector('.close').click();f.root.querySelector('.open').click();assert.equal(f.root.activeElement,f.root.querySelector('#gyeote-question'));f.root.querySelector('.profile-toggle').click();assert.equal(f.root.activeElement,f.root.querySelector('.profile-panel input'));
   }finally{f.close();}
 });
 
@@ -110,7 +130,7 @@ for(const type of ['pointerup','pointercancel','lostpointercapture'])test(`${typ
 
 test('헤더 버튼·보조 포인터·다른 포인터 이벤트는 드래그를 시작하거나 가로채지 않는다',async()=>{
   const f=dragFixture();try{
-    await f.ready();for(const args of [{button:2},{primary:false},{target:f.root.querySelector('.collapse')}]){pointer(f,'pointerdown',args);assert.equal(f.captured.size,0);}
+    await f.ready();for(const args of [{button:2},{primary:false},{target:f.root.querySelector('.collapse')},{target:f.root.querySelector('.ui-opacity')}]){pointer(f,'pointerdown',args);assert.equal(f.captured.size,0);}
     pointer(f,'pointerdown',{id:2,x:500,y:300});pointer(f,'pointermove',{id:3,x:0,y:0});assert.equal(f.panel.style.left,'');
     pointer(f,'pointercancel',{id:3});assert.equal(f.captured.has(2),true);pointer(f,'pointercancel',{id:2});assert.equal(f.captured.size,0);
   }finally{f.close();}

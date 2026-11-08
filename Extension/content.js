@@ -87,10 +87,10 @@
     (target||$('.collapse')).focus();
   }
   function openPanel(){panel.hidden=false;$('.open').hidden=true;clampPanel();inputAssist?.update();focusPanel();}
-  function closePanel(){finishDrag();cancel();panel.hidden=true;$('.open').hidden=false;$('.open').focus();}
+  function closePanel(){finishDrag();finishOpacity();closeModal();cancel();panel.hidden=true;$('.open').hidden=false;$('.open').focus();}
   $('.close').addEventListener('click',closePanel);
   $('.open').addEventListener('click',openPanel);
-  $('.collapse').addEventListener('click',()=>{finishDrag();collapsed=!collapsed;$('.body').hidden=collapsed;panel.classList.toggle('is-collapsed',collapsed);const button=$('.collapse');button.textContent=collapsed?'+':'−';button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'패널 펼치기':'패널 접기');cancel();updateProfileView();clampPanel();if(!collapsed)focusPanel();});
+  $('.collapse').addEventListener('click',()=>{finishDrag();finishOpacity();closeModal();collapsed=!collapsed;$('.body').hidden=collapsed;panel.classList.toggle('is-collapsed',collapsed);const button=$('.collapse');button.textContent=collapsed?'+':'−';button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'패널 펼치기':'패널 접기');cancel();updateProfileView();clampPanel();if(!collapsed)focusPanel();});
   const formStyle=document.createElement('style');formStyle.textContent=`
     .consultation{flex-shrink:0;padding:12px 16px 14px;border-top:1px solid #eee;background:#fff}.consultation form{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:8px;margin:0}.question-label{font-size:13px;font-weight:bold;color:#555}.compose-row{display:flex;align-items:center;min-width:0;width:100%;gap:4px;padding:5px;border:1px solid #d8d8d8;background:#fafafa;border-radius:16px}.compose-row:focus-within{border-color:#777}.compose-row input[type=text]{min-width:0;flex:1;padding:8px;border:0;background:transparent;border-radius:8px}.consultation button[type=submit]{background:#171717;color:#fff;border:0;border-radius:11px;flex-shrink:0;width:42px;height:42px;display:grid;place-items:center;padding:0}.send-notice{margin:0;font-size:13px;color:#666}.voice-input{margin:0;flex:1;font-size:13px}.voice-input summary{min-height:32px;padding:4px 0}.voice-input p{margin:6px 0}.voice-status{margin:0;font-size:13px}.question-suggestions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.question-suggestions button{padding:8px 6px;border-color:#e7e7e7;background:#f7f7f7;font-size:13px;line-height:1.45;border-radius:12px}
     .onboarding{background:#f7f7f7;padding:12px;border-radius:14px;margin-bottom:12px;font-size:14px}.onboarding p{margin:0 0 10px}.onboarding button{font-size:14px}.conversation{white-space:pre-wrap;min-height:100px}.conversation:empty::before{content:'무엇을 도와드릴까요?';display:block;padding:50px 8px;color:#777;text-align:center;font-size:18px}.conversation article{width:fit-content;max-width:94%;padding:12px 14px;margin:0 0 14px;background:#f5f5f5;border-radius:16px 16px 16px 4px}.conversation article.user-message{margin-left:auto;background:#202020;color:#fff;border-radius:16px 16px 4px 16px}.conversation article.user-message small{color:#ddd}.conversation small{display:block;margin-bottom:4px;color:#666;font-size:13px}.conversation article p{margin:8px 0}.conversation details{font-size:13px;margin-top:8px}.conversation-warning{padding:10px;border:1px solid #bbb;border-radius:10px;font-size:13px}.conversation-alerts:empty{display:none}
@@ -174,7 +174,7 @@
   addEventListener('keydown',event=>{if(event.key==='Escape'&&panel.classList.contains('is-listening')){event.preventDefault();inputAssist?.cancel();}});
   const tools=$('.panel-tools'),menuButton=$('.menu-toggle'),profileButton=$('.profile-toggle');
   formStyle.textContent+='.head .profile-toggle[aria-expanded=true]{background:#eaf1ff;color:#174b8d;border-color:#aac6ee;box-shadow:inset 0 1px 3px #174b8d18}.head .profile-toggle:active{transform:translateY(1px);background:#dce8fc}';
-  function showMenu(open){tools.hidden=!open;menuButton.setAttribute('aria-expanded',String(open));if(open)transcript.scrollTop=0;}
+  function showMenu(open){if(open){profileOpen=false;updateProfileView();setModal('menu');}else if(activeModal==='menu')setModal(null);}
   menuButton.addEventListener('click',()=>{if(collapsed)$('.collapse').click();showMenu(tools.hidden);if(!tools.hidden)$('.documents').focus();});
   const modeLabel=document.createElement('label'),modeSelect=document.createElement('select');modeSelect.className='mode';modeSelect.setAttribute('aria-label','질문 모드');
   for(const [value,text] of [['document','복지 상담'],['screen','화면 안내']]){const option=document.createElement('option');option.value=value;option.textContent=text;option.disabled=value==='screen'&&!configurationReady;modeSelect.append(option);}
@@ -186,6 +186,7 @@
     button.addEventListener('click',()=>{modeSelect.value=value;modeSelect.dispatchEvent(new Event('change'));});modeSwitch.append(button);
   }
   profileButton.before(modeSwitch);
+  const opacitySlider=document.createElement('input');opacitySlider.type='range';opacitySlider.className='ui-opacity';opacitySlider.min='85';opacitySlider.max='100';opacitySlider.step='5';opacitySlider.value='100';opacitySlider.setAttribute('aria-label','패널 배경 불투명도');opacitySlider.title='패널 배경 불투명도';modeSwitch.before(opacitySlider);
   const modeReason=document.createElement('p');modeReason.className='mode-reason';modeReason.textContent='서버 설정을 확인하지 못해 화면 안내를 사용할 수 없습니다.';modeReason.hidden=configurationReady;modeReason.id='gyeote-mode-reason';if(!configurationReady)modeSwitch.querySelector('[data-mode=screen]').setAttribute('aria-describedby',modeReason.id);$('.head').after(modeReason);
   const modeNotice=document.createElement('p');modeNotice.className='muted';modeLabel.after(modeNotice);
   const accessNotice=document.createElement('p');accessNotice.className='muted document-access';modeNotice.after(accessNotice);
@@ -193,58 +194,84 @@
   const onboarding=document.createElement('section');onboarding.className='onboarding';onboarding.setAttribute('aria-label','상담 시작 안내');onboarding.hidden=true;
   onboarding.innerHTML='<p>바로 질문할 수 있어요. 내 정보는 선택이며 추천 질문 초안에만 사용해요.</p><div class="row"><button class="onboarding-edit">내 정보 입력</button><button class="onboarding-later">나중에 입력</button></div>';
   profileSlot.before(onboarding);
-  $('.body').append(profileSlot);
-  // 호스트 페이지와 제목줄은 유지하고 패널 본문만 가린다.
-  profileSlot.setAttribute('role','dialog');profileSlot.setAttribute('aria-modal','false');profileSlot.setAttribute('aria-labelledby','gyeote-profile-title');
+  const modalLayer=document.createElement('div');modalLayer.className='modal-layer';modalLayer.hidden=true;modalLayer.append(profileSlot,tools);shadow.append(modalLayer);
+  profileSlot.hidden=true;
+  profileSlot.setAttribute('role','dialog');profileSlot.setAttribute('aria-modal','true');profileSlot.setAttribute('aria-labelledby','gyeote-profile-title');profileSlot.classList.add('modal-dialog');
+  tools.classList.add('modal-dialog');tools.setAttribute('role','dialog');tools.setAttribute('aria-modal','true');tools.setAttribute('aria-labelledby','gyeote-menu-title');
+  const menuHeading=document.createElement('div');menuHeading.className='profile-heading';menuHeading.innerHTML='<strong id="gyeote-menu-title" tabindex="-1">상담 메뉴</strong><button type="button" class="menu-dismiss" aria-label="메뉴 닫기" title="메뉴 닫기">×</button>';tools.prepend(menuHeading);menuHeading.querySelector('button').addEventListener('click',()=>showMenu(false));
   const profileHeading=document.createElement('div');profileHeading.className='profile-heading';
-  profileHeading.innerHTML='<strong id="gyeote-profile-title" tabindex="-1">내 정보 설정</strong><button type="button" class="profile-dismiss">설정 닫기</button>';
+  profileHeading.innerHTML='<strong id="gyeote-profile-title" tabindex="-1">내 정보 설정</strong><button type="button" class="profile-dismiss" aria-label="설정 닫기" title="설정 닫기">×</button>';
   profileSlot.append(profileHeading);
-  let profilePanel,profileOpen=false,profileOverlayVisible=false,profileReturnFocus=null,profileScroll=null;
-  function profileFocusTargets(){
-    return [...panel.querySelectorAll('.head button,.profile-slot button,.profile-slot input,.profile-slot select,.profile-slot summary,.profile-slot a[href]')].filter(node=>{
+  let profilePanel,profileOpen=false,profileOverlayVisible=false,activeModal=null,modalReturnFocus=null,modalScroll=null,pageInert=null;
+  const modalStyleMutations=[];
+  function pageOverflow(value,priority='',property='overflow'){
+    const root=document.documentElement,previous=root.getAttribute('style');root.style.setProperty(property,value,priority);
+    if(previous!==root.getAttribute('style'))modalStyleMutations.push(previous);
+  }
+  function modalFocusTargets(){
+    const dialog=activeModal==='profile'?profileSlot:tools;
+    return [...dialog.querySelectorAll('button,input,select,summary,a[href],[tabindex="0"]')].filter(node=>{
       if(node.disabled||node.closest('[hidden],[inert]'))return false;
       const closed=node.closest('details:not([open])');return !closed||closed.querySelector('summary')===node;
     });
   }
   function focusProfile(){
     const error=profileSlot.querySelector('.profile-error');
-    const targets=profileFocusTargets().filter(node=>profileSlot.contains(node));
+    const targets=modalFocusTargets();
     const target=error?.textContent?error:targets.find(node=>node.matches('input,select'))||targets.find(node=>node!==profileHeading.querySelector('button'))||$('#gyeote-profile-title');
     target.focus({preventScroll:true});
   }
   function closeProfile(){profileOpen=false;updateProfileView();}
+  function closeModal(){profileOpen=false;updateProfileView();if(activeModal)setModal(null);}
+  function setModal(next){
+    if(next===activeModal)return;
+    const previous=activeModal;
+    if(!previous&&next){
+      modalReturnFocus=shadow.activeElement||document.activeElement;modalScroll={transcript:transcript.scrollTop,body:$('.body').scrollTop};
+      pageInert={node:document.body,attribute:document.body.getAttribute('inert'),value:document.body.inert,overflow:['overflow','overflow-x','overflow-y'].map(property=>({property,value:document.documentElement.style.getPropertyValue(property),priority:document.documentElement.style.getPropertyPriority(property)}))};document.body.inert=true;document.body.setAttribute('inert','');pageOverflow('hidden','important');
+    }
+    activeModal=next;modalLayer.hidden=!next;profileSlot.hidden=next!=='profile';tools.hidden=next!=='menu';
+    panel.inert=!!next;panel.toggleAttribute('inert',!!next);if(next)panel.setAttribute('aria-hidden','true');else panel.removeAttribute('aria-hidden');
+    menuButton.setAttribute('aria-expanded',String(next==='menu'));
+    if(next){if(next==='profile')focusProfile();else $('.documents').focus({preventScroll:true});}
+    else{
+      if(pageInert){pageInert.node.inert=pageInert.value;if(pageInert.attribute===null)pageInert.node.removeAttribute('inert');else pageInert.node.setAttribute('inert',pageInert.attribute);for(const item of pageInert.overflow)pageOverflow(item.value,item.priority,item.property);pageInert=null;}
+      if(modalScroll){transcript.scrollTop=modalScroll.transcript;$('.body').scrollTop=modalScroll.body;modalScroll=null;}
+      const target=modalReturnFocus?.isConnected&&!modalReturnFocus.closest('[hidden],[inert]')?modalReturnFocus:previous==='profile'?profileButton:menuButton;
+      target.focus({preventScroll:true});modalReturnFocus=null;
+    }
+  }
   function updateProfileView(){
     if(!profilePanel)return;
-    const visible=mode==='document'&&profileOpen&&!collapsed,changed=visible!==profileOverlayVisible,body=$('.body');
-    if(changed&&visible){profileReturnFocus=shadow.activeElement;profileScroll={transcript:transcript.scrollTop,body:body.scrollTop};showMenu(false);body.scrollTop=0;}
-    profileOverlayVisible=visible;profileSlot.hidden=!visible;
-    body.classList.toggle('has-profile',visible);
-    for(const node of [transcript,status,$('.consultation')]){node.inert=visible;node.toggleAttribute('inert',visible);if(visible)node.setAttribute('aria-hidden','true');else node.removeAttribute('aria-hidden');}
-    menuButton.disabled=visible;profilePanel.setVisible(visible);profileButton.hidden=mode!=='document';
+    const visible=mode==='document'&&profileOpen&&!collapsed&&!panel.hidden;
+    profileOverlayVisible=visible;
+    profilePanel.setVisible(visible);
+    if(visible)setModal('profile');else if(activeModal==='profile')setModal(null);
+    profileButton.hidden=mode!=='document';
     profileButton.setAttribute('aria-expanded',String(visible));
     onboarding.hidden=mode!=='document'||!profilePanel.state||profilePanel.state.onboardingCompleted||profileOpen;
     updateRequestControl();
     $('.onboarding-later').disabled=!profilePanel.state||profilePanel.busy;
     inputAssist?.update();
     renderProfileUsage();
-    if(visible&&(changed||!profileSlot.contains(shadow.activeElement)&&!$('.head').contains(shadow.activeElement)))focusProfile();
-    if(changed&&!visible){
-      if(profileScroll){transcript.scrollTop=profileScroll.transcript;body.scrollTop=profileScroll.body;profileScroll=null;}
-      const target=profileReturnFocus?.isConnected&&!profileReturnFocus.closest('[hidden],[inert]')?profileReturnFocus:profileButton;
-      if(!target.hidden)target.focus({preventScroll:true});else focusPanel();
-    }
+    if(visible&&!profileSlot.contains(shadow.activeElement))focusProfile();
   }
   profileButton.addEventListener('click',()=>{if(collapsed){profileOpen=false;$('.collapse').click();}profileOpen=!profileOpen;updateProfileView();});
   profileHeading.querySelector('button').addEventListener('click',closeProfile);
-  panel.addEventListener('keydown',event=>{
-    if(!profileOverlayVisible)return;
-    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeProfile();return;}
+  shadow.addEventListener('keydown',event=>{
+    if(!activeModal)return;
+    event.stopPropagation();
+    if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeModal();return;}
     if(event.key!=='Tab')return;
-    const targets=profileFocusTargets(),first=targets[0],last=targets.at(-1),active=shadow.activeElement;
+    const targets=modalFocusTargets(),first=targets[0],last=targets.at(-1),active=shadow.activeElement;
     if(event.shiftKey&&(active===first||!targets.includes(active))){event.preventDefault();last?.focus();}
     else if(!event.shiftKey&&(active===last||!targets.includes(active))){event.preventDefault();first?.focus();}
   });
-  transcript.addEventListener('keydown',event=>{if(event.key==='Escape'&&tools.contains(event.target)){showMenu(false);menuButton.focus();}});
+  modalLayer.addEventListener('click',event=>{event.stopPropagation();if(event.target===modalLayer)closeModal();});
+  modalLayer.addEventListener('pointerdown',event=>event.stopPropagation());
+  for(const type of ['wheel','touchmove'])modalLayer.addEventListener(type,event=>{event.stopPropagation();if(event.target===modalLayer)event.preventDefault();},{passive:false});
+  shadow.addEventListener('focusin',()=>{const dialog=activeModal==='profile'?profileSlot:tools;if(activeModal&&!dialog.contains(shadow.activeElement))modalFocusTargets()[0]?.focus({preventScroll:true});});
+  document.addEventListener('focusin',event=>{if(activeModal&&event.target!==host){const target=modalFocusTargets()[0];target?.focus({preventScroll:true});}},true);
   profilePanel=GyeoteProfilePanel.create(profileSlot,()=>{inputAssist?.invalidate();if(profileUsageState?.enabled)cancel();},()=>{if(profileSlot.querySelector('.profile-error')?.textContent)profileOpen=true;updateProfileView();});
   const profileControls=document.createElement('details');profileControls.className='profile-controls';const managementSummary=document.createElement('summary');managementSummary.textContent='저장·확장 관리';profileControls.append(managementSummary);profileSlot.append(profileControls);
   const profileUsageSection=document.createElement('section');profileUsageSection.className='profile-usage';profileUsageSection.hidden=true;
@@ -301,15 +328,16 @@
   });
   $('.settings').textContent='확장 옵션';profileControls.append($('.settings'),modeLabel,modeNotice,accessNotice,$('.mode-intro'),$('.scope-notice'),$('.reset'));
   const uiSettings=document.createElement('section');uiSettings.className='ui-settings';uiSettings.setAttribute('aria-label','화면 설정');
-  uiSettings.innerHTML='<h3>화면 설정</h3><label>패널 배경 불투명도 <select class="ui-opacity"><option value="100">100% (불투명)</option><option value="95">95%</option><option value="90">90%</option><option value="85">85%</option></select></label><p class="muted">크기는 제목줄 왼쪽 ⤡ 손잡이를 끌거나, 손잡이를 선택한 뒤 방향키로 바꿔요. 옮긴 패널은 제목줄을 두 번 누르면 오른쪽 기본 위치로 돌아가요. 글자와 버튼은 투명해지지 않아요.</p><button class="ui-reset">화면 설정 기본값으로</button><p class="ui-status muted" role="status"></p>';
+  uiSettings.innerHTML='<h3>화면 설정</h3><p class="muted">크기는 제목줄 왼쪽 ⤡ 손잡이를 끌거나, 손잡이를 선택한 뒤 방향키로 바꿔요. 옮긴 패널은 제목줄을 두 번 누르면 오른쪽 기본 위치로 돌아가요. 글자와 버튼은 투명해지지 않아요.</p><button class="ui-reset">화면 설정 기본값으로</button><p class="ui-status muted" role="status"></p>';
   profileControls.append(uiSettings);
   const closeButton=$('.close');closeButton.textContent='×';closeButton.title='패널 닫기';$('.head').append(closeButton);$('.documents').textContent='관리자 접근';
   const screenSettings=document.createElement('details'),screenSummary=document.createElement('summary');screenSettings.className='screen-settings';screenSummary.textContent='화면·음성 안내';screenSettings.append(screenSummary);$('.screen-controls').append(screenSettings);
   formStyle.textContent+='.head{gap:3px;padding:10px 8px}.head .menu-toggle,.head .collapse,.head .close{width:28px;padding:0;font-size:18px;flex-shrink:0}.head .profile-toggle{padding:6px 4px}.head .mode-switch button{padding:4px}.profile-controls{margin-top:12px}.profile-controls>.settings{margin-top:8px}.screen-controls>p,.screen-controls>details{flex-basis:100%;margin:8px 0}.head .resize-handle{width:28px;padding:0;font-size:16px;flex-shrink:0;cursor:nwse-resize;touch-action:none}.ui-settings{margin-top:12px;padding-top:8px;border-top:1px solid #eee}.ui-settings h3{font-size:15px;margin:0 0 6px}.ui-settings label{display:grid;gap:6px}.ui-settings .ui-status:empty{display:none}.speak-answer{min-height:32px;padding:2px 10px;margin:0 0 4px 8px;font-size:13px}.speak-answer[aria-pressed=true]{background:#eaf1ff;border-color:#aac6ee;color:#174b8d}';
   formStyle.textContent+=`
-    .body{position:relative;overflow:auto;overscroll-behavior:contain}.body.has-profile{overflow:hidden}
-    .profile-slot{position:absolute;inset:0;z-index:2;min-height:0;overflow:auto;overscroll-behavior:contain;padding:14px 16px;background:#fff;border:2px solid #725bed;border-radius:0 0 20px 20px;scrollbar-width:thin}
-    .profile-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;border-bottom:1px solid #d9e1ef}.profile-heading strong{font-size:18px}.profile-dismiss{flex-shrink:0;font-size:13px}
+    .body{position:relative;overflow:auto;overscroll-behavior:contain}
+    .modal-layer{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:#14213d66;pointer-events:auto;overscroll-behavior:contain}
+    .modal-layer .modal-dialog{position:relative;inset:auto;width:min(640px,100%);max-height:calc(100dvh - 32px);min-height:0;overflow:auto;overscroll-behavior:contain;margin:0;padding:18px;background:#fff;color:var(--gyeote-ink);border:1px solid #b9c8e0;border-radius:24px;box-shadow:0 20px 72px #14213d55;scrollbar-width:thin;font-size:16px;line-height:1.6;overflow-wrap:anywhere}
+    .profile-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;border-bottom:1px solid #d9e1ef}.profile-heading strong{font-size:18px}.profile-dismiss,.menu-dismiss{flex:0 0 44px;width:44px;height:44px;padding:0;border-radius:12px;font-size:22px}
     .profile-panel h2{font-size:18px;margin:12px 0 6px}.profile-panel form{display:grid;gap:10px}.profile-panel label{display:grid;gap:4px}.profile-panel input,.profile-panel select{width:100%;min-height:40px}.profile-panel .profile-error:empty{display:none}
     .profile-usage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;max-height:150px;overflow:auto;padding:6px 8px;border:1px solid #b9c8e0;border-radius:10px;background:var(--gyeote-soft);font-size:13px}.profile-usage label{display:flex;align-items:center;gap:5px;font-weight:bold}.profile-usage input{width:18px;height:18px;flex-shrink:0}.profile-usage details{margin:0}.profile-usage details[open]{grid-column:1/-1}.profile-usage summary{min-height:28px}.profile-usage p{margin:2px 0}.profile-usage-status{grid-column:1/-1;max-height:3.2em;overflow:auto}
     .profile-usage .profile-usage-toggle{appearance:none;position:relative;width:36px;height:22px;margin:0;border:1px solid #7f8ea8;border-radius:14px;background:#d7dfec}.profile-usage-toggle::before{content:'';position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#fff}.profile-usage .profile-usage-toggle:checked{background:var(--gyeote-accent);border-color:var(--gyeote-accent)}.profile-usage-toggle:checked::before{transform:translateX(14px)}.profile-usage-toggle:disabled{opacity:.6}.profile-usage-value{flex-shrink:0;min-width:2em;font-weight:bold}.profile-usage-status:focus-visible{outline:2px solid var(--gyeote-accent);outline-offset:2px}
@@ -324,7 +352,12 @@
     .conversation article{background:var(--gyeote-soft)}.conversation article.user-message{background:var(--gyeote-accent);color:#fff}.conversation article.user-message small{color:#fff}.conversation:empty::before{color:var(--gyeote-muted)}
     .question-suggestions button{background:var(--gyeote-soft);border-color:#b9c8e0;color:var(--gyeote-ink)}.onboarding{border-left:3px solid #725bed}.referral-notice{margin:10px 0;font-size:13px;line-height:1.6}.summary-tools{margin-bottom:8px}.profile-panel input,.profile-panel select{border-color:#7f8ea8;color:var(--gyeote-ink);background:#fff}
     .conversation-warning,.unsaved-conversation{color:#6b4a00;background:#fff6e0;border-color:#b38e3a}.speak-answer[aria-pressed=true]{background:#e4eafd;color:#304aa2;border-color:#7f8ea8}
-    @container(max-width:360px){.head{display:grid;grid-template-columns:28px minmax(0,1fr) auto 28px 28px 28px}.head>:not(.mode-switch){grid-row:1}.head .mode-switch{grid-row:2;grid-column:1/-1}.head .mode-switch button{flex:1}}
+    .panel{right:clamp(4px,calc((100vw - var(--gyeote-width,400px))/2),12px);bottom:clamp(4px,calc((100vh - var(--gyeote-height,720px))/2),12px);max-width:calc(100% - 8px);max-height:calc(100% - 8px);background:transparent}
+    .body{background:rgba(255,255,255,var(--gyeote-background,1))}.consultation,.status{background:transparent}.head,.mode-reason{background:rgba(243,246,252,var(--gyeote-background,1))}
+    .head{display:grid;grid-template-columns:44px minmax(36px,1fr) 44px 44px 44px 44px;gap:4px;padding:8px}.head>:not(.mode-switch):not(.ui-opacity){grid-row:1}.head .resize-handle{grid-column:1}.head strong{grid-column:2}.head .profile-toggle{grid-column:3}.head .menu-toggle{grid-column:4}.head .collapse{grid-column:5}.head .close{grid-column:6}
+    .head .resize-handle,.head .profile-toggle,.head .menu-toggle,.head .collapse,.head .close{width:44px;height:44px;min-height:44px;padding:0;border:1px solid #b9c8e0;border-radius:12px;background:#fff;box-shadow:0 1px 3px #22314d12}.head .profile-toggle{font-size:13px;letter-spacing:-.5px}.head .menu-toggle,.head .collapse,.head .close{font-size:22px}.head .resize-handle{font-size:20px}
+    .head .ui-opacity{grid-row:2;grid-column:1/4;width:100%;height:44px;margin:0;accent-color:#725bed;cursor:pointer;touch-action:pan-y}.head .mode-switch{grid-row:2;grid-column:4/7;justify-self:end}.head .mode-switch button{min-width:64px;padding:7px 12px;font-size:14px}
+    @container(min-width:700px){.head{display:flex}.head strong{flex:1}.head .ui-opacity{width:112px;flex:0 0 112px}.head .mode-switch{margin-right:6px}}
     @media(max-height:480px){.body{display:block;overflow:auto;overscroll-behavior:contain}.transcript{min-height:0;overflow:visible}.status{max-height:none}.consultation{padding:8px 12px}}
   `;
   profilePanel.ready.then(()=>{if(!profilePanel.state){profileOpen=true;updateProfileView();}});
@@ -418,14 +451,14 @@
   modeSelect.addEventListener('change',()=>{
     if(modeSelect.value==='screen'&&!configurationReady){modeSelect.value=mode;setStatus('설치 패키지의 서버 설정을 확인하지 못했습니다.');return;}
     if(!['screen','document'].includes(modeSelect.value)||modeSelect.value===mode)return;
-    cancel();accessVersion++;snapshot=null;conversations[mode]=[...$('.conversation').children];mode=modeSelect.value;
+    closeModal();cancel();accessVersion++;snapshot=null;conversations[mode]=[...$('.conversation').children];mode=modeSelect.value;
     $('.conversation').replaceChildren(...conversations[mode]);updateMode();
   });
   inputAssist=GyeoteInputAssist.create(questionForm,{controls:profileControls,overlay:listeningOverlay,onListening:showListening,state:()=>{
     const saved=savedPanel.state,conversation=saved?.conversations.find(c=>c.id===saved.lastActiveConversationId);
     const anonymous=currentAccess?.mode==='anonymous';
     return {mode,key:[mode,serial,accessKey(currentAccess),profilePanel.state?.revision,saved?.generation,saved?.revision,saved?.lastActiveConversationId].join('|'),
-      available:host.isConnected&&!panel.hidden&&!collapsed&&!document.hidden&&!questionForm.hidden,
+      available:host.isConnected&&!panel.hidden&&!collapsed&&!activeModal&&!document.hidden&&!questionForm.hidden,
       blocked:!configurationReady||busy||requestPending||summaryBusy||mode==='document'&&(!currentAccess||anonymous&&(!savedPanel.ready||savedPanel.hasUnsaved)||!anonymous&&currentAccess.status!=='ready'),
       profile:profilePanel.state?.profile,hasHistory:anonymous?!!conversation?.messages.some(m=>m.role==='assistant'):documentHistory.some(m=>m.role==='assistant'),limit:$('#gyeote-question').maxLength};
   }});
@@ -629,10 +662,11 @@
   function clampPanel(left,top){
     if(panel.hidden)return;
     if(left===undefined&&!preferred){for(const side of ['left','top','right','bottom'])panel.style[side]='';return;}
-    const rect=panel.getBoundingClientRect(),width=Math.min(rect.width,innerWidth-8),height=Math.min(rect.height,innerHeight-8);
+    const viewportWidth=document.documentElement.clientWidth||innerWidth,viewportHeight=document.documentElement.clientHeight||innerHeight;
+    const rect=panel.getBoundingClientRect(),width=Math.min(rect.width,viewportWidth-8),height=Math.min(rect.height,viewportHeight-8);
     const place=(value,size,limit)=>Math.max(4,Math.min(limit-size-4,value));
-    if(left!==undefined)preferred={left:place(left,width,innerWidth),top:place(top,height,innerHeight)};
-    panel.style.left=place(preferred.left,width,innerWidth)+'px';panel.style.top=place(preferred.top,height,innerHeight)+'px';panel.style.right='auto';panel.style.bottom='auto';
+    if(left!==undefined)preferred={left:place(left,width,viewportWidth),top:place(top,height,viewportHeight)};
+    panel.style.left=place(preferred.left,width,viewportWidth)+'px';panel.style.top=place(preferred.top,height,viewportHeight)+'px';panel.style.right='auto';panel.style.bottom='auto';
   }
   function finishDrag(event){
     if(!drag||event&&event.pointerId!==drag.id)return;
@@ -641,15 +675,16 @@
     settleUi(moved);
   }
   head.addEventListener('pointerdown',event=>{
-    if(drag||event.button!==0||event.isPrimary===false||event.target.closest('button'))return;
+    if(drag||event.button!==0||event.isPrimary===false||event.target.closest('button,input,select,summary'))return;
     const r=panel.getBoundingClientRect();drag={id:event.pointerId,x:event.clientX-r.left,y:event.clientY-r.top};
     try{head.setPointerCapture(event.pointerId);}catch{drag=null;}
   });
   head.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id)return;drag.moved=true;uiEditVersion++;clampPanel(event.clientX-drag.x,event.clientY-drag.y);schedule();});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])head.addEventListener(type,finishDrag);
-  head.addEventListener('dblclick',event=>{if(event.target.closest('button'))return;finishDrag();uiEditVersion++;preferred=null;clampPanel();schedule();void saveUi();});
+  head.addEventListener('dblclick',event=>{if(event.target.closest('button,input,select,summary'))return;finishDrag();uiEditVersion++;preferred=null;clampPanel();schedule();void saveUi();});
   const limits=GyeoteProtocol.uiLimits,resizeHandle=$('.resize-handle'),uiStatus=$('.ui-status'),opacitySelect=$('.ui-opacity');
   let ui={...GyeoteProtocol.uiDefaults},uiState=null,uiInvalid=false,uiQueue=Promise.resolve(),resizing=null,keyTimer=null,uiDeferred=false,uiEditVersion=0,uiReadVersion=0;
+  let opacityPointer=null,opacityDirty=false,opacityTimer=null,opacityKeyboard=false;
   const bounded=(value,min,max)=>Math.max(min,Math.min(max,Math.round(value)));
   function showUi(){
     panel.style.setProperty('--gyeote-width',ui.width+'px');panel.style.setProperty('--gyeote-height',ui.height+'px');panel.style.setProperty('--gyeote-background',String(ui.backgroundOpacity/100));
@@ -660,15 +695,15 @@
     preferred=state.dock==='free'?{left:state.left,top:state.top}:null;showUi();clampPanel();schedule();
   }
   async function refreshUi(){
-    if(drag||resizing||keyTimer){uiDeferred=true;return;}
+    if(drag||resizing||keyTimer||opacityPointer!==null||opacityTimer){uiDeferred=true;return;}
     const readVersion=++uiReadVersion,editVersion=uiEditVersion;
     try{
       const result=await chrome.runtime.sendMessage({type:'gyeote:ui-preferences-get'});
       if(!result?.ok||readVersion!==uiReadVersion||uiState&&result.state.revision<uiState.revision)return;
-      if(drag||resizing||keyTimer||editVersion!==uiEditVersion){
+      if(drag||resizing||keyTimer||opacityPointer!==null||opacityTimer||editVersion!==uiEditVersion){
         // 초기 읽기는 저장 기준만 확보하고 사용자가 조절한 화면은 유지한다.
         if(!uiState){uiState=result.state;uiInvalid=!!result.invalid;}
-        if(drag||resizing||keyTimer)uiDeferred=true;
+        if(drag||resizing||keyTimer||opacityPointer!==null||opacityTimer)uiDeferred=true;
         return;
       }
       uiInvalid=!!result.invalid;applyUi(result.state);
@@ -702,7 +737,7 @@
   function resizeTo(width,height){
     uiEditVersion++;
     const before=panel.getBoundingClientRect();
-    ui.width=bounded(width,limits.minWidth,limits.maxWidth);ui.height=bounded(height,limits.minHeight,limits.maxHeight);showUi();
+    ui.width=bounded(width,limits.minWidth,Math.max(limits.minWidth,Math.min(limits.maxWidth,(document.documentElement.clientWidth||innerWidth)-8)));ui.height=bounded(height,limits.minHeight,Math.max(limits.minHeight,Math.min(limits.maxHeight,(document.documentElement.clientHeight||innerHeight)-8)));showUi();
     if(preferred){const after=panel.getBoundingClientRect();preferred={left:before.left+before.width-after.width,top:before.top+before.height-after.height};}
     clampPanel();schedule();
   }
@@ -724,13 +759,29 @@
     if(!change)return;event.preventDefault();resizeTo(ui.width+change[0],ui.height+change[1]);
     clearTimeout(keyTimer);keyTimer=setTimeout(()=>{keyTimer=null;settleUi(true);},400);
   });
-  opacitySelect.addEventListener('change',()=>{const value=Number(opacitySelect.value);if(!limits.opacities.includes(value))return;uiEditVersion++;ui.backgroundOpacity=value;showUi();void saveUi();});
+  function applyOpacity(){
+    const value=Number(opacitySelect.value);if(!limits.opacities.includes(value)||value===ui.backgroundOpacity)return;
+    uiEditVersion++;ui.backgroundOpacity=value;opacityDirty=true;showUi();
+  }
+  function finishOpacity(event){
+    if(event&&opacityPointer!==null&&event.pointerId!==opacityPointer)return;
+    const editing=opacityPointer!==null||opacityTimer!==null;
+    opacityPointer=null;clearTimeout(opacityTimer);opacityTimer=null;opacityKeyboard=false;
+    const changed=opacityDirty;opacityDirty=false;if(changed||editing)settleUi(changed);
+  }
+  opacitySelect.addEventListener('pointerdown',event=>{if(event.button===0&&event.isPrimary!==false)opacityPointer=event.pointerId;});
+  for(const type of ['pointerup','pointercancel'])addEventListener(type,event=>{if(opacityPointer!==null)finishOpacity(event);});
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])opacitySelect.addEventListener(type,event=>{if(opacityPointer!==null)finishOpacity(event);});
+  opacitySelect.addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.key))opacityKeyboard=true;});
+  opacitySelect.addEventListener('input',()=>{applyOpacity();if(opacityPointer===null){clearTimeout(opacityTimer);opacityTimer=setTimeout(()=>finishOpacity(),400);}});
+  opacitySelect.addEventListener('change',()=>{applyOpacity();if(opacityPointer===null&&!opacityKeyboard)finishOpacity();});
+  opacitySelect.addEventListener('blur',()=>{if(opacityPointer===null)finishOpacity();});
   $('.ui-reset').addEventListener('click',()=>{if(!uiState)return;void saveUi(true);});
   const uiInitialRead=refreshUi();
   const sizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>{clampPanel();schedule();}):null;
   sizeObserver?.observe(panel);
   addEventListener('scroll',schedule,{passive:true,capture:true});addEventListener('resize',()=>{finishDrag();clampPanel();schedule();});
-  addEventListener('pagehide',()=>{stopSpeech();accessVersion++;finishDrag();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
+  addEventListener('pagehide',()=>{stopSpeech();accessVersion++;finishDrag();finishOpacity();closeModal();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
   addEventListener('pageshow',event=>{if(event.persisted){profilePanel.resume();savedPanel.resume();inputAssist.resume();if(mode==='document')void refreshDocumentAccess();sizeObserver?.observe(panel);clampPanel();}});
   addEventListener('hashchange',()=>{if(mode==='screen')cancel();else inputAssist.invalidate();snapshot=null;history=[];});
   document.addEventListener('visibilitychange',()=>{
@@ -741,10 +792,17 @@
     }else inputAssist.update();
   });
   observer=new MutationObserver(records=>{
-    if(!host.isConnected){if(typeof document!=='undefined'){finishDrag();sizeObserver?.disconnect();cancel();inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();style.remove();observer.disconnect();}return;}
+    if(typeof document==='undefined')return;
+    if(!host.isConnected){if(typeof document!=='undefined'){finishDrag();finishOpacity();closeModal();sizeObserver?.disconnect();cancel();inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();style.remove();observer.disconnect();}return;}
     const owned=node=>node===host||node===style||node.nodeType===1&&node.matches('[data-gyeote-host],[data-gyeote-style]');
     const siteClasses=value=>String(value||'').split(/\s+/).filter(name=>name&&!classes.includes(name)).sort().join(' ');
-    const relevant=records.filter(r=>!owned(r.target)&&!(r.type==='childList'&&[...r.addedNodes,...r.removedNodes].every(owned))&&!(r.type==='attributes'&&r.attributeName==='class'&&siteClasses(r.oldValue)===siteClasses(r.target.className)));
+    const relevant=records.filter(r=>{
+      // 모달의 스크롤 잠금만 DOM 변경 판정에서 제외한다. 사이트의 나머지 변경은 그대로 검사한다.
+      if(r.target===document.documentElement&&r.attributeName==='style'){
+        const index=modalStyleMutations.indexOf(r.oldValue);if(index!==-1){modalStyleMutations.splice(index,1);return false;}
+      }
+      return !owned(r.target)&&!(r.type==='childList'&&[...r.addedNodes,...r.removedNodes].every(owned))&&!(r.type==='attributes'&&r.attributeName==='class'&&siteClasses(r.oldValue)===siteClasses(r.target.className));
+    });
     if(ownMutation||!relevant.length)return;
     if(snapshot&&!GyeoteDOM.current(snapshot)||selected.some(s=>!s.node.isConnected||!rootStyles.get(s.node.getRootNode())?.isConnected||!GyeoteDOM.usable(s.node)||!GyeoteDOM.currentCandidate(snapshot,s.candidate))){cancel(mode==='screen'&&(busy||requestPending)?'화면 내용이 바뀌어 요청을 중지했습니다. 현재 화면에서 다시 질문해 주세요.':undefined);snapshot=null;history=[];}
     else schedule();

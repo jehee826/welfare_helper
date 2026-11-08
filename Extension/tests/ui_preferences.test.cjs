@@ -20,11 +20,11 @@ test('저장값이 없으면 기본값 revision0을 돌려주고 검증된 설�
 
 test('경계값은 허용하고 범위 밖·추가·누락 필드와 잘못된 위치 조합은 저장하지 않는다',async()=>{
   const f=worker();let revision=0;
-  for(const ok of [{width:320},{width:640},{height:360},{height:900},{backgroundOpacity:85},{dock:'free',left:0,top:0},{dock:'free',left:10000,top:10000}]){
+  for(const ok of [{width:320},{width:640},{height:360},{height:900},{backgroundOpacity:10},{backgroundOpacity:11},{backgroundOpacity:85},{backgroundOpacity:87},{backgroundOpacity:100},{dock:'free',left:0,top:0},{dock:'free',left:10000,top:10000}]){
     const result=await set(f,revision,{...base,...ok});assert.equal(result.ok,true,JSON.stringify(ok));revision=result.state.revision;
   }
   const before=sets(f).length;
-  for(const bad of [{width:319},{width:16385},{width:400.5},{height:359},{height:16385},{backgroundOpacity:80},{backgroundOpacity:87},{dock:'right',left:10,top:10},{dock:'free',left:null,top:null},{dock:'free',left:-1,top:0},{dock:'left'},{extra:1}]){
+  for(const bad of [{width:319},{width:16385},{width:400.5},{height:359},{height:16385},{backgroundOpacity:9},{backgroundOpacity:101},{backgroundOpacity:10.5},{dock:'right',left:10,top:10},{dock:'free',left:null,top:null},{dock:'free',left:-1,top:0},{dock:'left'},{extra:1}]){
     assert.equal((await set(f,revision,{...base,...bad})).error,'invalid_ui_preferences',JSON.stringify(bad));
   }
   const {top,...missing}=base;assert.equal((await set(f,revision,missing)).error,'invalid_ui_preferences');
@@ -105,13 +105,14 @@ test('스크롤바가 차지한 폭은 최대 크기와 자유 위치 계산에�
 test('헤더 슬라이더는 입력 중 즉시 반영하고 포인터 종료 때만 한 번 저장한다',async()=>{
   const f=panelFixture();try{
     await f.ready();const slider=f.root.querySelector('.head input[type=range]');assert.ok(slider);assert.equal(slider.getAttribute('aria-label'),'플로팅 UI 불투명도');
+    assert.equal(slider.min,'10');assert.equal(slider.max,'100');assert.equal(slider.step,'1');
     assert.equal(f.root.querySelectorAll('.ui-opacity').length,1);assert.equal(f.root.querySelector('.profile-slot .ui-opacity'),null);
     assert.equal(slider.nextElementSibling,f.root.querySelector('.mode-switch'));
     f.pointer('pointerdown',20,20,slider);
-    for(const value of ['95','90','85']){slider.value=value;slider.dispatchEvent(new f.w.Event('input',{bubbles:true}));}
-    assert.equal(size(f.panel)[2],'0.85');assert.equal(f.uiRequests().length,0);
+    for(const value of ['99','87','11','10']){slider.value=value;slider.dispatchEvent(new f.w.Event('input',{bubbles:true}));}
+    assert.equal(size(f.panel)[2],'0.1');assert.equal(f.uiRequests().length,0);
     f.pointer('pointerup',20,20,slider);slider.dispatchEvent(new f.w.Event('change'));await settle();
-    assert.equal(f.uiRequests().length,1);assert.equal(f.server.data[uiKey].backgroundOpacity,85);
+    assert.equal(f.uiRequests().length,1);assert.equal(f.server.data[uiKey].backgroundOpacity,10);
     slider.value='100';slider.dispatchEvent(new f.w.Event('input'));slider.dispatchEvent(new f.w.Event('change'));await settle();assert.equal(size(f.panel)[2],'1');
   }finally{f.close();}
 });
@@ -232,10 +233,10 @@ test('전체 창 불투명도는 말풍선·입력·버튼·별도 모달에 한
     const select=f.root.querySelector('.ui-opacity'),roots=[f.panel,f.root.querySelector('.profile-slot'),f.root.querySelector('.panel-tools'),f.root.querySelector('.open')];
     const effective=node=>{let alpha=1;for(let parent=node;parent;parent=parent.parentElement)alpha*=Number(parent.style.opacity||f.w.getComputedStyle(parent).opacity);return alpha;};
     const content=[...f.root.querySelectorAll('.head button,.compose-row input,.compose-row button,.conversation article,.conversation article small,.profile-usage-toggle,.status')].map(node=>({node,original:Number(f.w.getComputedStyle(node).opacity)}));assert.ok(content.length>=15);
-    for(const value of [85,100]){
+    for(const value of [10,11,85,100]){
       select.value=String(value);select.dispatchEvent(new f.w.Event('change'));await settle();
       for(const root of roots)assert.equal(effective(root),value/100,root.className+":"+root.getAttribute("style"));
-      for(const {node,original} of content){assert.equal(Number(f.w.getComputedStyle(node).opacity),original);assert.equal(effective(node),original*value/100);}
+      for(const {node,original} of content){assert.equal(Number(f.w.getComputedStyle(node).opacity),original);assert.equal(effective(node),original*(value/100));}
       for(const selector of ['.modal-layer','.badges'])assert.equal(effective(f.root.querySelector(selector)),1);
       assert.equal(f.w.getComputedStyle(f.root.host).opacity,'1');assert.equal(f.w.getComputedStyle(f.w.document.body).opacity,'1');assert.equal(f.server.data[uiKey].backgroundOpacity,value);
       f.root.querySelector('.profile-toggle').click();if(!f.root.querySelector('.profile-slot input'))await f.click('내 정보 수정');assert.equal(effective(f.root.querySelector('.profile-slot input')),value/100);assert.equal(f.w.document.body.inert,true);f.root.querySelector('.profile-dismiss').click();assert.equal(f.w.document.body.hasAttribute('inert'),false);

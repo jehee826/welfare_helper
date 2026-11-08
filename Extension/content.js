@@ -186,7 +186,7 @@
     button.addEventListener('click',()=>{modeSelect.value=value;modeSelect.dispatchEvent(new Event('change'));});modeSwitch.append(button);
   }
   profileButton.before(modeSwitch);
-  const opacitySlider=document.createElement('input');opacitySlider.type='range';opacitySlider.className='ui-opacity';opacitySlider.min='85';opacitySlider.max='100';opacitySlider.step='5';opacitySlider.value='100';opacitySlider.setAttribute('aria-label','플로팅 UI 불투명도');opacitySlider.title='플로팅 UI 불투명도';modeSwitch.before(opacitySlider);
+  const opacitySlider=document.createElement('input');opacitySlider.type='range';opacitySlider.className='ui-opacity';opacitySlider.min='10';opacitySlider.max='100';opacitySlider.step='1';opacitySlider.value='100';opacitySlider.setAttribute('aria-label','플로팅 UI 불투명도');opacitySlider.title='플로팅 UI 불투명도';modeSwitch.before(opacitySlider);
   const modeReason=document.createElement('p');modeReason.className='mode-reason';modeReason.textContent='서버 설정을 확인하지 못해 화면 안내를 사용할 수 없습니다.';modeReason.hidden=configurationReady;modeReason.id='gyeote-mode-reason';if(!configurationReady)modeSwitch.querySelector('[data-mode=screen]').setAttribute('aria-describedby',modeReason.id);$('.head').after(modeReason);
   const modeNotice=document.createElement('p');modeNotice.className='muted';modeLabel.after(modeNotice);
   const accessNotice=document.createElement('p');accessNotice.className='muted document-access';modeNotice.after(accessNotice);
@@ -354,9 +354,10 @@
     .conversation-warning,.unsaved-conversation{color:#6b4a00;background:#fff6e0;border-color:#b38e3a}.speak-answer[aria-pressed=true]{background:#e4eafd;color:#304aa2;border-color:#7f8ea8}
     .panel{right:clamp(4px,calc((100vw - var(--gyeote-width,400px))/2),12px);bottom:clamp(4px,calc((100vh - var(--gyeote-height,720px))/2),12px);max-width:calc(100% - 8px);max-height:calc(100% - 8px);background:transparent}
     .body{background:#fff}.consultation,.status{background:transparent}.head,.mode-reason{background:var(--gyeote-soft)}
-    .head{display:grid;grid-template-columns:44px minmax(36px,1fr) 44px 44px 44px 44px;gap:4px;padding:8px}.head>:not(.mode-switch):not(.ui-opacity){grid-row:1}.head .resize-handle{grid-column:1}.head strong{grid-column:2}.head .profile-toggle{grid-column:3}.head .menu-toggle{grid-column:4}.head .collapse{grid-column:5}.head .close{grid-column:6}
-    .head .resize-handle,.head .profile-toggle,.head .menu-toggle,.head .collapse,.head .close{width:44px;height:44px;min-height:44px;padding:0;border:1px solid #b9c8e0;border-radius:12px;background:#fff;box-shadow:0 1px 3px #22314d12}.head .profile-toggle{font-size:13px;letter-spacing:-.5px}.head .menu-toggle,.head .collapse,.head .close{font-size:22px}.head .resize-handle{font-size:20px}
+    .head{display:grid;grid-template-columns:44px minmax(36px,1fr) 60px 44px 44px 44px;gap:4px;padding:8px}.head>:not(.mode-switch):not(.ui-opacity){grid-row:1}.head .resize-handle{grid-column:1}.head strong{grid-column:2}.head .profile-toggle{grid-column:3}.head .menu-toggle{grid-column:4}.head .collapse{grid-column:5}.head .close{grid-column:6}
+    .head .resize-handle,.head .profile-toggle,.head .menu-toggle,.head .collapse,.head .close{width:44px;height:44px;min-height:44px;padding:0;border:1px solid #b9c8e0;border-radius:12px;background:#fff;box-shadow:0 1px 3px #22314d12}.head .profile-toggle{width:60px;font-size:13px;letter-spacing:-.5px}.head .menu-toggle,.head .collapse,.head .close{font-size:22px}.head .resize-handle{font-size:20px}
     .head .ui-opacity{grid-row:2;grid-column:1/4;width:100%;height:44px;margin:0;accent-color:#725bed;cursor:pointer;touch-action:pan-y}.head .mode-switch{grid-row:2;grid-column:4/7;justify-self:end}.head .mode-switch button{min-width:64px;padding:7px 12px;font-size:14px}
+    @container(max-width:360px){.head{gap:2px;padding:6px}}
     @container(min-width:700px){.head{display:flex}.head strong{flex:1}.head .ui-opacity{width:112px;flex:0 0 112px}.head .mode-switch{margin-right:6px}}
     @media(max-height:480px){.body{display:block;overflow:auto;overscroll-behavior:contain}.transcript{min-height:0;overflow:visible}.status{max-height:none}.consultation{padding:8px 12px}}
   `;

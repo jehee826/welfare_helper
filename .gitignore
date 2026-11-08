@@ -96,6 +96,7 @@ postgres_data/
 !/docs/plan/collaboration-plan-review.md
 !/docs/plan/merge_plan.md
 !/docs/plan/merge_decisions.md
+!/docs/plan/laptop_handoff.md
 
 # 과거 문서는 기본 로컬 보관, 기존 공유 문서의 이동본만 추적
 /docs/archive/*

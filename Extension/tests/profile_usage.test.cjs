@@ -9,6 +9,12 @@ const server=(data={[profileKey]:savedProfile},failure={})=>worker(data,failure,
 const get=f=>f.send({type:'gyeote:profile-usage-get'});
 const set=(f,expectedRevision,enabled,profileRevision=1)=>f.send({type:'gyeote:profile-usage-set',expectedRevision,enabled,profileRevision:enabled?profileRevision:null});
 const consent=revision=>({enabled:true,consent_revision:revision,profile_revision:1,profile:values});
+function readDeadlines(w){
+  const nativeSet=w.setTimeout.bind(w),nativeClear=w.clearTimeout.bind(w),pending=new Map();let next=-1;
+  w.setTimeout=(fn,ms,...args)=>{if(ms!==5000)return nativeSet(fn,ms,...args);const id=next--;pending.set(id,()=>fn(...args));return id;};
+  w.clearTimeout=id=>{if(!pending.delete(id))nativeClear(id);};
+  return ()=>{const callbacks=[...pending.values()];pending.clear();callbacks.forEach(fn=>fn());};
+}
 
 test('기본 OFF는 저장 프로필을 첨부하지 않고 ON은 별도 동의 revision과 허용 필드만 제공한다',async()=>{
   const f=server(),panel=ui(f);
@@ -139,7 +145,7 @@ test('질문 모드의 사용 선택은 프로필 미등록·설정 읽기 실�
     try{
       await panel.ready();if(panel.root.querySelector('.profile-toggle').getAttribute('aria-expanded')==='true')await panel.click('내 정보');
       const section=panel.root.querySelector('.profile-usage');assert.equal(section.hidden,false);assert.equal(section.querySelector('input').disabled,true);
-      assert.match(section.querySelector('.profile-usage-status').textContent,failed?/읽지 못|확인하지 못/:/내 정보.*저장/);
+      assert.match(section.querySelector('.profile-usage-status').textContent,failed?/읽지 못|확인하지 못/:/저장된 내 정보가 없습니다/);
       assert.equal(panel.ports.length,0);
     }finally{panel.close();}
   }
@@ -175,6 +181,51 @@ test('질문 모드의 사용 선택은 긴 대화·접기와 다른 탭 동의 
     assert.equal((await set(f,1,false)).ok,true);await settle();assert.equal(section.hidden,false);assert.equal(toggle.checked,false);assert.equal(section.querySelector('.profile-usage-value').textContent,'OFF');
     assert.equal(panel.ports.length,0);
   }finally{panel.close();}
+});
+
+test('로컬 정보 없음은 서버 지원 응답을 기다리지 않고 안내하며 동의를 덮지 않는다',async()=>{
+  let release;const pending=new Promise(resolve=>{release=resolve;}),data={[profileKey]:profile,[usageKey]:{schemaVersion:1,revision:1,enabled:true,profileRevision:1}};
+  const f=worker(data,{},undefined,async()=>{await pending;return new Response(JSON.stringify({profile_context_supported:true}));}),panel=ui(f);
+  try{
+    await panel.ready();const section=panel.root.querySelector('.profile-usage');
+    assert.match(section.querySelector('.profile-usage-status').textContent,/저장된 내 정보가 없습니다/);assert.doesNotMatch(section.textContent,/확인 중/);
+    assert.equal(section.querySelector('input').checked,false);assert.equal(section.querySelector('input').disabled,true);assert.equal(data[usageKey].enabled,true);
+  }finally{release();panel.close();}
+});
+
+test('유실된 정보 사용 응답은5초 실패·재확인으로 회복하고 지연 응답과 저장ON을 보존한다',async()=>{
+  const record={schemaVersion:1,revision:1,enabled:true,profileRevision:1},f=server({[profileKey]:savedProfile,[usageKey]:record});let expire,release,lost=true;
+  const panel=ui(f,1,w=>{expire=readDeadlines(w);const send=w.chrome.runtime.sendMessage;w.chrome.runtime.sendMessage=message=>message.type==='gyeote:profile-usage-get'&&lost?new Promise(resolve=>{release=resolve;}):send(message);});
+  try{
+    await panel.ready();const section=panel.root.querySelector('.profile-usage'),status=section.querySelector('.profile-usage-status');assert.match(status.textContent,/확인 중/);
+    await panel.question('정보 없이 보낼 합성 질문');assert.equal(Object.hasOwn(panel.ports.at(-1).packet.payload,'profile_context'),false);
+    expire();await settle();assert.doesNotMatch(status.textContent,/확인 중/);assert.match(status.textContent,/시간|응답/);
+    const error=status.textContent;release({ok:true,state:record,supported:true,valid:true});await settle();assert.equal(status.textContent,error);assert.deepEqual(f.data[usageKey],record);
+    await panel.click('다시 확인');assert.match(status.textContent,/확인 중/);assert.equal(section.querySelector('.profile-usage-retry').disabled,true);
+    release({ok:true,state:record,supported:true,valid:true});await settle();assert.equal(section.querySelector('.profile-usage-retry').hidden,true);assert.equal(section.querySelector('input').checked,true);assert.deepEqual(f.data[usageKey],record);
+  }finally{panel.close();}
+});
+
+test('로컬 정보 읽기 응답 유실은 없음으로 오인하지 않고 재조회 뒤 옛 응답을 버린다',async()=>{
+  const f=server();let expire,release,lost=true;
+  const panel=ui(f,1,w=>{expire=readDeadlines(w);const send=w.chrome.runtime.sendMessage;w.chrome.runtime.sendMessage=message=>message.type==='gyeote:profile-get'&&lost?new Promise(resolve=>{release=resolve;}):send(message);});
+  try{
+    await panel.ready();expire();await settle();const status=panel.root.querySelector('.profile-usage-status');
+    assert.doesNotMatch(status.textContent,/확인 중|저장된 내 정보가 없습니다/);assert.match(status.textContent,/내 정보.*확인하지 못/);
+    lost=false;await panel.click('최신 정보 다시 불러오기');release({ok:true,state:{...savedProfile,profile:{...values,age:10}}});await settle();
+    assert.match(panel.root.querySelector('.profile-panel').textContent,/72세/);assert.doesNotMatch(panel.root.querySelector('.profile-panel').textContent,/10세/);
+    await panel.click('설정 닫기');assert.equal(panel.root.querySelector('.profile-usage-toggle').disabled,false);assert.deepEqual(f.data[profileKey],savedProfile);
+  }finally{panel.close();}
+});
+
+test('지연 지원 확인 중 등록·삭제 통지가 오면 최신 로컬 없음 상태를 바로 표시한다',async()=>{
+  let release;const pending=new Promise(resolve=>{release=resolve;}),f=worker({[profileKey]:profile},{},undefined,async()=>{await pending;return new Response(JSON.stringify({profile_context_supported:true}));}),panel=ui(f);
+  try{
+    await panel.ready();const status=panel.root.querySelector('.profile-usage-status');assert.match(status.textContent,/저장된 내 정보가 없습니다/);
+    assert.equal((await f.send({type:'gyeote:profile-save',expectedRevision:1,profile:values})).ok,true);await settle();assert.doesNotMatch(status.textContent,/저장된 내 정보가 없습니다/);
+    assert.equal((await f.send({type:'gyeote:profile-clear',expectedRevision:2})).ok,true);await settle();assert.match(status.textContent,/저장된 내 정보가 없습니다/);
+    release();await settle();assert.match(status.textContent,/저장된 내 정보가 없습니다/);assert.equal(panel.ports.length,0);
+  }finally{release();panel.close();}
 });
 
 test('ON DTO는 동의·revision·허용 프로필 없이는 만들지 않으며 원래 profile 필드는 계속 무시한다',()=>{

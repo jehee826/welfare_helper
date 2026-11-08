@@ -328,54 +328,6 @@ def test_repeated_source_metadata_is_compacted_without_losing_required_chunks():
     assert fitted and included==documents and documents[0]['text']=='필수 원문 0'
 
 
-def test_identical_source_ranges_are_lossless_and_keep_all_reference_ids():
-    text = '지원 대상은 만 65세 이상입니다. 단, 소득과 재산 조건도 확인해야 합니다.'
-    first = {'id':'chunk:1', 'reference_id':'C1', 'document_id':'doc', 'version':'v1', 'name':'지원 안내',
-             'heading':'대상·예외', 'text':text, 'pages':[1], '_source_range':('parent',0,len(text))}
-    second = {**first, 'id':'chunk:2', 'reference_id':'C2', 'pages':[2]}
-    original = json.dumps([first,second], ensure_ascii=False)
-    context = {'search_intent':'대상 조건', 'needs_clarification':False}
-    prompt = answer_prompt('대상 조건',context,[first,second])
-    sources = json.loads(prompt.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
-    assert sources[0]['chunks'] == [{'id':'C1','heading':first['heading'],'text':text,
-                                     'pages':[1,2],'also_ids':['C2']}]
-    assert json.dumps([first,second],ensure_ascii=False) == original
-    without_ranges = [{k:v for k,v in d.items() if k!='_source_range'} for d in [first,second]]
-    assert len(prompt.encode()) < len(answer_prompt('대상 조건',context,without_ranges).encode())
-    assert '_source_range' not in prompt
-
-
-@pytest.mark.parametrize('change', [
-    {'text':'다라마바','_source_range':('parent',2,6)},
-    {'_source_range':('other-parent',0,4)}, {'version':'v2'}, {'document_id':'other-document'},
-    {'text':'서로 다른 내용'}, {'_source_range':('parent',10,14)}, {'heading':'다른 의미의 절'},
-])
-def test_different_sources_or_unverified_overlaps_are_not_merged(change):
-    first = {'id':'C1','document_id':'doc','version':'v1','heading':'조건','text':'가나다라',
-             'pages':[1],'_source_range':('parent',0,4)}
-    second = {**first,'id':'C2',**change}
-    context = {'search_intent':'조건','needs_clarification':False}
-    prompt = answer_prompt('조건',context,[first,second])
-    sources = json.loads(prompt.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
-    chunks = [c for source in sources for c in source['chunks']]
-    assert [(c['id'],c['text']) for c in chunks] == [('C1',first['text']),('C2',second['text'])]
-
-
-def test_partial_overlap_never_attributes_a_second_chunks_unique_fact_to_first_reference():
-    text = '지원 대상은 만 60세 이상입니다. 단, 저소득 자격도 확인합니다.'
-    start = text.index('단,')
-    unique = ' 지원 상한은 한쪽 무릎당 120만원입니다.'
-    first = {'id':'C1','document_id':'doc','version':'v1','heading':'조건·한도','text':text,
-             'pages':[1],'_source_range':('parent',0,len(text))}
-    second = {**first,'id':'C2','text':text[start:]+unique,
-              '_source_range':('parent',start,len(text)+len(unique))}
-    prompt = answer_prompt('조건과 한도',{'search_intent':'조건과 한도','needs_clarification':False},[first,second])
-    sources = json.loads(prompt.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
-    chunks = {c['id']:c['text'] for c in sources[0]['chunks']}
-    assert chunks['C1'] == text and '120만원' not in chunks['C1']
-    assert chunks['C2'] == text[start:]+unique and '120만원' in chunks['C2']
-
-
 @pytest.mark.parametrize(('query','requested_heading'), [
     ('어떤 혜택과 지원 한도가 있나요?','급여서비스 내용'),
     ('온라인 접수에 필요한 서류와 절차는?','신청방법 내용'),
@@ -459,5 +411,4 @@ def test_short_references_reduce_prompt_cost_and_preserve_original_response_ids(
     assert result['evidence'][0]['quote']==''
     assert trace['source_references']=={'C1':original.chunk_id}
     prompt=calls['prompts'][0][1]
-    sources=json.loads(prompt.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
-    assert original.chunk_id not in prompt and sources[0]['chunks'][0]['id']=='C1'
+    assert original.chunk_id not in prompt and '"id": "C1"' in prompt

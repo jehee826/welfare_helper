@@ -20,19 +20,6 @@ def respond(monkeypatch, payload):
     )
 
 
-@pytest.mark.parametrize('reason', ['stop','length'])
-def test_native_generation_durations_survive_success_or_length_rejection(client, monkeypatch, reason):
-    metadata = {'done_reason':reason, 'prompt_eval_count':3000, 'eval_count':1024,
-                'total_duration':1000,'load_duration':100,'prompt_eval_duration':300,'eval_duration':600}
-    monkeypatch.setattr(ChatOllama, 'invoke', lambda *args, **kwargs: AIMessage(
-        content='{"text":"합성 답변"}', response_metadata=metadata))
-    if reason == 'length':
-        with pytest.raises(OllamaError):client.chat('규칙','질문')
-    else:
-        assert client.chat('규칙','질문') == {'text':'합성 답변'}
-    assert client.last_chat_diagnostics == metadata
-
-
 @pytest.mark.parametrize("vectors", [
     [], [[1.0, 0.0]], [[0.0] * 4], [[float("nan"), 0, 0, 0]],
     [[float("inf"), 0, 0, 0]], [["invalid", 0, 0, 0]], [[True, 0, 0, 0]],

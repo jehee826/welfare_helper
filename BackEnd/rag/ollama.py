@@ -296,8 +296,7 @@ class OllamaClient:
                 message = chain.invoke({"system": system, "user": user})
             self.remaining_timeout()
             self.last_chat_diagnostics = {key: message.response_metadata[key]
-                                          for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated",
-                                                      "total_duration", "load_duration", "prompt_eval_duration", "eval_duration")
+                                          for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated")
                                           if key in message.response_metadata}
             if message.response_metadata.get("done_reason") == "length":
                 raise ContextBudgetError("모델 출력이 잘렸습니다.")

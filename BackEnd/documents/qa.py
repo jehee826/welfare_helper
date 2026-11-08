@@ -9,7 +9,7 @@ from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.contacts import (fallback_contacts, contact_candidates, ContactSelectionAnswer,
                                        CONTACT_SELECTION_SYSTEM)
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
-from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage, record_generation_metrics
+from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM, EMPTY_EVIDENCE_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
@@ -174,7 +174,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             trace['evidence_policy'] = 'related_parents_and_conditions_within_document_version'
             documents = [{"id": c.chunk_id, "name": c.document_name, "pages": list(c.page_refs),
                           "heading": c.heading_context, "text": c.text, 'document_id':c.document_id,
-                          '_source_range': (c.parent_id, c.start, c.end),
                           'version':c.version, 'service_id':c.service_id, 'source_url':c.source_url,
                           'source_updated_at':c.source_updated_at, 'basis_year':c.basis_year,
                           **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
@@ -221,7 +220,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                  'source_updated_at':c.source_updated_at, 'basis_year':c.basis_year,
                  **snapshot.document_metadata.get(c.document_id, {})} for c in selected]
     generation_started = time.monotonic()
-    generation_invoked = False
     try:
         checkpoint()
         schema = (ContactSelectionAnswer if select_contacts else WelfareAnswer).model_json_schema()
@@ -230,7 +228,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         schema['required'] = [*schema['required'], 'source_ids']
         if empty_evidence:
             schema['properties']['status']['enum'] = ['out_of_scope', 'no_evidence']
-        generation_invoked = True
         raw_answer = llm.chat(generation_system, prompt, schema=schema)
         checkpoint()
         if not isinstance(raw_answer, dict) or not raw_answer:
@@ -239,9 +236,6 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         raise
     except Exception:
         raise DocumentError("document_generation_failed") from None
-    finally:
-        if generation_invoked:
-            record_generation_metrics(getattr(llm, 'last_chat_diagnostics', None))
     trace["timings_ms"]["generation"] = round((time.monotonic() - generation_started) * 1000, 2)
     trace["generation_metadata"] = dict(llm.last_chat_diagnostics)
     qa_stage("validation")

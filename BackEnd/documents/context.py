@@ -183,19 +183,19 @@ def prepare_context(llm, query, profile, history, context, capacity, output, *, 
     search_query = query
     if sources or dialogue or documents:
         payload = {"current_question": query, "sources": sources, "dialogue": dialogue, "documents": list(documents)}
-        prompt = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+        prompt = json.dumps(payload, ensure_ascii=False)
         while len(dialogue) > 2 and llm.input_cost(PREPARE_SYSTEM, prompt) + output > capacity:
             del dialogue[:2]
             trace["context_omitted"] = True
-            prompt = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+            prompt = json.dumps(payload, ensure_ascii=False)
         while sources and llm.input_cost(PREPARE_SYSTEM, prompt) + output > capacity:
             sources.pop(0)
             trace["context_omitted"] = True
-            prompt = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+            prompt = json.dumps(payload, ensure_ascii=False)
         while dialogue and llm.input_cost(PREPARE_SYSTEM, prompt) + output > capacity:
             dialogue.pop(0)
             trace["context_omitted"] = True
-            prompt = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+            prompt = json.dumps(payload, ensure_ascii=False)
         trace["preparation_history_messages"] = len({m["message_id"] for m in sources})
         trace["preparation_dialogue_messages"] = len(dialogue)
         if llm.input_cost(PREPARE_SYSTEM, prompt) + output > capacity:
@@ -272,32 +272,18 @@ def answer_prompt(query, context, documents, saved_profile=None):
             "income": INCOME_LABELS.get(saved_profile.get("income"), "소득 구간 모름"),
             "household": HOUSEHOLD_LABELS.get(saved_profile.get("household"), "모름")}
     # 같은 문서의 메타데이터 반복 때문에 짧은 원문도 예산을 넘지 않도록 한 번만 전달한다.
-    sources, groups, previous = [], {}, {}
+    sources, groups = [], {}
     for document in documents:
         key = (document.get('document_id') or document['id'], document.get('version') or document['id'])
         if key not in groups:
-            group = {k:v for k,v in document.items() if k not in {'id','reference_id','heading','text','pages','_source_range'}}
+            group = {k:v for k,v in document.items() if k not in {'id','reference_id','heading','text','pages'}}
             group['chunks'] = []
             groups[key] = group
             sources.append(group)
-        chunk = {'id':document.get('reference_id',document['id']),
-                 **{k:document[k] for k in ('heading','text','pages')}}
-        span = document.get('_source_range')
-        prior = previous.get(key)
-        if span and span[0] and span[2] - span[1] == len(chunk['text']):
-            if prior and prior[0][0] == span[0] and prior[1]['heading'] == chunk['heading']:
-                before, merged = prior
-                # 위치와 원문 전체가 같은 중복만 제거한다. 부분 겹침의 고유 근거는 합치지 않는다.
-                if before == span and merged['text'] == chunk['text']:
-                    merged['pages'] = sorted(set(merged['pages']) | set(chunk['pages']))
-                    merged.setdefault('also_ids', []).append(chunk['id'])
-                    continue
-            previous[key] = (span, chunk)
-        else:
-            previous.pop(key, None)
-        groups[key]['chunks'].append(chunk)
-    return ("비근거 상담 맥락(JSON):\n" + json.dumps(intent, ensure_ascii=False, separators=(',', ':'))
-            + "\n\n문서 근거(JSON):\n" + json.dumps(sources, ensure_ascii=False, separators=(',', ':')) + "\n\n질문: " + query)
+        groups[key]['chunks'].append({'id':document.get('reference_id',document['id']),
+                                     **{k:document[k] for k in ('heading','text','pages')}})
+    return ("비근거 상담 맥락(JSON):\n" + json.dumps(intent, ensure_ascii=False)
+            + "\n\n문서 근거(JSON):\n" + json.dumps(sources, ensure_ascii=False) + "\n\n질문: " + query)
 
 
 def fit_answer(llm, query, context, documents, capacity, output, *, system=ANSWER_SYSTEM, saved_profile=None):

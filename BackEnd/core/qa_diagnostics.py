@@ -89,20 +89,6 @@ def record_rerank_input_budget(token_count: int, token_limit: int):
               completion={"query_tokens": token_count, "query_limit": token_limit})
 
 
-def record_generation_metrics(metadata):
-    state = _current.get()
-    if state is None or not isinstance(metadata, dict):
-        return
-    safe = {key: metadata[key] for key in ('prompt_eval_count', 'eval_count', 'total_duration',
-            'load_duration', 'prompt_eval_duration', 'eval_duration')
-            if type(metadata.get(key)) is int and metadata[key] >= 0}
-    reason = metadata.get('done_reason')
-    if type(reason) is str and reason in {'stop', 'length'}:
-        safe['done_reason'] = reason
-    if safe:
-        _emit(state, 'generation_metrics', 'ok', stage='generation', completion=safe)
-
-
 def diagnose_qa(function):
     @wraps(function)
     def wrapped(*args, **kwargs):

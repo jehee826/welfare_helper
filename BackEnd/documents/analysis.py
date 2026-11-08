@@ -79,6 +79,7 @@ def attach_markdown_ranges(blocks, markdown, blockers):
         for match in re.finditer(pattern, markdown, re.DOTALL):
             raw = match.group()
             decoded = raw[1:] if len(raw) == 2 and raw.startswith("\\") else unescape(raw)
+            decoded = unicodedata.normalize("NFC", decoded)
             for offset, character in enumerate(decoded):
                 if not character.isspace() and character not in "*_`|":
                     projected.append(character)

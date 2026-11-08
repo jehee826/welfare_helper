@@ -295,6 +295,33 @@ def test_repeated_escaped_blocks_keep_order_and_missing_backslash_stays_blocked(
     assert blockers == ['markdown_block_range_missing'] and 'char_start' not in missing
 
 
+@pytest.mark.parametrize(('text','markdown'), [
+    ('지원대상: 임시거소(臨時居所) 제공', '- 지원대상: 임시거소(臨時居所) 제공'),
+    ('지원대상: 金씨 신청', '- 지원대상: 金씨 신청'),
+])
+def test_canonical_hanja_keeps_original_markdown_range(text,markdown):
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    block={'id':'text','label':'text','text':text};blockers=[]
+    attach_markdown_ranges([block],markdown,blockers)
+    assert blockers==[]
+    assert markdown[block['char_start']:block['char_end']]==block['markdown_text']==markdown
+
+
+def test_repeated_canonical_hanja_keeps_order_and_compatibility_digit_stays_blocked():
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    first='- 임시거소(臨時居所) 제공';second='- 임시거소(臨時居所) 제공'
+    markdown=first+'\n\n'+second
+    blocks=[{'id':str(i),'label':'text','text':'임시거소(臨時居所) 제공'} for i in range(2)]
+    blockers=[];attach_markdown_ranges(blocks,markdown,blockers)
+    assert blockers==[] and blocks[0]['char_end']<=blocks[1]['char_start']
+    assert [markdown[b['char_start']:b['char_end']] for b in blocks]==[first,second]
+    missing={'id':'missing','label':'text','text':'지원대상: 1인'};blockers=[]
+    attach_markdown_ranges([missing],'- 지원대상: １인',blockers)
+    assert blockers==['markdown_block_range_missing'] and 'char_start' not in missing
+
+
 def test_table_escaped_pipe_backslash_and_underscore_keep_exact_source_range():
     from BackEnd.documents.analysis import attach_markdown_ranges
 

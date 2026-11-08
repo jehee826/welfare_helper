@@ -45,6 +45,9 @@ def normalize(value: str) -> str:
 def attach_markdown_ranges(blocks, markdown, blockers):
     """가공된 표 설명을 검색하지 않고 실제 Markdown과 원본 셀을 대조한다."""
     from bisect import bisect_left
+    from string import punctuation
+
+    escaped_punctuation = r"\\[" + re.escape(punctuation) + "]"
 
     # Docling이 내보낸 파이프 표 전체를 경계로 잡아 헤더·단위·구분선을 유지한다.
     table_ranges, start, lines, cursor = [], None, [], 0
@@ -61,27 +64,34 @@ def attach_markdown_ranges(blocks, markdown, blockers):
                 content = "".join(value for value in lines if not (
                     re.fullmatch(r"[ \t|:-]+", value.strip()) and "-" in value
                 ))
-                content = unescape(re.sub(r"(?<!\\)\|", "", content)).replace(r"\|", "|")
-                table_ranges.append((start, end, "".join(c for c in content if not c.isspace())))
+                original = unescape(re.sub(r"(?<!\\)\|", "", content)).replace(r"\|", "|")
+                decoded = unescape(re.sub(escaped_punctuation + r"|\|",
+                                         lambda match: match.group()[1:] if match.group().startswith("\\") else "", content))
+                signatures = {"".join(c for c in value if not c.isspace()) for value in (original, decoded)}
+                table_ranges.append((start, end, signatures))
             start, lines = None, []
         cursor += len(line)
-    projected, positions, ends = [], [], []
-    # 비교할 문자만 HTML entity를 복원하고 저장된 Markdown의 원래 범위를 유지한다.
-    for match in re.finditer(r"&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]+);|.", markdown, re.DOTALL):
-        decoded = unescape(match.group())
-        for offset, character in enumerate(decoded):
-            if not character.isspace() and character not in "*_`|":
-                projected.append(character)
-                positions.append(match.start() if decoded != match.group() else match.start() + offset)
-                ends.append(match.end() if decoded != match.group() else match.start() + offset + 1)
-    projected = "".join(projected)
+    projections = []
+    entities = r"&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[A-Za-z][A-Za-z0-9]+);|."
+    # 기존 대조와 escape 복원 모두 원본 위치를 보존해 반복 문구도 앞에서부터 찾는다.
+    for pattern in (entities, escaped_punctuation + "|" + entities):
+        projected, positions, ends = [], [], []
+        for match in re.finditer(pattern, markdown, re.DOTALL):
+            raw = match.group()
+            decoded = raw[1:] if len(raw) == 2 and raw.startswith("\\") else unescape(raw)
+            for offset, character in enumerate(decoded):
+                if not character.isspace() and character not in "*_`|":
+                    projected.append(character)
+                    positions.append(match.start() if decoded != raw else match.start() + offset)
+                    ends.append(match.end() if decoded != raw else match.start() + offset + 1)
+        projections.append(("".join(projected), positions, ends))
     cursor = 0
     for block in blocks:
         if block["label"] == "table":
             cells = (block.get("table") or {}).get("table_cells", [])
             cells = sorted(cells, key=lambda c:(c["start_row_offset_idx"], c["start_col_offset_idx"]))
             signature = "".join(c for cell in cells for c in cell.get("text", "") if not c.isspace())
-            matches = [(a,b) for a,b, value in table_ranges if a >= cursor and value == signature]
+            matches = [(a,b) for a,b, values in table_ranges if a >= cursor and signature in values]
             if not signature or not matches:
                 blockers.append("markdown_table_range_missing")
                 continue
@@ -92,15 +102,19 @@ def attach_markdown_ranges(blocks, markdown, blockers):
                 if block["text"].strip():
                     blockers.append("markdown_block_range_missing")
                 continue
-            position = projected.find(needle, bisect_left(positions, cursor))
-            if position < 0:
+            matches = []
+            for projected, positions, ends in projections:
+                position = projected.find(needle, bisect_left(positions, cursor))
+                if position >= 0:
+                    matches.append((positions[position], ends[position + len(needle) - 1]))
+            if not matches:
                 blockers.append("markdown_block_range_missing")
                 continue
-            start = positions[position]
-            end = ends[position + len(needle) - 1]
+            start, end = min(matches, key=lambda pair: pair[0])
             line_start = markdown.rfind("\n", 0, start) + 1
             line_end = markdown.find("\n", end)
-            if not markdown[line_start:start].strip(" #*>|_`-\t") and line_start >= cursor:
+            prefix = re.sub(escaped_punctuation, lambda match: match.group()[1:], markdown[line_start:start])
+            if not prefix.strip(" #*>|_`-\t") and line_start >= cursor:
                 start = line_start
             tail = markdown[end:line_end if line_end >= 0 else len(markdown)]
             if not any(c.isalnum() for c in tail):

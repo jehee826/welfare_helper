@@ -257,6 +257,57 @@ def test_unknown_entity_partial_match_keeps_only_the_matching_characters():
     assert markdown[block['char_start']:block['char_end']] == block['markdown_text'] == 'know'
 
 
+@pytest.mark.parametrize(('text', 'markdown'), [
+    ('준비서류: 구인신청서_일용직용, 구인신청서_상용직용.',
+     r'- 준비서류: 구인신청서\_일용직용, 구인신청서\_상용직용.'),
+    (r'경로 C:\서류\신청서_1 (확인)!', r'- 경로 C:\\서류\\신청서\_1 \(확인\)\!'),
+    ('_신청_', r'\_신청\_'),
+    (r'기호 \q는 유지', r'기호 \q는 유지'),
+    (r'코드 C:\\files\_1', '```\n' + r'코드 C:\\files\_1' + '\n```'),
+])
+def test_markdown_escapes_keep_literal_characters_and_original_offsets(text, markdown):
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    block = {'id':'text','label':'text','text':text}
+    blockers = []
+    attach_markdown_ranges([block], markdown, blockers)
+    assert blockers == []
+    assert markdown[block['char_start']:block['char_end']] == block['markdown_text']
+    assert block['markdown_text'] == (text if markdown.startswith('```') else markdown)
+
+
+@pytest.mark.parametrize('second', [r'- 첨부서류\_1 &amp; 안내', '- 첨부서류_1 &amp; 안내'])
+def test_repeated_escaped_blocks_keep_order_and_missing_backslash_stays_blocked(second):
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    first = r'- 첨부서류\_1 &amp; 안내'
+    markdown = first + '\n\n' + second + '\n'
+    blocks = [{'id':str(i),'label':'text','text':'첨부서류_1 & 안내'} for i in range(2)]
+    blockers = []
+    attach_markdown_ranges(blocks, markdown, blockers)
+    assert blockers == []
+    assert blocks[0]['char_end'] <= blocks[1]['char_start']
+    assert [markdown[b['char_start']:b['char_end']] for b in blocks] == [first, second]
+    assert [b['markdown_text'] for b in blocks] == [first, second]
+    missing = {'id':'missing','label':'text','text':r'경로 C:\files'}
+    blockers = []
+    attach_markdown_ranges([missing], '경로 C:files', blockers)
+    assert blockers == ['markdown_block_range_missing'] and 'char_start' not in missing
+
+
+def test_table_escaped_pipe_backslash_and_underscore_keep_exact_source_range():
+    from BackEnd.documents.analysis import attach_markdown_ranges
+
+    markdown = '| 항목 | 경로 |\n| --- | --- |\n' + r'| A\|B | C:\\files\_1 &amp; 안내 |' + '\n'
+    cells = [{'text':text,'start_row_offset_idx':r,'start_col_offset_idx':c}
+             for r,row in enumerate((('항목','경로'),('A|B',r'C:\files_1 & 안내'))) for c,text in enumerate(row)]
+    block = {'id':'table','label':'table','text':'표 내용','table':{'table_cells':cells}}
+    blockers = []
+    attach_markdown_ranges([block], markdown, blockers)
+    assert blockers == []
+    assert markdown[block['char_start']:block['char_end']] == block['markdown_text'] == markdown.rstrip('\n')
+
+
 @pytest.mark.parametrize(('value','matches'), [('-1.5 kg', True), ('+1.5 kg', False), ('15 kg', False)])
 def test_table_numeric_sign_decimal_and_unit_are_preserved(value, matches):
     from BackEnd.documents.analysis import attach_markdown_ranges

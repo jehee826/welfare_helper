@@ -26,6 +26,56 @@ PRIVATE_DOC = "00000000-0000-0000-0000-000000000002"
 DIGEST = "digest-9913991234567"
 
 
+@pytest.mark.parametrize('failure', [False, True])
+def test_native_generation_scalars_are_recorded_without_private_data_even_on_failure(monkeypatch, failure):
+    from BackEnd.core import qa_diagnostics as diagnostics
+    logged = Mock()
+    monkeypatch.setattr(diagnostics.logger, 'info', logged)
+    @diagnostics.diagnose_qa
+    def run():
+        try:
+            if failure:
+                raise DocumentError('document_generation_failed')
+            return {}, {'reason':'answer'}
+        finally:
+            diagnostics.record_generation_metrics({'done_reason':'length' if failure else 'stop',
+                'prompt_eval_count':3000,'eval_count':1024,'load_duration':100,
+                'total_duration':False,'eval_duration':-1,'prompt_eval_duration':'private',
+                'query':'private-question','profile':'private-profile','text':'private-answer'})
+    if failure:
+        with pytest.raises(DocumentError):run()
+    else:
+        run()
+    records = [json.loads(call.args[1]) for call in logged.call_args_list]
+    metrics = next(row for row in records if row['event']=='generation_metrics')
+    assert {k:metrics[k] for k in ('prompt_eval_count','eval_count','load_duration','done_reason')} == {
+        'prompt_eval_count':3000,'eval_count':1024,'load_duration':100,'done_reason':'length' if failure else 'stop'}
+    assert not any(key in metrics for key in ('query','profile','text','total_duration','eval_duration','prompt_eval_duration'))
+    assert 'private-' not in json.dumps(records)
+    assert records[-1]['code'] == ('document_generation_failed' if failure else 'answer')
+
+
+def test_cancelled_before_generation_does_not_relabel_preparation_metrics(monkeypatch):
+    from BackEnd.core.execution import ExecutionCancelledError
+    from BackEnd.documents import qa
+    from BackEnd.tests.test_document_qa import components as simple_components
+    repo, service, _ = simple_components()
+    service.llm.last_chat_diagnostics = {'prompt_eval_count':7777,'eval_count':88,'done_reason':'stop'}
+    stage = [None]
+    def enter(name):stage[0] = name
+    def check():
+        if stage[0] == 'generation':raise ExecutionCancelledError()
+    recorder = Mock()
+    service.llm.chat = Mock()
+    monkeypatch.setattr(qa, 'qa_stage', enter)
+    monkeypatch.setattr(qa, 'checkpoint', check)
+    monkeypatch.setattr(qa, 'record_generation_metrics', recorder)
+    with pytest.raises(ExecutionCancelledError):
+        qa.answer_document(repo,service,'지원 조건')
+    service.llm.chat.assert_not_called()
+    recorder.assert_not_called()
+
+
 def components(settings, *, private=False):
     public = EvidenceChunk("public:9913991234567", "PUBLIC", "content", "2026년 문서 안내입니다.", "",
                            document_id=DOC, document_name="공개 문서", embed_digest=DIGEST,

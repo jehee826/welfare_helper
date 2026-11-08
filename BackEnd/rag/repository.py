@@ -1,9 +1,11 @@
 """제도 메타데이터와 현재 문서 벡터를 하나의 읽기 스냅샷으로 제공한다."""
 
 from contextlib import closing
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field, replace
 import json
 import math
+from time import monotonic
 from typing import Callable, Sequence
 
 from BackEnd.ingest.csv_loader import ServiceRecord
@@ -13,6 +15,9 @@ from BackEnd.rag.embeddings import validate_embeddings
 from BackEnd.rag.evidence import EvidenceChunk, EvidenceConsistencyError, fingerprint
 
 MAX_CATALOG_ROWS = 50000
+MAX_CACHED_CHUNKS = 2000
+MAX_CACHED_CHARACTERS = 2_000_000
+SNAPSHOT_CACHE_SECONDS = 120
 
 
 @dataclass(frozen=True)
@@ -42,6 +47,26 @@ class PgServiceRepository:
         self.documents_enabled = documents_enabled
         self.document_scope = document_scope
         self.include_local_documents = include_local_documents
+        self._document_snapshot = None
+
+    def _public_revision(self, cur):
+        # xmin/ctid는 원문 버전이 아닌 변경 감지용이다. 활성 벡터의 직접 수정도 무효화한다.
+        public_program = "NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'"
+        public_document = public_program + ' AND NOT d.test_only'
+        cur.execute(
+            'SELECT '
+            '(SELECT array_agg(ROW(p.program_id,p.xmin,p.ctid,dp.xmin,dp.ctid)::text ORDER BY p.program_id) '
+            'FROM public.welfare_programs p JOIN public.departments dp USING(department_id) WHERE ' + public_program + '),'
+            '(SELECT array_agg(ROW(d.document_id,d.xmin,d.ctid,j.xmin,j.ctid)::text ORDER BY d.document_id) '
+            'FROM public.rag_documents d JOIN public.welfare_programs p USING(program_id) '
+            'LEFT JOIN public.rag_document_jobs j ON j.job_id=d.active_job_id AND j.document_id=d.document_id '
+            'WHERE ' + public_document + '),'
+            '(SELECT array_agg(ROW(v.xmin,v.ctid)::text ORDER BY v.document_id,v.job_id,v.chunk_index,v.ctid) '
+            'FROM public.welfare_document_vectors v JOIN public.rag_documents d '
+            'ON d.document_id=v.document_id AND d.active_job_id=v.job_id '
+            'JOIN public.welfare_programs p ON p.program_id=d.program_id '
+            'WHERE ' + public_document + ' AND v.embedding_model=%s)', (self.embed_model,))
+        return tuple(tuple(values or ()) for values in cur.fetchone())
 
     @staticmethod
     def _unsupported_ingestion():
@@ -71,6 +96,17 @@ class PgServiceRepository:
             conn.set_session(isolation_level='REPEATABLE READ', readonly=True)
             with conn, conn.cursor() as cur:
                 cur = RequestCursor(cur)
+                revision = self._public_revision(cur) if (self.documents_enabled and not self.document_scope
+                                                         and not self.include_local_documents) else None
+                cache_key = (self.embed_model, self.embed_dim, revision)
+                cached = self._document_snapshot
+                if (revision is not None and cached is not None and cached[0] == cache_key
+                        and monotonic() - cached[1] < SNAPSHOT_CACHE_SECONDS):
+                    checkpoint()
+                    snapshot = deepcopy(cached[2])
+                    checkpoint()
+                    return snapshot
+                self._document_snapshot = None
                 condition = 'EXISTS(SELECT 1 FROM public.rag_documents d WHERE d.program_id=p.program_id AND d.document_id=%s)' \
                     if self.document_scope else 'TRUE' if self.include_local_documents else "NOT p.test_only AND left(coalesce(p.external_service_id,''),5)<>'TEST_'"
                 params = (self.document_scope,MAX_CATALOG_ROWS+1) if self.document_scope else (MAX_CATALOG_ROWS+1,)
@@ -96,12 +132,21 @@ class PgServiceRepository:
             versions.setdefault(child.service_id,set()).add(child.version)
         service_stamps={r.service_id:fingerprint(json.dumps(asdict(r),ensure_ascii=False,sort_keys=True)) for r in services}
         # 현재 문서·작업 ID가 청크 버전에 포함된다. 교체·삭제는 BM25와 요청 간 캐시를 무효화한다.
-        stamp=fingerprint(json.dumps([asdict(r) for r in services],ensure_ascii=False,sort_keys=True)
+        serialized_services = json.dumps([asdict(r) for r in services],ensure_ascii=False,sort_keys=True)
+        stamp=fingerprint(serialized_services
                           + '\n'.join(str(r[8]) for r in rows)
                           + '\n'.join(c.storage() for c in chunks)
                           + json.dumps(unavailable,sort_keys=True)
                           + json.dumps(identities))
-        return CatalogSnapshot(services,chunks,stamp,versions,unavailable,service_stamps,vectors,document_metadata)
+        snapshot = CatalogSnapshot(services,chunks,stamp,versions,unavailable,service_stamps,vectors,document_metadata)
+        checkpoint()
+        # 공개 자료만 제한적으로 보관한다. 매 조회의 새 읽기 트랜잭션으로 권한·활성 버전을 확인한다.
+        if (revision is not None and max(len(services),len(chunks)) <= MAX_CACHED_CHUNKS
+                and len(serialized_services) + sum(len(c.text) + len(c.parent_text) for c in chunks) <= MAX_CACHED_CHARACTERS):
+            cached_snapshot = deepcopy(snapshot)
+            checkpoint()
+            self._document_snapshot = (cache_key, monotonic(), cached_snapshot)
+        return snapshot
 
     def chunks_for_services(self, ids):
         return [c for c in self.snapshot().chunks if c.service_id in ids]

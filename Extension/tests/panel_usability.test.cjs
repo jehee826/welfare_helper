@@ -11,6 +11,18 @@ function dragFixture(setup){
   return {...f,panel,head,captured};
 }
 
+test('pagehide 뒤 초기 프로필 읽기가 끝나도 모달을 다시 열지 않고 pageshow에서 정상 조회한다',async()=>{
+  let release,held=false;const pending=new Promise(resolve=>{release=resolve;});
+  const server=worker(),f=ui(server,1,w=>{const send=w.chrome.runtime.sendMessage;w.chrome.runtime.sendMessage=message=>{if(message.type==='gyeote:profile-get'&&!held){held=true;return pending.then(()=>send(message));}return send(message);};});
+  try{
+    await f.ready();assert.equal(held,true);const layer=f.root.querySelector('.modal-layer');
+    f.w.dispatchEvent(new f.w.Event('pagehide'));release();await f.ready();
+    assert.equal(layer.hidden,true);assert.equal(f.w.document.body.hasAttribute('inert'),false);assert.notEqual(f.w.document.documentElement.style.overflow,'hidden');
+    const resume=new f.w.Event('pageshow');Object.defineProperty(resume,'persisted',{value:true});f.w.dispatchEvent(resume);await f.ready();
+    assert.equal(layer.hidden,true);assert.match(f.root.querySelector('.profile-panel').textContent,/저장한 조건이 없습니다/);
+  }finally{release();f.close();}
+});
+
 test('내 정보는 채팅을 가리는 설정 화면이며 닫아도 요청·초안·스크롤·미저장 입력을 보존한다',async()=>{
   const server=worker(),f=ui(server);try{
     await f.ready();await f.question('진행 중인 합성 질문');const port=f.ports.at(-1);

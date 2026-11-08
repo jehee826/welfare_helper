@@ -202,7 +202,7 @@
   const profileHeading=document.createElement('div');profileHeading.className='profile-heading';
   profileHeading.innerHTML='<strong id="gyeote-profile-title" tabindex="-1">내 정보 설정</strong><button type="button" class="profile-dismiss" aria-label="설정 닫기" title="설정 닫기">×</button>';
   profileSlot.append(profileHeading);
-  let profilePanel,profileOpen=false,profileOverlayVisible=false,activeModal=null,modalReturnFocus=null,modalScroll=null,pageInert=null;
+  let profilePanel,profileOpen=false,profileOverlayVisible=false,activeModal=null,modalReturnFocus=null,modalScroll=null,pageInert=null,initialProfileActive=true;
   const modalStyleMutations=[];
   function pageOverflow(value,priority='',property='overflow'){
     const root=document.documentElement,previous=root.getAttribute('style');root.style.setProperty(property,value,priority);
@@ -361,7 +361,7 @@
     @container(min-width:700px){.head{display:flex}.head strong{flex:1}.head .ui-opacity{width:112px;flex:0 0 112px}.head .mode-switch{margin-right:6px}}
     @media(max-height:480px){.body{display:block;overflow:auto;overscroll-behavior:contain}.transcript{min-height:0;overflow:visible}.status{max-height:none}.consultation{padding:8px 12px}}
   `;
-  profilePanel.ready.then(()=>{if(!profilePanel.state){profileOpen=true;updateProfileView();}});
+  profilePanel.ready.then(()=>{if(initialProfileActive&&!profilePanel.state){profileOpen=true;updateProfileView();}});
   $('.onboarding-edit').addEventListener('click',()=>{if(!profileOpen)profileButton.click();});
   $('.onboarding-later').addEventListener('click',()=>void profilePanel.defer());
   const retentionNotice=document.createElement('p');retentionNotice.className='retention-notice muted';retentionNotice.textContent='대화내역은 30개까지 저장됩니다';transcript.prepend(retentionNotice);
@@ -784,7 +784,7 @@
   const sizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(()=>{clampPanel();schedule();}):null;
   sizeObserver?.observe(panel);
   addEventListener('scroll',schedule,{passive:true,capture:true});addEventListener('resize',()=>{finishDrag();clampPanel();schedule();});
-  addEventListener('pagehide',()=>{stopSpeech();accessVersion++;finishDrag();finishOpacity();closeModal();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
+  addEventListener('pagehide',()=>{initialProfileActive=false;stopSpeech();accessVersion++;finishDrag();finishOpacity();closeModal();sizeObserver?.disconnect();cancel();snapshot=null;inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();});
   addEventListener('pageshow',event=>{if(event.persisted){profilePanel.resume();savedPanel.resume();inputAssist.resume();if(mode==='document')void refreshDocumentAccess();sizeObserver?.observe(panel);clampPanel();}});
   addEventListener('hashchange',()=>{if(mode==='screen')cancel();else inputAssist.invalidate();snapshot=null;history=[];});
   document.addEventListener('visibilitychange',()=>{
@@ -796,7 +796,7 @@
   });
   observer=new MutationObserver(records=>{
     if(typeof document==='undefined')return;
-    if(!host.isConnected){if(typeof document!=='undefined'){finishDrag();finishOpacity();closeModal();sizeObserver?.disconnect();cancel();inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();style.remove();observer.disconnect();}return;}
+    if(!host.isConnected){if(typeof document!=='undefined'){initialProfileActive=false;finishDrag();finishOpacity();closeModal();sizeObserver?.disconnect();cancel();inputAssist.dispose();profilePanel.dispose();savedPanel.dispose();style.remove();observer.disconnect();}return;}
     const owned=node=>node===host||node===style||node.nodeType===1&&node.matches('[data-gyeote-host],[data-gyeote-style]');
     const siteClasses=value=>String(value||'').split(/\s+/).filter(name=>name&&!classes.includes(name)).sort().join(' ');
     const relevant=records.filter(r=>{

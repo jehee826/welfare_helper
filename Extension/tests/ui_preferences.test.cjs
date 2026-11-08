@@ -79,7 +79,7 @@ function panelFixture(data,failure={}){
   const uiRequests=()=>f.requests.filter(message=>message.type==='gyeote:ui-preferences-set');
   return {...f,server,handle,panel,pointer,uiRequests};
 }
-const size=panel=>[panel.style.getPropertyValue('--gyeote-width'),panel.style.getPropertyValue('--gyeote-height'),panel.style.getPropertyValue('--gyeote-background')];
+const size=panel=>[panel.style.getPropertyValue('--gyeote-width'),panel.style.getPropertyValue('--gyeote-height'),panel.style.opacity];
 
 test('손잡이는1920화면을 거의 덮고 창을 줄였다 넓혀도 저장 선호크기를 보존한다',async()=>{
   const f=panelFixture();try{
@@ -104,7 +104,7 @@ test('스크롤바가 차지한 폭은 최대 크기와 자유 위치 계산에�
 
 test('헤더 슬라이더는 입력 중 즉시 반영하고 포인터 종료 때만 한 번 저장한다',async()=>{
   const f=panelFixture();try{
-    await f.ready();const slider=f.root.querySelector('.head input[type=range]');assert.ok(slider);assert.equal(slider.getAttribute('aria-label'),'패널 배경 불투명도');
+    await f.ready();const slider=f.root.querySelector('.head input[type=range]');assert.ok(slider);assert.equal(slider.getAttribute('aria-label'),'플로팅 UI 불투명도');
     assert.equal(f.root.querySelectorAll('.ui-opacity').length,1);assert.equal(f.root.querySelector('.profile-slot .ui-opacity'),null);
     assert.equal(slider.nextElementSibling,f.root.querySelector('.mode-switch'));
     f.pointer('pointerdown',20,20,slider);
@@ -168,6 +168,7 @@ test('새로고침 뒤 저장된 크기·투명도·직접 옮긴 위치를 복�
   try{
     await f.ready();assert.deepEqual(size(f.panel),['480px','600px','0.9']);
     assert.equal(f.panel.style.left,'500px');assert.equal(f.panel.style.top,'200px');assert.equal(f.root.querySelector('.ui-opacity').value,'90');
+    for(const node of f.root.querySelectorAll('.modal-dialog,.open'))assert.equal(node.style.opacity,'0.9');
   }finally{f.close();}
 });
 
@@ -224,14 +225,23 @@ test('손잡이 방향키는 20px씩 바꾸고 최소값 아래로 줄이지 않
   }finally{f.close();}
 });
 
-test('배경 불투명도는 배경색에만 적용하고 글자·버튼 색은 바꾸지 않는다',async()=>{
+test('전체 창 불투명도는 말풍선·입력·버튼·별도 모달에 한 번만 합성하고 사이트·배경막은 유지한다',async()=>{
   const f=panelFixture();
   try{
-    await f.ready();const select=f.root.querySelector('.ui-opacity');select.value='85';select.dispatchEvent(new f.w.Event('change'));await settle();
-    assert.equal(size(f.panel)[2],'0.85');assert.equal(f.server.data[uiKey].backgroundOpacity,85);
+    await f.ready();await f.question('합성 질문');await f.answer({kind:'answer',text:'합성 답변',evidence:[]});
+    const select=f.root.querySelector('.ui-opacity'),roots=[f.panel,f.root.querySelector('.profile-slot'),f.root.querySelector('.panel-tools'),f.root.querySelector('.open')];
+    const effective=node=>{let alpha=1;for(let parent=node;parent;parent=parent.parentElement)alpha*=Number(parent.style.opacity||f.w.getComputedStyle(parent).opacity);return alpha;};
+    const content=[...f.root.querySelectorAll('.head button,.compose-row input,.compose-row button,.conversation article,.conversation article small,.profile-usage-toggle,.status')].map(node=>({node,original:Number(f.w.getComputedStyle(node).opacity)}));assert.ok(content.length>=15);
+    for(const value of [85,100]){
+      select.value=String(value);select.dispatchEvent(new f.w.Event('change'));await settle();
+      for(const root of roots)assert.equal(effective(root),value/100,root.className+":"+root.getAttribute("style"));
+      for(const {node,original} of content){assert.equal(Number(f.w.getComputedStyle(node).opacity),original);assert.equal(effective(node),original*value/100);}
+      for(const selector of ['.modal-layer','.badges'])assert.equal(effective(f.root.querySelector(selector)),1);
+      assert.equal(f.w.getComputedStyle(f.root.host).opacity,'1');assert.equal(f.w.getComputedStyle(f.w.document.body).opacity,'1');assert.equal(f.server.data[uiKey].backgroundOpacity,value);
+      f.root.querySelector('.profile-toggle').click();if(!f.root.querySelector('.profile-slot input'))await f.click('내 정보 수정');assert.equal(effective(f.root.querySelector('.profile-slot input')),value/100);assert.equal(f.w.document.body.inert,true);f.root.querySelector('.profile-dismiss').click();assert.equal(f.w.document.body.hasAttribute('inert'),false);
+    }
     const css=[...f.root.querySelectorAll('style')].map(node=>node.textContent).join('');
-    assert.match(css,/\.body\{background:rgba\(255,255,255,var\(--gyeote-background,1\)\)/);
-    assert.doesNotMatch(css,/opacity:var\(--gyeote-background/);assert.match(css,/\.consultation,\.status\{background:transparent\}/);
+    assert.doesNotMatch(css,/--gyeote-background/);assert.match(css,/\.body\{background:#fff\}/);
   }finally{f.close();}
 });
 
@@ -251,6 +261,7 @@ test('저장에 실패해도 지금 화면의 조절은 유지하고 저장 성�
     await f.ready();f.server.failure.set=true;
     const select=f.root.querySelector('.ui-opacity');select.value='95';select.dispatchEvent(new f.w.Event('change'));await settle();
     assert.equal(size(f.panel)[2],'0.95');assert.equal(f.server.data[uiKey],undefined);
+    for(const node of f.root.querySelectorAll('.modal-dialog,.open'))assert.equal(node.style.opacity,'0.95');
     assert.match(f.root.querySelector('.status').textContent,/저장하지 못했어요/);
   }finally{f.close();}
 });
@@ -275,6 +286,7 @@ test('손상된 설정은 기본 표시와 안내를 보여 주고 기본값 버
     assert.deepEqual(f.server.data[uiKey],{schemaVersion:1,revision:2,width:'wide'});
     f.root.querySelector('.ui-reset').click();await settle();
     assert.deepEqual(f.server.data[uiKey],stored(3));assert.equal(f.root.querySelector('.ui-status').textContent,'');assert.deepEqual(size(f.panel),['400px','720px','1']);
+    for(const node of f.root.querySelectorAll('.modal-dialog,.open'))assert.equal(node.style.opacity,'1');
   }finally{f.close();}
 });
 

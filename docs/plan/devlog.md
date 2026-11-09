@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:43 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:51 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -128,3 +128,9 @@
 - worker는EC2기존Python3.12이미지의network-none/read-only/소스readonly격리에서수정함수와기존검사클래스AST를실행해6개통과했다. 설계도원로그를직접읽었다. pytest전체/실제Docling자식/메모리회수는미실행이다. Python문법/diff공백검사는통과보고이며실제PID신호0이다.
 - 원자료는로컬 nonrag-fixed-20261109/{overlay-test.log,typecheck-overlay.log,두소스스냅샷과검사도구},EC2동명폴더/{worker_ast_check.py,worker_ast_check.log}다. EC2 nonrag-fixes-20261109/postflight.json의HEAD75b5f72·rag11_unchanged=true·model_calls/db_calls/service_changes_by_this_task/git_mutations=0을설계가직접읽었다. 현재컨테이너시작시각은과거RAG평가와달라전후불변을주장하지않으며이번검사직전스냅샷도없다.
 - 두수정을수용하고추가전체검사는반복하지않는다. EC2미커밋15파일(RAG11+이번4),운영이미지미반영/제품Git작업0이다. 다음은로컬선행문서범위의승인된push→EC2보존확인ff-only동기화후이번4파일만선별커밋하는것이다. 실제배포/재시작·제품push는별도범위를확인한다.
+
+## 2026-11-09 14:51 KST · 문서 동기화와 비RAG 선별 커밋 완료
+
+- 로컬문서13커밋75b5f72..b450b83(문서5파일)을GitHub기능브랜치에push한뒤EC2에pull--ff-only했다. 전후15미커밋파일SHA전부동일·index빈상태·양쪽문서5blob일치를설계가확인했다. bundle/소스복사/서비스변경은없었다.
+- 개발이EC2에서246b860544faee356660074b657cb72d85f908a7(문서등록조회실패업로드차단:DocumentsPage.tsx/검사2파일),1574e661d05226f3ed3631a209bcad6f80203491(자식종료경합:worker.py/automatic_pipeline검사2파일)로분리커밋했다. 실제각커밋범위와빈index·잔여RAG11만미커밋인상태를설계가SSH읽기로확인했다. 기존검증완료4파일해시와RAG11고정해시유지는개발기록commits.json에보존됐다.
+- 설계가Git SSH fetch로EC2의2커밋을받아로컬codex/fix-merge를b450b83→1574e66으로ff-only동기화했다. 로컬제품편집/이력재작성은하지않았다. 제품2커밋은GitHub미push이며운영이미지/모델/DB는변경하지않았다. 다음은정확한제품2커밋·후속공유기록범위의push승인및EC2기록동기화다.

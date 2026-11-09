@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:14 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:37 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -155,3 +155,11 @@
 - 개발이기존요구/검사근거와잔여를대조했고현재허용된무영향CI/계약/타입/정적/HTTPS범위에추가실패/제품결함은없다고보고했다. 실CSV/사용자실기기·청취·인증/운영전환·부하검증과RAG보류를남은시작조건으로분리하며기존통과검사를반복하지않는다.
 - 다음A안은기존worker이미지의격리임시컨테이너로합성MD1개/최대64KiB를정상완료1회·취소관측1회(최대2자식/각180초/재시도0)확인하는하네스/manifest준비다. 제안자원은CPU1·메모리2GiB/총swap상한2GiB·pids128·tmpfs64MiB,호스트MemAvailable3GiB미만시시작거절이며network-none/readonly/기존cacheRO·신규다운로드0을준비조건으로둔다. 실제실행은미착수이며입력/committed함수해시/명령/관측/중단복구를검토가능하게만들도록배정했다.
 - 설계가analysis.py를읽어PDF분기에만layout모델cache설정이있음을확인했다. MD시험은MD Docling자식수명까지만판정하며PDF모델메모리회수를대체하지않는다. parsing통지는convert직전이므로변환중취소의증거로단정하지않고이미종료된경우취소미관측으로종료한다. 취소타이밍을맞추기위한sleep/큰입력/반복은추가하지않는다. GPU취소/DBlease복구B/C는운영영향·격리/fixture범위미확정으로실행하지않는다.
+
+## 2026-11-09 15:37 KST · Docling A 준비팩 v3 설계 읽기 검토
+
+- Git제외기존docling-lifecycle-prep-20261109-v3/의manifest/명령/host runner/controller/child/readiness를설계가직접읽었다. 로컬과EC2각manifest SHA256 44b19c75734245972a1762fcbcad75c285dc15748464c100e260f395ecb7f33d·7artifact해시일치를확인했다. EC2execution-start.json/attempt.json/execution폴더모두없음을직접확인했으며컨테이너생성/변환/시험은아직0이다.
+- 개발검토v1의비정상종료오판/정리실패미기록을v2에서고쳤고v3는env -i뒤WORKDIR/PYTHONPATH=/app을명시했다. 현재runner는소유CID/name/label/image를따로확인해자체컨테이너만정리하고attach종료코드/컨테이너exit·OOM/controller summary를대조한다. 누락/불일치·정리실패는실패,취소미관측/낮은메모리미착수는불완료다. 실제import성공은미검증이다.
+- 고정worker이미지는ba52ed0e195d91fa74348806a62cb9238c7ced60de974a2b734557e959939a94,committed1574e66의stop_child함수SHA는57b76016017fff4f7a7758642dc3deac213ecfbab688f6e41480da148e7561f8,합성MD1213바이트다. 한임시컨테이너/최대2자식·정상1/취소관측1·각180초(170+종료유예10)·외부attach410초/정리별도timeout·재시도0을명령/판정과대조했다.
+- 자원은CPU1/메모리2GiB·swap포함총2GiB/pids128/tmpfs64MiB,시작및각자식전MemAvailable3GiB하한이다. network-none/rootfsRO/기존Docling캐시RO만사용하며RAG작업트리/env/운영서비스·DB볼륨/모델은마운트하지않는다. 출력8MiB는감시중단값이며강제파일quota가아님을명시했다. 소유권미확인/미정리는CID/error/unresolved를보존한다.
+- 추가수정요구없이준비팩을수용하고실제시험은범위확인전보류했다. 인위sleep/입력확대/반복없이parsing표시뒤취소를시도하고이미끝났으면불완료로종료한다. 판정은MD자식수명에한정하며PDF모델메모리회수/GPU/운영worker·DB복구를입증하지않는다. 실행시동일manifest해시와한실행담당을고정한다.

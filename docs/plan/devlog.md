@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:37 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:46 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -163,3 +163,15 @@
 - 고정worker이미지는ba52ed0e195d91fa74348806a62cb9238c7ced60de974a2b734557e959939a94,committed1574e66의stop_child함수SHA는57b76016017fff4f7a7758642dc3deac213ecfbab688f6e41480da148e7561f8,합성MD1213바이트다. 한임시컨테이너/최대2자식·정상1/취소관측1·각180초(170+종료유예10)·외부attach410초/정리별도timeout·재시도0을명령/판정과대조했다.
 - 자원은CPU1/메모리2GiB·swap포함총2GiB/pids128/tmpfs64MiB,시작및각자식전MemAvailable3GiB하한이다. network-none/rootfsRO/기존Docling캐시RO만사용하며RAG작업트리/env/운영서비스·DB볼륨/모델은마운트하지않는다. 출력8MiB는감시중단값이며강제파일quota가아님을명시했다. 소유권미확인/미정리는CID/error/unresolved를보존한다.
 - 추가수정요구없이준비팩을수용하고실제시험은범위확인전보류했다. 인위sleep/입력확대/반복없이parsing표시뒤취소를시도하고이미끝났으면불완료로종료한다. 판정은MD자식수명에한정하며PDF모델메모리회수/GPU/운영worker·DB복구를입증하지않는다. 실행시동일manifest해시와한실행담당을고정한다.
+
+## 2026-11-09 15:42 KST · Docling A 고정본 실행 배정
+
+- v3의한시실행범위를확인하고설계가시작직전EC2 manifest/7artifact전체일치·gate/attempt/execution없음·HEADa3e9299·빈index·RAG11rawSHA불변을직접읽었다. MemAvailable31643955200바이트로3GiB하한이상이었다. 이확인은변환/컨테이너실행이아니다.
+- 기존개발담당과Terra단일실행자에게동일manifest44b19c75…의시작확인을전달했다. 한임시컨테이너·고정MD1213바이트·정상1/취소관측1·최대2자식각180초·재시도0이며runner/입력/설정변경은하지않는다. gate기록후기존execute명령1회만실행하고첫실패면후속사례를중단하도록했다. 현재결과미수신이며passed/incomplete/failed및자체정리/운영보존을근거로검토할예정이다.
+
+## 2026-11-09 15:46 KST · Docling A 실행 결과 읽기 수용
+
+- 동일v3 manifest44b19c75734245972a1762fcbcad75c285dc15748464c100e260f395ecb7f33d의gate/attempt기록후Terra단일담당이실행했다. 임시컨테이너는15:44:25~40KST동안기동됐고직접자식2개/재시도0이었다. 설계가execution-result.json/container-exit.json/execution/summary.json을직접읽어passed·attach0/컨테이너exit0·OOMfalse·errors없음을확인했다.
+- 정상사례는10.771초·exit0·19블록·원문blockers없음·markdown1232바이트·자식peakRSS368784KiB였다. warning은unpaginated_source_use_block_anchors로MD쪽없음에대한원래안내다. 취소사례는parsing_marker_seen후SIGTERM/exit-15·4.315초로회수됐고두사례process_group_remaining은빈배열이었다. configured_model_calls/db_calls0이며실제변환중취소는두사례모두입증하지않는다.
+- 자체CID7ea4331a18bd5f1302d1e3f5fff067efdb1e2c961a1b80463aa395824cbe038f의소유권확인/removed와label잔존컨테이너없음을설계가별도읽기확인했다. 현재RAG11rawSHA도고정baseline과전부일치했다. 운영4컨테이너/작업트리전후의세부확인근거는개발최종보고를기다리며수집되지않은불변을추정하지않는다.
+- 성공은MD자식정상종료와parsing표시뒤종료/회수에한정해수용했다. PDF레이아웃모델메모리회수·실제변환중취소·GPU·관리자업로드·DB게시/lease복구를완료로넓히지않는다. 추가시험/재시도/하네스수정은하지않고원자료를기존v3폴더에보존한다. 제품소스/배포변경은없으며후속공유기록은로컬문서다.

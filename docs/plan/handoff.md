@@ -1,9 +1,10 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:37 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:46 KST
 
 ## 현재 우선 실행 순서
 
+- **현재 판정 · Docling A 통과:** 고정v3의한임시컨테이너에서정상MD변환10.771초·parsing표시후자식종료/회수4.315초를관측했다. 2자식/재시도0·attach/컨테이너exit0·OOM없음·잔존group없음·자체컨테이너removed·현재RAG11해시불변을설계가직접읽기확인했다. 정상결과는19블록/blockers없음/peakRSS368784KiB다. 성공범위는MD자식수명뿐이며변환도중취소/PDF모델메모리회수/관리자업로드/운영worker·DB복구는미검증이다. 실행원자료는기존v3폴더에보존하고추가실행하지않는다. 아래준비/대기표시는당시경과이며최신결과는이항목과devlog15:46절을따른다.
 - **Docling A 준비팩 v3 검토 수용:** 로컬/EC2의docling-lifecycle-prep-20261109-v3/manifest.json SHA256은44b19c75734245972a1762fcbcad75c285dc15748464c100e260f395ecb7f33d이며설계가host/controller/child/command와7artifact해시를직접검토했다. execution-start/attempt/execution은모두없고실제시험미실행이다. 한임시컨테이너·합성MD1213바이트·정상1/취소관측1·최대2자식각180초·재시도0이며CPU1/메모리·swap총2GiB/캐시RO/network-none/rootfsRO를고정했다. 자식시작전MemAvailable3GiB미만이면시작하지않는다. 실행범위확인뒤동일해시/단일담당으로시작하며현재는보류다. 실제import/취소/Docling수명은아직미검증이고MD수명범위를넘는성공판정은금지한다.
 - **무영향 자동 확인 마무리:** CORS허용preflight1회보완에서Authorization/Content-Type허용·정확한ACAO·credentials없음·Vary를확인했고설계가원자료를읽었다. 현재범위의CI/계약/정적/HTTPS읽기에서미해결실패·추가코드결함은없다. 다음은Docling격리수명시험A의하네스/입력/명령/중단복구팩준비만개발이수행한다. 새컨테이너/변환/부하/운영시험은아직실행하지않으며실행팩검토후범위를제시한다. MD수명시험은PDF모델메모리회수/실제관리자업로드/DB게시의대체가아니다. RAG/실CSV/사용자실기기·청취·인증/W14·W15운영전환/이미지반영·부팅복구는각시작조건대기로남는다.
 - **운영 읽기 확인:** 공개capabilities200·무자격관리자processing401·허용origin preflight200/정확한ACAO·거절origin400/ACAO없음을표준TLS로확인했고설계가원자료를검토했다. 처음4건은ACAH미기록이라허용헤더전체검증으로확대하지않으며동일허용origin OPTIONS1회보완을배정했다. backend/worker의W14 OFF·W15인증파일미설정,관련5모듈이미지포함/committed정규화해시일치와backend인증용RW볼륨준비도읽기확인했다. 실제활성화/로그인/DB쓰기/상담추론/이미지반영은없다. 개발은보완뒤남은자동작업과사용자/자료/운영승인대기를구분해정리한다.

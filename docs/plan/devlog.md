@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:07 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:14 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -148,3 +148,10 @@
 - 원자료는로컬 nonrag-http-20261109/{http_check.py,inputs.json,results.json,command.txt}다. 첫결과에는Access-Control-Allow-Headers를기록하지않았으므로전체허용헤더실측으로주장하지않는다. content-type/authorization을요청하는허용preflight1회만보완하도록배정했고전체4건은반복하지않는다.
 - EC2 nonrag-preflight-20261109/feature-image-readiness.json을설계가직접읽었다. backend/worker각각referral_records_enabled=false·credential_file_configured=false이며settings/referrals/referral_store/credentials/session5파일이이미지에존재하고LF정규화해시가committed기준과일치했다. backend의/app/.local/admin-credentials는RW볼륨이며worker에는현재미사용인인증볼륨이없다. 기존backend07de146d/workerba52ed0e이미지그대로다.
 - 실제.env/키/비밀번호/인증파일본문/DB는읽지않았다. 기능준비를W14운영수집·실CSV매핑·W15초기화/비밀번호회전완료로확대하지않으며기존격리전체검사는반복하지않는다. 새코드결함/제품변경/서비스재시작은0이고보완후자동수행가능잔여와시작조건대기를분류한다.
+
+## 2026-11-09 15:14 KST · CORS 헤더 보완과 다음 운영 시험 준비
+
+- 15:09:37KST허용origin의OPTIONS1회보완원자료를설계가직접읽었다. 표준TLS성공·200/ACAO정확일치·ACAH Accept,Accept-Language,Authorization,Content-Language,Content-Type·ACAM GET/POST/PUT/PATCH/DELETE·credentials없음·Vary Origin/Access-Control-Request-Method/Access-Control-Request-Headers/Access-Control-Request-Private-Network를확인했다. 기존4건을덮거나반복하지않았고전체요청5건/실POST·로그인·모델·DB쓰기0이다. 원자료는기존nonrag-http-20261109/cors-headers-{check.py,result.json}이다.
+- 개발이기존요구/검사근거와잔여를대조했고현재허용된무영향CI/계약/타입/정적/HTTPS범위에추가실패/제품결함은없다고보고했다. 실CSV/사용자실기기·청취·인증/운영전환·부하검증과RAG보류를남은시작조건으로분리하며기존통과검사를반복하지않는다.
+- 다음A안은기존worker이미지의격리임시컨테이너로합성MD1개/최대64KiB를정상완료1회·취소관측1회(최대2자식/각180초/재시도0)확인하는하네스/manifest준비다. 제안자원은CPU1·메모리2GiB/총swap상한2GiB·pids128·tmpfs64MiB,호스트MemAvailable3GiB미만시시작거절이며network-none/readonly/기존cacheRO·신규다운로드0을준비조건으로둔다. 실제실행은미착수이며입력/committed함수해시/명령/관측/중단복구를검토가능하게만들도록배정했다.
+- 설계가analysis.py를읽어PDF분기에만layout모델cache설정이있음을확인했다. MD시험은MD Docling자식수명까지만판정하며PDF모델메모리회수를대체하지않는다. parsing통지는convert직전이므로변환중취소의증거로단정하지않고이미종료된경우취소미관측으로종료한다. 취소타이밍을맞추기위한sleep/큰입력/반복은추가하지않는다. GPU취소/DBlease복구B/C는운영영향·격리/fixture범위미확정으로실행하지않는다.

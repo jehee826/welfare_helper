@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:31 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:43 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -120,3 +120,11 @@
 
 - 접속정상확인후설계가동일15.164.190.21:22/기존키/엄격호스트확인으로읽기1회접속에성공했다. EC2 HEAD75b5f72·codex/fix-merge와RAG미커밋11파일목록을확인했다. 네트워크장애원인/내부설정변경은확인하지않았다.
 - 관리자DocumentsPage조회상태·업로드가드,worker.stop_child자연종료경합을기존개발담당이EC2에서최소수정·관련검사하는단계로재개한다. RAG11파일과겹치지않는범위이며실제추론/서비스재시작/운영DB·인증변경은없다. 제품커밋전문서선행이력과동기화순서를맞춘다.
+
+## 2026-11-09 14:43 KST · 비RAG 두 수정과 관련 검사 수용
+
+- EC2의DocumentsPage.tsx·DocumentsPage.test.tsx·worker.py·test_document_automatic_pipeline.py4파일수정을설계가직접diff리뷰했다. 관리자prepared미확인/false/true와목록확인완료를구분해button/submit을같은canUpload로제한하고오류/빈목록오안내를수정했다. worker는TERM/KILL의ProcessLookupError만흡수하고wait/reap및무관오류전파를보존했다.
+- 프런트는EC2원본2파일의rawSHA일치스냅샷을Vite load overlay로주입해기존DocumentsPage검사13개(기존8/추가5)통과·타입진단0을확인했다. 설계가OVERLAY경로/해시/실제13성공및진단0로그를읽고원격4파일rawSHA를별도로재계산해보고값과대조했다. 기존Node24.14.0/Vitest2.1.8이며Node22/최종CI/실제Chrome통과로확대하지않는다. 최초타입검사도구cwd불일치588진단은원로그보존후도구cwd만고쳐해결했다.
+- worker는EC2기존Python3.12이미지의network-none/read-only/소스readonly격리에서수정함수와기존검사클래스AST를실행해6개통과했다. 설계도원로그를직접읽었다. pytest전체/실제Docling자식/메모리회수는미실행이다. Python문법/diff공백검사는통과보고이며실제PID신호0이다.
+- 원자료는로컬 nonrag-fixed-20261109/{overlay-test.log,typecheck-overlay.log,두소스스냅샷과검사도구},EC2동명폴더/{worker_ast_check.py,worker_ast_check.log}다. EC2 nonrag-fixes-20261109/postflight.json의HEAD75b5f72·rag11_unchanged=true·model_calls/db_calls/service_changes_by_this_task/git_mutations=0을설계가직접읽었다. 현재컨테이너시작시각은과거RAG평가와달라전후불변을주장하지않으며이번검사직전스냅샷도없다.
+- 두수정을수용하고추가전체검사는반복하지않는다. EC2미커밋15파일(RAG11+이번4),운영이미지미반영/제품Git작업0이다. 다음은로컬선행문서범위의승인된push→EC2보존확인ff-only동기화후이번4파일만선별커밋하는것이다. 실제배포/재시작·제품push는별도범위를확인한다.

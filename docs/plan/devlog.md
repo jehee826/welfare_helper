@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:18 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:21 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -108,3 +108,10 @@
 
 - 개발이 찾은 deploy/README의병렬3설명과docker-compose.yml의실제병렬1을설계가직접대조했다. 배포문서만병렬1/대기3·앱gate3과구분하고동시3생성/직렬처리실패라는옛판정기준을현단건30→50→60초기준으로정정했다. 과거T4병렬3의모델축출관측은과거사실로보존했다.
 - 실행설정/서비스/모델/DB변경과추론은0이다. 문서구문/상대링크와diff공백만확인하며새운영실측으로표현하지않는다. W14/W15의기본값/복구절차읽기확인을실제활성화/런타임확인으로확대하지않는다.
+
+## 2026-11-09 14:21 KST · worker 자연 종료 정리 경합 검토
+
+- 개발의stdlib대역재현과설계의원본worker.py/시험스크립트/원로그읽기로poll후TERM직전및wait timeout후KILL직전의자연종료가ProcessLookupError로전파되는두경로를확인했다. supervise의예외정리에서이오류가나면store.fail호출도막을수있다. 실제운영발생으로단정하지않는다.
+- 원본stop_child함수AST만추출하고가짜os.killpg/상수/child로실행했다. Python3.12.13이며실제PID/신호/외부API/모델/DB호출0이다. 최초Windows SIGKILL상수부재의대역오류는보존했고수정대역에서3메서드중1성공/경합2오류,추가대조2메서드성공을확인했다. 정상TERM/wait·timeout→KILL/wait와PermissionError전파가대조에포함된다.
+- 원자료는기존 nonrag-20261109/stop_child_race.py·stop_child_race-first.log·stop_child_race.log·stop_child_controls.log다. worker.py SHA256은4ac3216e601f3b785a98e4f15349e5c047f1f3b0b78afe15fd67a7b397ab6bdb다. 제품원본/기존검사는변경하지않았고재현을종료했다.
+- SSH복구후최소수정계약은worker.stop_child와관련기존검사에서ProcessLookupError경합만흡수하고경합후wait/reap을명시단언하며무관권한오류는유지하는것이다. Docling실제자식종료/메모리회수·운영복구는미검증이다. 관리자로드상태수정과함께우선대기로기록한다.

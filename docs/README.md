@@ -1,6 +1,6 @@
 # 프로젝트 문서
 
-작성: 2026-11-04. 최신 업데이트: 2026-11-09 00:28 KST
+작성: 2026-11-04. 최신 업데이트: 2026-11-09 11:55 KST
 
 ## 목차
 
@@ -16,8 +16,8 @@
 2. **앞으로 할 일을 보려면:** [협업·후속 개발 계획](plan/collaboration-plan.md). 담당자·순서·완료 기준을 이 문서에서 정한다. [교차검증 기록](plan/collaboration-plan-review.md)은 검토 근거이며 별도 개발 지시서가 아니다.
    병합 이후 결함 수정·요구사항 충족·Vercel/EC2 검증과 최종 PR은 [병합 후 실행 계획](plan/merge_plan.md)에서 추적한다. 기존 W00~W16 요구는 유지한다.
    짧은 결정 목록은 [병합 후 확정 사항](plan/merge_decisions.md)에 둔다.
-   기기를 옮겨 이어갈 때는 [노트북 작업 인계](plan/laptop_handoff.md)의 중단 지점·공유되지 않는 파일·시작 프롬프트를 먼저 확인한다.
-3. **왜 이렇게 바뀌었는지 보려면:** 설계 담당의 로컬 개발일지(`docs/log/development.md`)와 [과거 문서](archive/README.md). 실패·수정 이력은 삭제하지 않는다.
+   작업을 이어갈 때는 [현재 인계](plan/handoff.md)의 상태·다음 행동을 먼저 확인한다. [노트북 작업 인계](plan/laptop_handoff.md)는 당시 상세 스냅샷으로 보존한다.
+3. **왜 이렇게 바뀌었는지 보려면:** 공유 [개발일지](plan/devlog.md)와 [과거 문서](archive/README.md). 새 일지에서는 실패·수정·검증 경과를 누적한다. 옛 로컬 docs/log 두 파일은 사용자 요청으로 삭제했다.
 
 4. **복지 자료를 준비하려면:** [수집 방법](data/수집방법.md) → [문서 포맷](data/문서포맷.md) → [실제 문서 모음](data/문서모음/).
 
@@ -41,10 +41,9 @@ docs/
 │  ├─ collaboration-plan-review.md # 순차 교차검증·최종 판정 이력
 │  ├─ merge_plan.md          # 병합 후 결함·요구사항·배포 검증과 최종 PR
 │  ├─ merge_decisions.md     # 병합 후 확정 사항만 기록
-│  └─ laptop_handoff.md      # 기기 전환 시 상태·잔여 작업·시작 프롬프트
-├─ log/
-│  ├─ development.md         # 날짜별 개발·실패·수정 기록
-│  └─ handoff.md             # 현재 작업·환경·복구 메모
+│  ├─ laptop_handoff.md      # 이전 기기 전환 당시 상세 스냅샷
+│  ├─ handoff.md             # 현재 상태·잔여 작업·다음 행동
+│  └─ devlog.md              # 날짜별 개발·실패·수정·검증 경과
 ├─ archive/                  # 과거 원문·현행 설명과 분리
 │  ├─ README.md
 │  ├─ plans/                 # 이전 통합계획·후속계획·로드맵
@@ -59,12 +58,11 @@ docs/
 ## 각 문서의 역할
 
 - **design:** 현재 코드의 동작과 경계. 앞으로 만들 기능이나 당시 실패 일지를 섞지 않는다.
-- **plan:** 앞으로 할 작업의 이유·범위·담당·선행 관계·완료 기준과 그 실행 결과. 별도 경쟁 로드맵을 늘리지 않는다.
-- **log:** 날짜별 실제 진행과 실패→수정→검증 경과. 과거 실패를 후속 성공으로 덮어쓰지 않는다.
+- **plan:** 기존 계획의 이유·범위·담당·완료 기준, 현재 인계와 날짜별 개발일지. handoff는 현재 상태로 갱신하고 devlog는 실패→수정→검증 경과를 누적한다. 별도 경쟁 로드맵을 늘리지 않는다.
 - **archive:** 기존 문서의 날짜와 전문을 보존한다. 옛 “현재/대기/완료”는 당시 상태다.
 - **tests:** 판단 근거인 원자료. 대역·실제 모델·HTTP·사용자 UI 결과를 구분하고 정답표를 적재 원문에 섞지 않는다.
 
-운영 실행은 [프로젝트 README](../README.md), [확장 README](../Extension/README.md), [배포 README](../deploy/README.md)를 따른다. 로컬 인계(`docs/log/handoff.md`)는 실제 환경·복구 위치의 보조 메모이며 미래 계획의 별도 기준 문서가 아니다.
+운영 실행은 [프로젝트 README](../README.md), [확장 README](../Extension/README.md), [배포 README](../deploy/README.md)를 따른다. 현재 환경·복구 위치·미완료는 [공유 인계](plan/handoff.md)에 기록하며 미래 계획의 별도 기준 문서로 늘리지 않는다.
 
 ## 업데이트 원칙
 
@@ -72,12 +70,12 @@ docs/
 
 태스크마다 새로운 계획서·요약본·결과 보고서를 만들지 않는다. 기존 문서로 수용하기 어려운 독립된 용도나 별도 보존할 원자료만 필요한 위치에 추가하고 이 목차 또는 해당 문서에서 연결한다. archive와 과거 실패·수정·원출력은 최신 상태로 덮어쓰지 않는다.
 
-Codex·Claude는 같은 계획을 읽고 지정된 작성자만 갱신한다. 협업 계획에는 작업·담당·계약·완료 기준을, 개발일지에는 실제 날짜별 경과를 기록한다. 문서 수를 줄이기 위해 실패 기록을 삭제하지 않는다.
+Codex·Claude는 같은 계획을 읽고 지정된 작성자만 갱신한다. 작업 시작·단계 완료·중요 실패·환경/다음 행동 변경·종료/인계 때 설계 담당이 공유 handoff·devlog를 갱신하고 개발 담당은 결과를 전달한다. 기존 계획에는 완료 상태와 참조를 반영하며 상세 일지는 devlog에 모은다. 과거 실패를 후속 성공으로 덮어쓰지 않는다.
 
 ## 원자료와 Git 공개 범위
 
 루트 CSV는 기존 CSV 로더가 경로를 참조하므로 유지했다. DB 작업 SQL도 실행 파일이므로 이번 문서 정리에서 이동·수정하지 않았다. 현재 ERD 파일은 [복지챗봇.erd](design/database/복지챗봇.erd)에 있다.
 
-자료 가이드와 공개 복지 문서는 `docs/data/`에서 Git으로 공유한다. 현재 설계4개·기존 공유 보관본, `docs/plan/collaboration-plan.md`·`collaboration-plan-review.md`·`merge_plan.md`·`merge_decisions.md`와 사용자가 요청한 기기 전환용 `laptop_handoff.md`를 공유 대상으로 둔다. 루트 AGENTS.md·CLAUDE.md와 공통 스킬7개·Claude 진입점7개도 Git으로 전달한다. 교차검증은 협업 계획의 시작 안내를 따른다. 개인 개발일지·인계·태스크 원기록·시험 원자료·다른 계획은 계속 제외하며 새 clone에 없어도 된다.
+자료 가이드와 공개 복지 문서는 `docs/data/`에서 Git으로 공유한다. 현재 설계4개·기존 공유 보관본, `docs/plan/collaboration-plan.md`·`collaboration-plan-review.md`·`merge_plan.md`·`merge_decisions.md`·`laptop_handoff.md`와 현재 공유 `handoff.md`·`devlog.md`를 추적한다. 루트 AGENTS.md·CLAUDE.md와 공통 스킬7개·Claude 진입점7개도 Git으로 전달한다. 교차검증은 협업 계획의 시작 안내를 따른다. 개인 기록·시험 원자료·다른 계획은 계속 제외한다.
 
 명시적으로 공유한 프로젝트 지침/스킬 외의 개인 설정·백업·Word·실제 `.env`·키·모델/DB 데이터는 공개하거나 삭제하지 않는다. 문서 경로가 바뀐 것만으로 코드·DB·배포를 변경하지 않는다.

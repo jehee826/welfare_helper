@@ -148,17 +148,24 @@ def process_job(job_id, token, temp_dir):
 def stop_child(child):
     if child.poll() is not None:
         return
-    if os.name == "posix":
-        os.killpg(child.pid, signal.SIGTERM)
-    else:
-        child.terminate()
+    # poll 뒤 자식이 자연 종료했어도 wait로 회수한다.
+    try:
+        if os.name == "posix":
+            os.killpg(child.pid, signal.SIGTERM)
+        else:
+            child.terminate()
+    except ProcessLookupError:
+        pass
     try:
         child.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        if os.name == "posix":
-            os.killpg(child.pid, signal.SIGKILL)
-        else:
-            child.kill()
+        try:
+            if os.name == "posix":
+                os.killpg(child.pid, signal.SIGKILL)
+            else:
+                child.kill()
+        except ProcessLookupError:
+            pass
         child.wait()
 
 

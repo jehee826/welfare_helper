@@ -1,9 +1,10 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:59 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:07 KST
 
 ## 현재 우선 실행 순서
 
+- **운영 읽기 확인:** 공개capabilities200·무자격관리자processing401·허용origin preflight200/정확한ACAO·거절origin400/ACAO없음을표준TLS로확인했고설계가원자료를검토했다. 처음4건은ACAH미기록이라허용헤더전체검증으로확대하지않으며동일허용origin OPTIONS1회보완을배정했다. backend/worker의W14 OFF·W15인증파일미설정,관련5모듈이미지포함/committed정규화해시일치와backend인증용RW볼륨준비도읽기확인했다. 실제활성화/로그인/DB쓰기/상담추론/이미지반영은없다. 개발은보완뒤남은자동작업과사용자/자료/운영승인대기를구분해정리한다.
 - **현재 기준 a3e9299·CI 통과:** 비RAG수정2커밋과공유기록1커밋을GitHub에push하고EC2에ff-only동기화했다. 로컬/GitHub/EC2 HEADa3e9299·RAG11해시전후불변·빈index를확인했다. push CI[42570100926](https://github.com/jehee826/welfare_helper/actions/runs/42570100926)의4jobs전체성공,Node22.23.4·Python검사666passed/13skipped/2subtests・프런트120/타입빌드・확장499성공이다. 운영소스반영/실제Chrome/RAG품질통과는별개다. 개발은남은비RAG검증공백/재현결함을계속확인하며직접사용자확인·실CSV·운영DB/재시작/인증전환은각조건을유지한다. 이기록은후속로컬문서다.
 - **현재 Git 상태:** 문서13커밋은GitHub/EC2에b450b83까지반영했고진행중15파일rawSHA가전후동일했다. 이후EC2에서관리자2파일을246b860,worker2파일을1574e66으로각각선별커밋했다. 설계가실제커밋범위/잔여RAG11을읽고Git SSH fetch→ff-only로로컬도1574e66에동기화했다. 제품2커밋은아직미push이며현재문서기록은그후속이다. 운영이미지미반영/서비스변경0,다음은제품2커밋과후속공유기록의범위별push이다.
 - **비RAG 두 수정 수용:** EC2의DocumentsPage.tsx/기존검사와worker.py/기존automatic_pipeline검사4파일을개발이수정했고설계가실제diff·로그·4파일rawSHA를검토했다. 프런트관련13개/타입진단0·worker격리대역6개통과다. Node24검사이며Node22최종CI/실제Chrome/Docling메모리회수는미검증이다. EC2 HEAD75b5f72·미커밋15파일(RAG11+수정4)이며RAG11해시불변,모델/DB/본태스크서비스변경0이다. 운영이미지미반영/제품Git작업0이며다음은문서이력동기화후4파일선별커밋이다. 아래SSH복구후수정대기는당시상태다.

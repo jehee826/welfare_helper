@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:59 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 15:07 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -141,3 +141,10 @@
 - 연결GitHub의범용fetch GET으로실제push run42570100926을찾아4jobs(python dev/backend/worker,web-extension)전체completed/success를확인했다. PR전용workflow조회/combined-status만으로Actions결과를대체하지않았다. 기존자연push실행을읽기감시했고새CI실행/재실행은0이다.
 - dev원로그에서Node22.23.4·666passed/13skipped/2subtestspassed를확인했다. web-extension원로그는프런트13파일/120개통과·tsc/build성공·확장499pass/fail0이다. 이전Node24overlay와PythonAST집중검사는당시근거로보존하고현재커밋의정식CI성공과구분한다. 이결과는EC2미커밋RAG후보11파일을포함하지않는다.
 - Vercel welfare-helper 상태success도확인했으나실제관리자API/업로드성공을뜻하지않는다. EC2실행이미지는제품수정을아직포함하지않으며실제Chrome·Docling자원수명/운영복구·W14/W15전환/RAG정확도는미완료다. 개발은남은독립비RAG공백대조를이어가고설계는결과를검토한다. 기록은후속로컬문서로다음동기화대상이다.
+
+## 2026-11-09 15:07 KST · 운영 HTTPS 경계와 기능 준비 읽기 검토
+
+- 기존EC2 HTTPS에서모델없는읽기4건을각1회수행한원자료를설계가직접읽었다. 15:01:30~31KST의표준TLS검증성공,공개chat/capabilities200(profile지원true/referralfalse),무자격admin/documents/processing401,허용관리자origin https://welfare-helper-iota.vercel.app 의OPTIONS200/ACAO정확일치/credentials헤더없음,거절origin400/ACAO없음을확인했다. 허용methods는GET/POST/PUT/PATCH/DELETE다. 자격증명/쿠키/로그인/chat POST/상담본문/모델/DB쓰기0이다.
+- 원자료는로컬 nonrag-http-20261109/{http_check.py,inputs.json,results.json,command.txt}다. 첫결과에는Access-Control-Allow-Headers를기록하지않았으므로전체허용헤더실측으로주장하지않는다. content-type/authorization을요청하는허용preflight1회만보완하도록배정했고전체4건은반복하지않는다.
+- EC2 nonrag-preflight-20261109/feature-image-readiness.json을설계가직접읽었다. backend/worker각각referral_records_enabled=false·credential_file_configured=false이며settings/referrals/referral_store/credentials/session5파일이이미지에존재하고LF정규화해시가committed기준과일치했다. backend의/app/.local/admin-credentials는RW볼륨이며worker에는현재미사용인인증볼륨이없다. 기존backend07de146d/workerba52ed0e이미지그대로다.
+- 실제.env/키/비밀번호/인증파일본문/DB는읽지않았다. 기능준비를W14운영수집·실CSV매핑·W15초기화/비밀번호회전완료로확대하지않으며기존격리전체검사는반복하지않는다. 새코드결함/제품변경/서비스재시작은0이고보완후자동수행가능잔여와시작조건대기를분류한다.

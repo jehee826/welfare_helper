@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:21 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:31 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -115,3 +115,8 @@
 - 원본stop_child함수AST만추출하고가짜os.killpg/상수/child로실행했다. Python3.12.13이며실제PID/신호/외부API/모델/DB호출0이다. 최초Windows SIGKILL상수부재의대역오류는보존했고수정대역에서3메서드중1성공/경합2오류,추가대조2메서드성공을확인했다. 정상TERM/wait·timeout→KILL/wait와PermissionError전파가대조에포함된다.
 - 원자료는기존 nonrag-20261109/stop_child_race.py·stop_child_race-first.log·stop_child_race.log·stop_child_controls.log다. worker.py SHA256은4ac3216e601f3b785a98e4f15349e5c047f1f3b0b78afe15fd67a7b397ab6bdb다. 제품원본/기존검사는변경하지않았고재현을종료했다.
 - SSH복구후최소수정계약은worker.stop_child와관련기존검사에서ProcessLookupError경합만흡수하고경합후wait/reap을명시단언하며무관권한오류는유지하는것이다. Docling실제자식종료/메모리회수·운영복구는미검증이다. 관리자로드상태수정과함께우선대기로기록한다.
+
+## 2026-11-09 14:31 KST · SSH 복구 확인과 두 수정 재개
+
+- 접속정상확인후설계가동일15.164.190.21:22/기존키/엄격호스트확인으로읽기1회접속에성공했다. EC2 HEAD75b5f72·codex/fix-merge와RAG미커밋11파일목록을확인했다. 네트워크장애원인/내부설정변경은확인하지않았다.
+- 관리자DocumentsPage조회상태·업로드가드,worker.stop_child자연종료경합을기존개발담당이EC2에서최소수정·관련검사하는단계로재개한다. RAG11파일과겹치지않는범위이며실제추론/서비스재시작/운영DB·인증변경은없다. 제품커밋전문서선행이력과동기화순서를맞춘다.

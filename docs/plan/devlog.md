@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:51 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-09 14:59 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -134,3 +134,10 @@
 - 로컬문서13커밋75b5f72..b450b83(문서5파일)을GitHub기능브랜치에push한뒤EC2에pull--ff-only했다. 전후15미커밋파일SHA전부동일·index빈상태·양쪽문서5blob일치를설계가확인했다. bundle/소스복사/서비스변경은없었다.
 - 개발이EC2에서246b860544faee356660074b657cb72d85f908a7(문서등록조회실패업로드차단:DocumentsPage.tsx/검사2파일),1574e661d05226f3ed3631a209bcad6f80203491(자식종료경합:worker.py/automatic_pipeline검사2파일)로분리커밋했다. 실제각커밋범위와빈index·잔여RAG11만미커밋인상태를설계가SSH읽기로확인했다. 기존검증완료4파일해시와RAG11고정해시유지는개발기록commits.json에보존됐다.
 - 설계가Git SSH fetch로EC2의2커밋을받아로컬codex/fix-merge를b450b83→1574e66으로ff-only동기화했다. 로컬제품편집/이력재작성은하지않았다. 제품2커밋은GitHub미push이며운영이미지/모델/DB는변경하지않았다. 다음은정확한제품2커밋·후속공유기록범위의push승인및EC2기록동기화다.
+
+## 2026-11-09 14:59 KST · 수정 3커밋 원격 반영과 최신 CI 성공
+
+- b450b83..a3e9299의승인된3커밋(관리자/worker수정4파일·공유기록2파일)을GitHub codex/fix-merge에push했다. EC2는이미제품2커밋이있어기록2파일만1574e66→a3e9299로ff-only반영했다. RAG11파일SHA전후동일·빈index·기록2blob의양쪽일치를설계가직접확인했다. main·서비스/이미지·모델·DB변경은없었다.
+- 연결GitHub의범용fetch GET으로실제push run42570100926을찾아4jobs(python dev/backend/worker,web-extension)전체completed/success를확인했다. PR전용workflow조회/combined-status만으로Actions결과를대체하지않았다. 기존자연push실행을읽기감시했고새CI실행/재실행은0이다.
+- dev원로그에서Node22.23.4·666passed/13skipped/2subtestspassed를확인했다. web-extension원로그는프런트13파일/120개통과·tsc/build성공·확장499pass/fail0이다. 이전Node24overlay와PythonAST집중검사는당시근거로보존하고현재커밋의정식CI성공과구분한다. 이결과는EC2미커밋RAG후보11파일을포함하지않는다.
+- Vercel welfare-helper 상태success도확인했으나실제관리자API/업로드성공을뜻하지않는다. EC2실행이미지는제품수정을아직포함하지않으며실제Chrome·Docling자원수명/운영복구·W14/W15전환/RAG정확도는미완료다. 개발은남은독립비RAG공백대조를이어가고설계는결과를검토한다. 기록은후속로컬문서로다음동기화대상이다.

@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:15 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:22 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -940,3 +940,12 @@
 - Vercel 상태는 failure이며 PR 봇이 GitHub jehee826 계정의 jehee 팀 접근 권한 부재로 Preview 배포가 차단됐다고 알렸다. 배포 준비 성공으로 판단하지 않았고 계정 연결·멤버십·요금제·저장소 공개 범위는 바꾸지 않았다. main 운영 배포 성공은 확인하지 않았다.
 - 코드 충돌/PR 상태 조회만 했으며 테스트·구문검사·빌드·패키저·HTTP·모델·Chrome은 실행하지 않았다. gh는 설치되지 않아 PR 조회에 사용할 수 없었고 GitHub 연결 도구로 상태를 확인했다. 자동 CI의 성공을 주장하지 않는다.
 - 다음 조건은 팀원의 작업 종료·최종 push·작성권 인계 확인이다. Claude 브랜치 수정·두 번째 PR 생성/병합·최종 main의 EC2 배포는 아직 수행하지 않았다. 두 번째 PR은 기존 사용자 생성·병합 절차를 따른다. 이번 병합 결과 문서는 로컬 후속 기록으로 남긴다.
+<a id="log-20261110-1522-vercel-target"></a>
+## 2026-11-10 15:22 KST · Vercel 운영 대상 오판 정정·중복 연결 확인
+
+- 앞선 PR 봇 실패를 운영 프로젝트 전체 문제로 해석한 판단을 정정한다. 연결된 두 Vercel 계정에서 같은 저장소 jehee826/welfare_helper를 각각 welfare-helper 프로젝트로 추적하고 있다.
+- 실제 운영은 캡스톤 계정 welfare7(team_Y83ugQ7TeDDhDe1glxymKsiu), 프로젝트 prj_HkwhPJ62wroO3duFqX1qGAujtW0L이다. get_deployment에서 main9a5ffce의 production dpl_7GrpaDTh8cn95wUTUYZc9AhTuvLp가 READY이고 기존 welfare-helper-iota.vercel.app alias 및 aliasError=null을 확인했다. fix-merge69ffb1b의 dpl_GaKCAYFbbHu5F6FKDcF9ishVfLdg도 READY다.
+- 실패 알림의 대상은 본계정 jehee(team_7QIj2iv2a4O4AYbjP7Xkey8Q), 프로젝트 prj_DnJIpAfxJL3xyuHcANX2e9esEtBZ다. 같은 main9a5ffce와 fix-merge69ffb1b를 포함한 최근 배포가 BLOCKED이며 PR 봇의 Git 작성자 팀 접근 오류는 이 프로젝트에 해당한다.
+- 두 팀 모두 Hobby이고 동일 Git 저장소 연결을 API로 확인했다. 실제 운영 프로젝트를 재배포하거나 코드·Git 작성자·계정·멤버십·요금제·환경·보호 정책을 바꿀 이유는 확인되지 않았다. 본계정 프로젝트 사용 여부와 Git 연결만 해제할 의사를 확인 중이다. 연결 도구에는 Git 연결 해제 기능이 노출되지 않았다.
+- 별개로 팀원 claude/FrontEnd-webchat14b8bf8은 운영 welfare7에서도 dpl_CeRTfzyuacCz1Ns9ddaJW2HD7N8a가 BLOCKED이며 team-configuration 오류 문서로 연결된다. 첫 PR의 정상 배포와 구분하고 두 번째 통합의 Preview 준비에서 별도로 다룬다.
+- 계정별 배포 메타데이터·Git 연결만 읽었다. 실제 관리자 UI/API 동작 시험, 새 빌드·재배포·서비스/DB 변경은 하지 않았다. 기존 실패 기록은 보존하고 현재 인계·계획의 운영 상태만 정정했다.

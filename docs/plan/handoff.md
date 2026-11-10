@@ -1,13 +1,13 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:15 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:22 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
 - 첫 PR #20 생성·병합 완료: 원격 main은 9a5ffce이며 로컬 기능 브랜치는 이 커밋으로 ff-only 반영했다. 원격 fix-merge와 EC2는 69ffb1b다. 현재 문서는 후속 로컬 기록이며 아직 push하지 않았다. 다음은 팀원 작업 종료·최종 push·작성권 인계 확인이다. [병합 기록](devlog.md#log-20261110-1513-pr20)
-- Vercel Preview는 jehee826 계정의 jehee 팀 접근 권한 문제로 차단됐다. Git 병합 성공과 웹 배포 성공을 구분하며 계정/팀 설정·유료 플랜·저장소 공개 범위는 바꾸지 않았다.
+- Vercel 판정 정정: 실제 운영은 캡스톤 계정 welfare7/welfare-helper(prj_HkwhPJ62wroO3duFqX1qGAujtW0L)다. main9a5ffce production과 fix-merge69ffb1b Preview 모두 READY이고 기존 welfare-helper-iota.vercel.app은 최신 main에 연결됐다. 앞서 본 실패는 본계정 jehee의 동명 프로젝트(prj_DnJIpAfxJL3xyuHcANX2e9esEtBZ)다. 두 프로젝트가 같은 Git 저장소를 추적한다. 본계정 프로젝트 사용 여부를 확인하기 전 연결·권한을 바꾸지 않는다. Claude 브랜치14b8bf8 Preview는 welfare7에서도 BLOCKED이며 별도 후속 조건이다. [확인 근거](devlog.md#log-20261110-1522-vercel-target)
 
 - 첫 PR 준비 후속 완료: EC2 ec3e880의 기존 검사 14파일 정합성과 options.html 패키징 정책 1항목 복원을 읽기 검토하고 로컬 계획7582a2d와 통합했다. 이후 69ffb1b까지 원격 push·EC2 동기화를 완료했고 PR #20에 병합했다. 테스트·구문검사·빌드·패키저·실제 추론은 실행하지 않았다. [상세](devlog.md#log-20261110-1501-pr-source)
 
@@ -23,7 +23,7 @@
 - 확장은 기존 `Extension/`, MV3/0.1.0, API `https://15.164.190.21`이다. [이전 메뉴 변경 CI](https://github.com/jehee826/welfare_helper/actions/runs/42746898662)는 4job 성공이며 이번 요약/운영 변경의 시험 결과를 대신하지 않는다. 최신 모델·Chrome·CI 시험은 하지 않았다.
 - 기존 `Extension/README.md`·`docs/design/extension.md`를 실제 반영 계약으로 확정해 이 기록과 함께 공유한다. 모든 상세 검사·실패·수정과 원자료 위치는 일지를 따른다.
 - EC2 실패 B안11파일과 원자료는 보존 상태다. Backend UI 검사1줄만 baseline 기준으로 커밋했고 B안 제품코드는 포함하지 않았다. 원본11 백업·나머지10 작업해시 동일·겹침1의 의도된 UI 단언 차이를 유지한다.
-- 관리자 최신 UI는 fix-merge preview, production 관리자 도메인은 main 기존본이다. 기존 비밀번호와 영속 인증은 유지했고 W14 수집은 ON이다. backend 재생성으로 기존 관리자 세션이 만료됐을 수 있으므로 다시 로그인한다. 비밀번호 회전·실자료 재적재는 하지 않았다.
+- 관리자 최신 UI는 실제 운영 welfare7의 main9a5ffce production에 배포 READY로 확인됐다. 관리자 로그인·실제 화면 동작을 새로 시험한 것은 아니다. 기존 비밀번호와 영속 인증은 유지했고 W14 수집은 ON이다. backend 재생성으로 기존 관리자 세션이 만료됐을 수 있으므로 다시 로그인한다. 비밀번호 회전·실자료 재적재는 하지 않았다.
 
 ## 바로 다음에 할 일
 

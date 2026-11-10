@@ -73,7 +73,7 @@ for(const boundary of ['mode','conversation','profile','access','close','collaps
     if(boundary==='mode')await f.mode('screen');
     if(boundary==='conversation'){await f.click('전체 대화 삭제');await f.click('삭제 확인');}
     if(boundary==='profile')await f.click('내 정보 수정');
-    if(boundary==='access')await f.notify({type:'gyeote:document-access-changed',state:{mode:'admin',status:'ready',accessId:'other',origin:require('../protocol.js').documentOrigin()}});
+    if(boundary==='access')await f.notify({type:'gyeote:document-access-changed',state:{mode:'anonymous',status:'anonymous',accessId:'other',origin:require('../protocol.js').documentOrigin()}});
     if(boundary==='close')f.root.querySelector('.close').click();
     if(boundary==='collapse')f.root.querySelector('.collapse').click();
     if(boundary==='pagehide')f.w.dispatchEvent(new f.w.Event('pagehide'));

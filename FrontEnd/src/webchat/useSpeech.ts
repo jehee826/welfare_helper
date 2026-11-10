@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { speechChunks, speechText } from "../lib/speech";
+import { speechChunks, speechText } from "./speech";
 
 const KOREAN = /^ko([-_]|$)/i;
 

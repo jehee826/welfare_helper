@@ -1,4 +1,4 @@
-import type { ChatResponse } from "./api";
+import type { ChatResponse } from "./chatApi";
 
 /** 기존 확장과 같은 규칙으로 기호를 정리해 읽기 쉬운 문장으로 만든다. */
 export function speechText(text: string): string {

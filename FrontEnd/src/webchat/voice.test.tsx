@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
+import { WebChatPage } from "./WebChatPage";
 
 const BASE = "https://api.example.test";
 
@@ -64,7 +64,7 @@ afterEach(() => {
 describe("음성 입력", () => {
   it("미지원 브라우저에서는 안내하고 직접 입력을 유지한다", async () => {
     installFetch([]);
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     expect(screen.getByRole("button", { name: "음성 입력" })).toBeDisabled();
     expect(screen.getByText(/음성 입력을 지원하지 않습니다/)).toBeInTheDocument();
     await userEvent.setup().type(screen.getByLabelText("질문"), "직접 입력");
@@ -75,7 +75,7 @@ describe("음성 입력", () => {
     vi.stubGlobal("webkitSpeechRecognition", FakeRecognition);
     const fetchMock = installFetch([]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await user.type(screen.getByLabelText("질문"), "서울 거주 70세");
     await user.click(screen.getByRole("button", { name: "음성 입력" }));
     const recognition = FakeRecognition.last!;
@@ -92,7 +92,7 @@ describe("음성 입력", () => {
     vi.stubGlobal("SpeechRecognition", FakeRecognition);
     installFetch([]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await user.click(screen.getByRole("button", { name: "음성 입력" }));
     const first = FakeRecognition.last!;
     await user.click(screen.getByRole("button", { name: "음성 취소" }));
@@ -111,7 +111,7 @@ describe("음성 입력", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.stubGlobal("SpeechRecognition", FakeRecognition);
     installFetch([]);
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     act(() => screen.getByRole("button", { name: "음성 입력" }).click());
     const recognition = FakeRecognition.last!;
     await act(async () => {
@@ -137,7 +137,7 @@ describe("답변 읽기", () => {
     ]);
     installFetch([body, body]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await user.type(screen.getByLabelText("질문"), "기초연금");
     await user.click(screen.getByRole("button", { name: "보내기" }));
     await user.click(await screen.findByRole("button", { name: "답변 읽기" }));
@@ -160,7 +160,7 @@ describe("답변 읽기", () => {
     const synth = installSynth([{ lang: "en-US", localService: true } as SpeechSynthesisVoice, { lang: "ko-KR", localService: false } as SpeechSynthesisVoice]);
     installFetch([body]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await user.type(screen.getByLabelText("질문"), "기초연금");
     await user.click(screen.getByRole("button", { name: "보내기" }));
     await user.click(await screen.findByRole("button", { name: "답변 읽기" }));
@@ -172,7 +172,7 @@ describe("답변 읽기", () => {
     vi.stubGlobal("speechSynthesis", undefined);
     installFetch([body]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await user.type(screen.getByLabelText("질문"), "기초연금");
     await user.click(screen.getByRole("button", { name: "보내기" }));
     await user.click(await screen.findByRole("button", { name: "답변 읽기" }));

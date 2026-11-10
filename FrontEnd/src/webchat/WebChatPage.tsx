@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Contacts } from "./components/Contacts";
-import { useSpeech } from "./hooks/useSpeech";
-import { useVoiceInput } from "./hooks/useVoiceInput";
+import { Contacts } from "./Contacts";
+import { useSpeech } from "./useSpeech";
+import { useVoiceInput } from "./useVoiceInput";
 import {
   ApiError,
   CAPABILITIES_TIMEOUT_MS,
@@ -14,8 +14,9 @@ import {
   queryLength,
   type ApiErrorCode,
   type ChatResponse,
-} from "./lib/api";
-import { spokenAnswer } from "./lib/speech";
+} from "./chatApi";
+import { spokenAnswer } from "./speech";
+import "./webchat.css";
 
 type Phase =
   | { kind: "idle" }
@@ -59,7 +60,7 @@ async function checkReferral(base: string, signal: AbortSignal): Promise<boolean
 }
 
 /** 질문 하나를 보내고 답변·연락처를 표시하는 단발성 상담 화면이다. 상담 내용은 메모리에만 둔다. */
-export default function App({ baseUrl = apiBase() }: { baseUrl?: string | null }) {
+export function WebChatPage({ baseUrl = apiBase() }: { baseUrl?: string | null }) {
   const [draft, setDraft] = useState("");
   const [inputError, setInputError] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -85,6 +86,14 @@ export default function App({ baseUrl = apiBase() }: { baseUrl?: string | null }
   const loading = phase.kind === "loading";
   const length = queryLength(draft);
   const over = length > QUERY_LIMIT;
+
+  useEffect(() => {
+    const previous = document.title;
+    document.title = "곁에 · 복지 안내";
+    return () => {
+      document.title = previous;
+    };
+  }, []);
 
   useEffect(() => {
     if (!baseUrl) return;
@@ -202,25 +211,26 @@ export default function App({ baseUrl = apiBase() }: { baseUrl?: string | null }
   const describedBy = ["question-hint", "question-count", inputError ? "question-error" : ""].filter(Boolean).join(" ");
 
   return (
-    <div className="page">
-      <header className="top">
-        <p className="brand">곁에</p>
+    <div className="wc-root">
+    <div className="wc-page">
+      <header className="wc-top">
+        <p className="wc-brand">곁에</p>
         <h1>복지 안내 질문하기</h1>
-        <p className="lead">질문 하나를 보내면 공식 문서를 바탕으로 답변과 문의처를 알려 드립니다.</p>
+        <p className="wc-lead">질문 하나를 보내면 공식 문서를 바탕으로 답변과 문의처를 알려 드립니다.</p>
       </header>
 
       <main>
         {!baseUrl ? (
-          <p className="banner banner-error" role="alert">
+          <p className="wc-banner wc-banner-error" role="alert">
             {ERROR_MESSAGES.config}
           </p>
         ) : null}
 
-        <form className="ask" onSubmit={(event) => void submit(event)} noValidate aria-busy={loading}>
-          <label htmlFor="question" className="field-label">
+        <form className="wc-ask" onSubmit={(event) => void submit(event)} noValidate aria-busy={loading}>
+          <label htmlFor="question" className="wc-field-label">
             질문
           </label>
-          <p id="question-hint" className="hint">
+          <p id="question-hint" className="wc-hint">
             {HINT}
           </p>
           <textarea
@@ -235,100 +245,100 @@ export default function App({ baseUrl = apiBase() }: { baseUrl?: string | null }
             aria-invalid={inputError || over ? true : undefined}
             autoComplete="off"
           />
-          <p id="question-count" className={over ? "count count-over" : "count"}>
+          <p id="question-count" className={over ? "wc-count wc-count-over" : "wc-count"}>
             {length} / {QUERY_LIMIT}자{over ? " (글자 수를 줄여 주세요)" : ""}
           </p>
           {inputError ? (
-            <p id="question-error" className="field-error" role="alert">
+            <p id="question-error" className="wc-field-error" role="alert">
               {inputError}
             </p>
           ) : null}
 
-          <div className="actions">
-            <button type="submit" className="button button-primary" disabled={!baseUrl} aria-disabled={loading || undefined}>
+          <div className="wc-actions">
+            <button type="submit" className="wc-button wc-button-primary" disabled={!baseUrl} aria-disabled={loading || undefined}>
               {loading ? "보내는 중" : "보내기"}
             </button>
             {loading ? (
-              <button type="button" className="button button-danger" onClick={cancelRequest}>
+              <button type="button" className="wc-button wc-button-danger" onClick={cancelRequest}>
                 요청 취소
               </button>
             ) : null}
             {voice.listening ? (
               <>
-                <button type="button" className="button" onClick={() => voice.finish()}>
+                <button type="button" className="wc-button" onClick={() => voice.finish()}>
                   말하기 끝
                 </button>
-                <button type="button" className="button" onClick={() => voice.cancel()}>
+                <button type="button" className="wc-button" onClick={() => voice.cancel()}>
                   음성 취소
                 </button>
               </>
             ) : (
-              <button type="button" className="button" onClick={voice.start} disabled={!voice.supported}>
+              <button type="button" className="wc-button" onClick={voice.start} disabled={!voice.supported}>
                 음성 입력
               </button>
             )}
           </div>
 
-          {!voice.supported ? <p className="note">이 브라우저는 음성 입력을 지원하지 않습니다. 입력창에 직접 입력해 주세요.</p> : null}
+          {!voice.supported ? <p className="wc-note">이 브라우저는 음성 입력을 지원하지 않습니다. 입력창에 직접 입력해 주세요.</p> : null}
           {voice.listening ? (
-            <p className="note note-warning">음성이 브라우저의 외부 음성 인식 서비스로 전송될 수 있습니다. 민감한 개인정보는 말하지 마세요.</p>
+            <p className="wc-note wc-note-warning">음성이 브라우저의 외부 음성 인식 서비스로 전송될 수 있습니다. 민감한 개인정보는 말하지 마세요.</p>
           ) : null}
-          <p className="voice-status" role="status">
+          <p className="wc-voice-status" role="status">
             {voice.status}
           </p>
 
-          {referral === "enabled" ? <p className="note">{REFERRAL_NOTICE}</p> : null}
-          {referral === "unknown" && baseUrl ? <p className="note">연락처 안내 기록 설정을 확인하지 못했습니다. 보내기를 누르면 다시 확인합니다.</p> : null}
+          {referral === "enabled" ? <p className="wc-note">{REFERRAL_NOTICE}</p> : null}
+          {referral === "unknown" && baseUrl ? <p className="wc-note">연락처 안내 기록 설정을 확인하지 못했습니다. 보내기를 누르면 다시 확인합니다.</p> : null}
         </form>
 
-        <section className="result" aria-label="답변">
+        <section className="wc-result" aria-label="답변">
           {phase.kind === "loading" ? (
-            <div className="panel">
+            <div className="wc-panel">
               <Asked question={phase.question} />
-              <div role="status" className="loading">
-                <p className="loading-title">{phase.stage === "check" ? "연결을 확인하고 있습니다." : "답변을 준비하고 있습니다."}</p>
+              <div role="status" className="wc-loading">
+                <p className="wc-loading-title">{phase.stage === "check" ? "연결을 확인하고 있습니다." : "답변을 준비하고 있습니다."}</p>
                 <p>몇 분 걸릴 수 있습니다. 기다리는 동안 '요청 취소'를 누를 수 있습니다.</p>
               </div>
-              <p className="elapsed" aria-hidden="true">
+              <p className="wc-elapsed" aria-hidden="true">
                 {elapsed}초 지남
               </p>
             </div>
           ) : null}
 
           {phase.kind === "done" ? (
-            <article className="panel">
+            <article className="wc-panel">
               <Asked question={phase.question} />
               <h2 ref={resultHeading} tabIndex={-1}>
                 {phase.response.kind === "answer" ? "답변" : "안내"}
               </h2>
-              <div className="answer-text">{phase.response.text}</div>
-              <div className="speech-row">
+              <div className="wc-answer-text">{phase.response.text}</div>
+              <div className="wc-speech-row">
                 <button
                   type="button"
-                  className="button"
+                  className="wc-button"
                   aria-pressed={speech.speaking}
                   onClick={() => (speech.speaking ? speech.stop() : void speech.speak(spokenAnswer(phase.response)))}
                 >
                   {speech.speaking ? "읽기 정지" : "답변 읽기"}
                 </button>
               </div>
-              <p className="speech-status" role="status">
+              <p className="wc-speech-status" role="status">
                 {speech.notice}
               </p>
               <Contacts contacts={phase.response.contacts} />
-              <p className="disclaimer">답변은 안내용입니다. 실제 대상 여부와 신청은 담당 기관에서 확인해 주세요.</p>
+              <p className="wc-disclaimer">답변은 안내용입니다. 실제 대상 여부와 신청은 담당 기관에서 확인해 주세요.</p>
             </article>
           ) : null}
 
           {phase.kind === "error" ? (
-            <div className="banner banner-error" role="alert">
+            <div className="wc-banner wc-banner-error" role="alert">
               <p>{ERROR_MESSAGES[phase.code]}</p>
               <p>입력한 질문은 그대로 남아 있습니다. 확인한 뒤 다시 보내 주세요.</p>
             </div>
           ) : null}
 
           {phase.kind === "canceled" ? (
-            <div className="banner" role="status">
+            <div className="wc-banner" role="status">
               <p>요청을 취소했습니다. 이 요청의 결과는 화면에 표시하지 않습니다.</p>
               <p>서버에서는 이미 시작된 처리가 잠시 이어질 수 있습니다.</p>
             </div>
@@ -336,18 +346,19 @@ export default function App({ baseUrl = apiBase() }: { baseUrl?: string | null }
         </section>
       </main>
 
-      <footer className="bottom">
+      <footer className="wc-bottom">
         <p>새로고침하면 질문과 답변이 지워집니다. 상담 내용은 이 기기에 저장하지 않습니다.</p>
       </footer>
+    </div>
     </div>
   );
 }
 
 function Asked({ question }: { question: string }) {
   return (
-    <div className="asked">
-      <p className="asked-label">내 질문</p>
-      <p className="asked-text">{question}</p>
+    <div className="wc-asked">
+      <p className="wc-asked-label">내 질문</p>
+      <p className="wc-asked-text">{question}</p>
     </div>
   );
 }

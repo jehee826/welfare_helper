@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
+import { WebChatPage } from "./WebChatPage";
 
 const BASE = "https://api.example.test";
 
@@ -60,7 +60,7 @@ afterEach(() => {
 describe("연결 설정", () => {
   it("API 주소가 없으면 연결 설정 오류를 보이고 요청하지 않는다", () => {
     const fetchMock = installFetch([]);
-    render(<App baseUrl={null} />);
+    render(<WebChatPage baseUrl={null} />);
     expect(screen.getByRole("alert")).toHaveTextContent("연결 설정 오류");
     expect(screen.getByRole("button", { name: "보내기" })).toBeDisabled();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -71,7 +71,7 @@ describe("질문 전송", () => {
   it("연속 질문에도 현재 질문과 기한만 보낸다", async () => {
     const fetchMock = installFetch([answer("첫 답변"), answer("둘째 답변")]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
 
     await ask(user, "기초연금 신청 방법 알려줘");
     expect(await screen.findByText("첫 답변")).toBeInTheDocument();
@@ -94,7 +94,7 @@ describe("질문 전송", () => {
   it("빈 질문과 300자 초과는 보내지 않는다", async () => {
     const fetchMock = installFetch([]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     await user.click(screen.getByRole("button", { name: "보내기" }));
@@ -110,7 +110,7 @@ describe("질문 전송", () => {
     const pending = deferred<Response>();
     const fetchMock = installFetch([() => pending.promise]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     await screen.findByText("답변을 준비하고 있습니다.");
     await user.click(screen.getByRole("button", { name: "보내는 중" }));
@@ -125,7 +125,7 @@ describe("응답 표시", () => {
   it("자료 없음 안내는 오류가 아니라 안내로 보인다", async () => {
     installFetch([{ status: 200, body: { kind: "fallback", text: "관련 공식 자료를 찾지 못했습니다.", reason: "no_evidence", extra: 1 } }]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "우주 여행 지원");
     expect(await screen.findByRole("heading", { name: "안내" })).toHaveFocus();
     expect(screen.getByText("관련 공식 자료를 찾지 못했습니다.")).toBeInTheDocument();
@@ -145,7 +145,7 @@ describe("응답 표시", () => {
       }),
     ]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금 문의처");
     await screen.findByText("기초연금 안내");
     const links = screen.getAllByRole("link");
@@ -160,7 +160,7 @@ describe("응답 표시", () => {
   it("서버 텍스트의 HTML을 실행하지 않고 글자로 보인다", async () => {
     installFetch([answer("<b>굵게</b><img src=x>")]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "질문");
     expect(await screen.findByText("<b>굵게</b><img src=x>")).toBeInTheDocument();
     expect(document.querySelector("img, b")).toBeNull();
@@ -176,7 +176,7 @@ describe("취소와 실패", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     await screen.findByText("답변을 준비하고 있습니다.");
     await user.click(screen.getByRole("button", { name: "요청 취소" }));
@@ -194,7 +194,7 @@ describe("취소와 실패", () => {
   ])("%s 오류를 구분해 안내하고 입력을 보존한다", async (status, body, message) => {
     const fetchMock = installFetch([{ status, body }]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
     expect(screen.getByLabelText("질문")).toHaveValue("기초연금");
@@ -204,7 +204,7 @@ describe("취소와 실패", () => {
   it("네트워크 오류 후 자동 재전송 없이 다시 보낼 수 있다", async () => {
     const fetchMock = installFetch([() => Promise.reject(new TypeError("Failed to fetch")), answer("재시도 답변")]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     expect(await screen.findByRole("alert")).toHaveTextContent("서버에 연결하지 못했습니다");
     expect(chatCalls(fetchMock)).toHaveLength(1);
@@ -216,7 +216,7 @@ describe("취소와 실패", () => {
   it("600초가 지나면 시간 초과로 안내한다", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     installFetch([() => new Promise<Response>(() => undefined)], { status: 404 });
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     fireEvent.change(screen.getByLabelText("질문"), { target: { value: "기초연금" } });
     fireEvent.click(screen.getByRole("button", { name: "보내기" }));
     await screen.findByText("답변을 준비하고 있습니다.");
@@ -230,14 +230,14 @@ describe("취소와 실패", () => {
 describe("연락처 기록 수집 상태", () => {
   it("활성일 때만 수집 안내를 표시한다", async () => {
     installFetch([answer("답")], { status: 200, body: { referral_records_enabled: true, profile_context_supported: true } });
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     expect(await screen.findByText(/90일 뒤 자동 삭제/)).toBeInTheDocument();
   });
 
   it("404는 비활성으로 보고 질문을 보낸다", async () => {
     const fetchMock = installFetch([answer("답")], { status: 404 });
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     expect(await screen.findByText("답")).toBeInTheDocument();
     expect(screen.queryByText(/90일/)).not.toBeInTheDocument();
@@ -247,7 +247,7 @@ describe("연락처 기록 수집 상태", () => {
   it("전송 직전 확인이 실패하면 질문을 보내지 않는다", async () => {
     const fetchMock = installFetch([answer("답")], [{ status: 200, body: { referral_records_enabled: false } }, { status: 500 }]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     expect(await screen.findByRole("alert")).toHaveTextContent("질문을 보내지 않았습니다");
     expect(chatCalls(fetchMock)).toHaveLength(0);
@@ -257,7 +257,7 @@ describe("연락처 기록 수집 상태", () => {
   it("수집이 꺼져 있어도 연락처는 표시한다", async () => {
     installFetch([answer("답", { contacts: [{ label: "보건복지상담센터", phone: "129", kind: "general", source_url: "https://www.129.go.kr", checked_at: "2026-11-01" }] })]);
     const user = userEvent.setup();
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     expect(await screen.findByRole("link", { name: /보건복지상담센터/ })).toHaveAttribute("href", "tel:129");
   });
@@ -269,7 +269,7 @@ describe("저장하지 않음", () => {
     sessionStorage.clear();
     installFetch([answer("답")]);
     const user = userEvent.setup();
-    const { unmount } = render(<App baseUrl={BASE} />);
+    const { unmount } = render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     await screen.findByText("답");
     expect(localStorage.length).toBe(0);
@@ -277,7 +277,7 @@ describe("저장하지 않음", () => {
     expect(document.cookie).toBe("");
     unmount();
     const next = installFetch([]);
-    render(<App baseUrl={BASE} />);
+    render(<WebChatPage baseUrl={BASE} />);
     await waitFor(() => expect(next).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("답")).not.toBeInTheDocument();
     expect(screen.getByLabelText("질문")).toHaveValue("");

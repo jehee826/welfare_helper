@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { apiBase, parseChatResponse, queryLength } from "./api";
+import { apiBase, parseChatResponse, queryLength } from "./chatApi";
 
 describe("apiBase", () => {
   it("https 주소만 허용하고 없으면 localhost로 대체하지 않는다", () => {
     expect(apiBase("https://15.164.190.21/")).toBe("https://15.164.190.21");
     expect(apiBase("https://api.example.test/base/")).toBe("https://api.example.test/base");
-    expect(apiBase(undefined)).toBeNull();
+    expect(apiBase(null)).toBeNull();
     expect(apiBase("  ")).toBeNull();
     expect(apiBase("http://localhost:8000")).toBeNull();
     expect(apiBase("https://user:pw@api.example.test")).toBeNull();

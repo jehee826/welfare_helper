@@ -8,6 +8,7 @@ import { DocumentsPage } from "./pages/DocumentsPage";
 import { Header } from "./components/Header";
 import { PasswordRotation } from "./components/admin/PasswordRotation";
 import { ReferralsPage } from "./pages/ReferralsPage";
+import { WebChatPage } from "./webchat/WebChatPage";
 
 const liveApi = createHttpApi();
 
@@ -24,6 +25,7 @@ export function App({ api = liveApi }: { api?: WelfareApi }) {
 function AppRoutes({ api }: { api: WelfareApi }) {
   return (
     <Routes>
+      <Route path="/webchat" element={<WebChatPage />} />
       <Route path="/" element={<Navigate to="/admin/documents" replace />} />
       <Route path="/admin" element={<Navigate to="/admin/documents" replace />} />
       <Route element={<AdminLayout />}>

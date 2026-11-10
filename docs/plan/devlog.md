@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 12:39 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 12:58 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -860,3 +860,10 @@
 - content수정으로summaryAvailable/진입prefetch/입력창앞summaryTools숨김을제거하고header의profile버튼바로앞에요약버튼을옮겼다. 모드/접근·빈상담/저장미준비등은disabled/title과클릭가드로유지하며클릭의기존10초준비기한내지원확인1회를수행한다. 400폭동일행·380이하두버튼같은행인접CSS와800이상flex전환을적용했다. 설계는실제EC2 content diff를읽었다.
 - 추가검사를하지말라는정정에따라검사/구문/해시/CI/HTTP/Chrome의추가실행을중단했다. 개발은중단지시와함께기존대역실행의완료통지를받았다고보고했으므로'전혀실행하지않음'으로바꾸지않는다. 이후추가실행0이며시험으로시작한자기잔여프로세스만정리하도록했다. 이번정리에서검증통과숫자를근거로확대보고하지않는다.
 - 개발이이미완성된content와기존관련검사2파일만EC2 staged-only커밋 `0eb3c70ff7b4e283fd2acfbbe0c70b3be539e4bd`으로보존했고빈index·B11미편집/미stage·원격push0을보고했다. 설계는SSHfetch후로컬534783f→0eb3c70 ff-only로실제확장폴더를동기화했다. 제품3파일72+/23-이며추가검사없이기존문서진행수정은보존했다. 로컬/EC2코드수정은완료,원격공유는아직이며새Chrome설치조작은하지않았다.
+- 후속코드검토에서상단버튼의disabled와cursor:not-allowed가클릭금지표시의직접코드임을확인했다. 실제어느상태값이차단했는지는화면을조회하지않아단정하지않는다. 창열기와즉시생성을묶어저장/모드/진행상태가창접근까지막는구조였으며수동요약에도7일자동맥락제외가적용돼있었다.
+- 12:51 기존백엔드 BackEnd/conversation_summary.py의 POST /api/v1/conversation/summary를소스로확인했다. messages/partial을기존OllamaClient.chat에전달해text/source_message_ids/partial을반환하므로백엔드추가/수정은필요없다. 새지시는상단버튼으로요약창만열기→창안요약하기→현재저장대화의수동요약→기존displaySummary저장흐름이다. 상단창열기는비활성화하지않으며실행조건은창안에서만처리한다.
+- 수동요약은보관된현재대화전체(최근30문답)를대상으로하고7일/새주제/OFF의RAG자동맥락제외와분리한다. 기존60메시지/12000자예산·최근완전쌍선택/partial·서버토큰예산·정제/저장CAS는유지한다. 별도지원GET선확인없이기존요약POST와오류처리를사용한다. RAG자동 contextMessages/requestContext는바꾸지않는다.
+- 개발은확장런타임소스만수정하고테스트파일/새대역/HTTP/Chrome/LLM/CI/해시확인은하지않는다. 변경런타임파일의node구문확인만각1회이내로제한하며동작시험은사용자가직접한다. 로컬문서de5156e와EC2제품0eb3c70의미push분기는설계가기능브랜치에서문서이력을보존해통합한다.
+- 확장런타임3파일(content/conversations/conversation-store)만수정했다. 상단은always enabled로창만열고저장요약을보여주며창안요약하기가저장대화를읽어기존prepare/offscreen POST/worker CAS저장을사용한다. 별도capability GET선조회와수동입력의7일active필터를제거했고수동summaryInput만전체보관messages를선택한다. 자동RAG함수·저장형식·예산·백엔드API는보존했다.
+- 설계가실제3파일diff를읽어기존모달의×/Esc/밖닫기·포커스/불투명도재사용과창열기/실행분리를확인했다. 개발이변경3파일의node --check만각1회통과했다고보고했다. 테스트파일수정·대역/HTTP/LLM/CI/Chrome/해시/하위담당실행은0이며동작통과를주장하지않는다.
+- EC2 staged-only제품커밋은 `d0ecaf288659c856737d6dc0637372c9a5051f75`이며3파일39+/37-다. 개발은지정root/branch·자기3파일범위만확인했고B11미편집/미stage·빈index를보고했다. 설계가SSHfetch한뒤기능브랜치의미push문서이력de5156e를보존해충돌없는통합커밋 `55cf239b719b7785a8bf6e533c28269365eacaba`으로로컬실제Extension에반영했다. main/기존이력재작성·원격push는없다. 원격은이전534783f이며사용자직접시험이남았다.

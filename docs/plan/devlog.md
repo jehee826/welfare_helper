@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:22 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:34 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -949,3 +949,10 @@
 - 두 팀 모두 Hobby이고 동일 Git 저장소 연결을 API로 확인했다. 실제 운영 프로젝트를 재배포하거나 코드·Git 작성자·계정·멤버십·요금제·환경·보호 정책을 바꿀 이유는 확인되지 않았다. 본계정 프로젝트 사용 여부와 Git 연결만 해제할 의사를 확인 중이다. 연결 도구에는 Git 연결 해제 기능이 노출되지 않았다.
 - 별개로 팀원 claude/FrontEnd-webchat14b8bf8은 운영 welfare7에서도 dpl_CeRTfzyuacCz1Ns9ddaJW2HD7N8a가 BLOCKED이며 team-configuration 오류 문서로 연결된다. 첫 PR의 정상 배포와 구분하고 두 번째 통합의 Preview 준비에서 별도로 다룬다.
 - 계정별 배포 메타데이터·Git 연결만 읽었다. 실제 관리자 UI/API 동작 시험, 새 빌드·재배포·서비스/DB 변경은 하지 않았다. 기존 실패 기록은 보존하고 현재 인계·계획의 운영 상태만 정정했다.
+<a id="log-20261110-1534-vercel-disconnected"></a>
+## 2026-11-10 15:34 KST · 본계정 중복 Git 연결 해제 확인
+
+- 사용자가 본계정 jehee/welfare-helper의 Git 연결을 직접 해제했다. 두 계정의 get_git_deployment_context를 읽어 본계정 연결 목록에서 welfare-helper가 빠지고, 캡스톤 welfare7의 jehee826/welfare_helper 연결은 유지됐음을 확인했다.
+- 캡스톤 get_project에서 기존 welfare-helper-iota.vercel.app 도메인과 production dpl_7GrpaDTh8cn95wUTUYZc9AhTuvLp의 READY를 재확인했다. 신규 배포나 사용자 화면 시험을 수행한 것은 아니다.
+- 프로젝트 삭제·GitHub 앱 전체 제거·멤버십/요금제 변경은 수행하지 않았다. 앞선 Chrome 접근은 도구 승인 거절로 변경 전에 종료했고 다른 UI 경로로 우회하지 않았다.
+- 첫 PR 병합 후 다음 단계는 팀원 작업 종료·최종 push·작성권 인계 확인이다. 팀원 브랜치의 별도 Preview 차단은 중복 프로젝트 해제만으로 해결됐다고 판단하지 않는다.

@@ -1,12 +1,12 @@
 # 개발 계획과 진행 현황
 
-작성: 2026-11-08. 최신 업데이트: 2026-11-10 15:22 KST
+작성: 2026-11-08. 최신 업데이트: 2026-11-10 15:34 KST
 
 이 문서는 계획·현재 상태·남은 조건과 [개발일지](devlog.md)의 진행 위치를 보여 준다. 상세 변경·검사·실패 이력은 일지에만 기록하고 지금 할 일과 환경은 [현재 인계](handoff.md)를 따른다.
 
 ## 1. 현재 완료 범위와 남은 순서
 
-- 첫 PR #20 생성·병합 완료: 원격 main은 9a5ffce다. 다음은 팀원 최종 push·작성권 인계 확인 후 Claude 브랜치 통합이다. 실제 운영 welfare7 프로젝트는 main9a5ffce·fix-merge69ffb1b 배포가 READY다. 실패 알림은 같은 저장소의 본계정 jehee 중복 프로젝트에서 발생했다. Claude 브랜치14b8bf8 Preview는 운영 계정에서도 별도로 BLOCKED다. [병합 기록](devlog.md#log-20261110-1513-pr20)
+- 첫 PR #20 생성·병합 완료: 원격 main은 9a5ffce다. 다음은 팀원 최종 push·작성권 인계 확인 후 Claude 브랜치 통합이다. 실제 운영 welfare7 프로젝트는 main9a5ffce·fix-merge69ffb1b 배포가 READY다. 실패 알림을 만들던 본계정 jehee 중복 프로젝트의 Git 연결 해제를 확인했다. 운영 welfare7 연결은 유지한다. Claude 브랜치14b8bf8 Preview는 운영 계정에서도 별도로 BLOCKED다. [병합 기록](devlog.md#log-20261110-1513-pr20)
 
 - 완료: 원문353개 추가/전체364문서 게시, 주요 확장·관리자 기능 구현, 확인된 관리자/worker 결함 수정·CI, 운영 backend/worker 교체, 영속 인증 활성화, 필요한 HTTPS/CORS/권한 및 MD/PDF 정상 처리 확인.
 - 완료: 확장 피드백3건의 코드·검사 수정·제품 커밋/push·로컬/EC2 동기화와 자동CI 4job 성공을 확인했다. 실제 설치 Chrome 확인은 아래 최종 확인 단계로 남긴다. [완료·실패/수정 근거](devlog.md#log-20261110-1103-resume) / [앞선 검사·차단](devlog.md#log-20261110-1039-acc25e)

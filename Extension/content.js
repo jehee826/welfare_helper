@@ -21,7 +21,7 @@
   let selected=[],snapshot=null,serial=0,frame=0,collapsed=false,ownMutation=false,observer,requestPort=null,busy=false,activeReply=null,history=[],historyUrl='',requestTimer;
   let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
   let configurationReady=false,pendingQuestion=null,pendingReply=null,accessVersion=0;
-  let summaryAvailable=false,summaryBusy=false,summaryPort=null,summaryVersion=0,summaryTimer,summaryDisplayKey=null,summaryClosedKey=null;
+  let summaryBusy=false,summaryPort=null,summaryVersion=0,summaryTimer,summaryDisplayKey=null,summaryClosedKey=null;
   let profileUsageState=null,profileUsageSupported=null,profileUsageValid=false,profileUsageBusy=false,profileUsageLoading=false,profileUsageDeferred=false,profileUsageVersion=0,profileUsageError='';
   let publicNoticeVersion=0;
   try{GyeoteProtocol.documentOrigin();configurationReady=true;}catch{}
@@ -107,12 +107,19 @@
     sendButton.setAttribute('aria-label',label);sendButton.title=label;sendButton.disabled=summaryBusy;
     updateSummaryControls();
   }
-  const summaryTools=document.createElement('div'),summaryButton=document.createElement('button'),summaryPanel=document.createElement('section'),summaryHeading=document.createElement('strong'),summaryBody=document.createElement('p'),summaryClose=document.createElement('button');
-  summaryTools.className='summary-tools';summaryTools.hidden=true;summaryButton.type='button';summaryButton.className='consultation-summary';summaryButton.textContent='상담 요약';summaryTools.append(summaryButton);questionForm.before(summaryTools);
+  const summaryButton=document.createElement('button'),summaryPanel=document.createElement('section'),summaryHeading=document.createElement('strong'),summaryBody=document.createElement('p'),summaryClose=document.createElement('button');
+  summaryButton.type='button';summaryButton.className='consultation-summary';summaryButton.textContent='상담 요약';
   summaryPanel.className='consultation-summary-result';summaryPanel.hidden=true;summaryPanel.setAttribute('aria-label','이전 상담 요약');summaryPanel.setAttribute('role','region');summaryBody.style.whiteSpace='pre-wrap';summaryBody.setAttribute('role','status');summaryClose.type='button';summaryClose.textContent='요약 닫기';summaryPanel.append(summaryHeading,summaryBody,summaryClose);transcript.append(summaryPanel);
   function updateSummaryControls(){
-    summaryTools.hidden=!summaryAvailable||mode!=='document'||currentAccess?.mode!=='anonymous';
-    summaryButton.disabled=summaryBusy||busy||requestPending||!savedPanel?.ready||savedPanel.hasUnsaved||!savedPanel.state.conversations[0]?.messages.length;
+    const reason=mode!=='document'?'복지 상담 모드에서 요약할 수 있습니다.':
+      !currentAccess?'문서 접근 상태를 확인 중입니다.':
+      currentAccess.mode!=='anonymous'?'공개 상담에서만 요약할 수 있습니다.':
+      summaryBusy?'현재 상담을 요약하고 있습니다.':
+      busy||requestPending?'진행 중인 질문을 마친 뒤 요약할 수 있습니다.':
+      !savedPanel?.ready?'대화 저장 상태를 확인한 뒤 요약할 수 있습니다.':
+      savedPanel.hasUnsaved?'미저장 답변을 처리한 뒤 요약할 수 있습니다.':
+      !savedPanel.state.conversations[0]?.messages.length?'요약할 상담이 없습니다.':'';
+    summaryButton.disabled=!!reason;summaryButton.title=reason||'현재 상담을 요약합니다.';
   }
   function stopSummary(){
     summaryVersion++;clearTimeout(summaryTimer);const port=summaryPort;summaryPort=null;summaryBusy=false;
@@ -130,7 +137,7 @@
   summaryClose.addEventListener('click',()=>{summaryClosedKey=summaryDisplayKey;stopSummary();summaryButton.focus();});
   summaryButton.addEventListener('click',()=>void summarizeConversation());
   async function summarizeConversation(){
-    if(summaryButton.disabled||summaryTools.hidden)return;
+    if(summaryButton.disabled||mode!=='document'||currentAccess?.mode!=='anonymous')return;
     stopSummary();stopSpeech();inputAssist?.cancel();summaryBusy=true;updateRequestControl();inputAssist?.update();
     const version=summaryVersion,requestId=GyeoteDOM.id(),startedAt=Date.now();let submitted;
     const finish=error=>{
@@ -145,6 +152,8 @@
     try{
       const selected=await savedPanel.summaryRequest();if(version!==summaryVersion)return;
       if(!selected.messages.length){summaryBody.textContent=selected.partial?'한 문답의 길이가 요약 한도를 넘어 요약할 수 없습니다. 원래 상담 내용을 확인해 주세요.':'요약할 최근 상담이 없습니다. 마지막 질문 후 7일 이상 지난 기록은 자동으로 포함하지 않아요.';finish();return;}
+      const capability=await chrome.runtime.sendMessage({type:'gyeote:summary-capability'});if(version!==summaryVersion)return;
+      if(capability?.available!==true)throw new Error('summary_unavailable');
       const prepared=await chrome.runtime.sendMessage({type:'gyeote:prepare',mode:'summary'});if(version!==summaryVersion)return;
       if(!prepared?.ok)throw new Error(prepared?.error||'connection_failed');
       if(prepared.documentAccess?.mode!=='anonymous'||accessKey(prepared.documentAccess)!==accessKey(currentAccess))throw new Error('document_access_changed');
@@ -198,6 +207,7 @@
   }
   profileButton.before(modeSwitch);
   const opacitySlider=document.createElement('input');opacitySlider.type='range';opacitySlider.className='ui-opacity';opacitySlider.min='10';opacitySlider.max='100';opacitySlider.step='1';opacitySlider.value='100';opacitySlider.setAttribute('aria-label','플로팅 UI 불투명도');opacitySlider.title='플로팅 UI 불투명도';modeSwitch.before(opacitySlider);
+  profileButton.before(summaryButton);
   const modeReason=document.createElement('p');modeReason.className='mode-reason';modeReason.textContent='서버 설정을 확인하지 못해 화면 안내를 사용할 수 없습니다.';modeReason.hidden=configurationReady;modeReason.id='gyeote-mode-reason';if(!configurationReady)modeSwitch.querySelector('[data-mode=screen]').setAttribute('aria-describedby',modeReason.id);$('.head').after(modeReason);
   const modeNotice=document.createElement('p');modeNotice.className='muted';modeLabel.after(modeNotice);
   const accessNotice=document.createElement('p');accessNotice.className='muted document-access';modeNotice.after(accessNotice);
@@ -361,15 +371,20 @@
     .compose-row{background:#f8faff;border-color:#7f8ea8}.compose-row:focus-within{border-color:var(--gyeote-accent);box-shadow:0 0 0 1px var(--gyeote-accent)}.compose-row input{color:var(--gyeote-ink)}.compose-row input::placeholder{color:var(--gyeote-muted);opacity:1}
     .consultation button[type=submit],.open,.listening-overlay .voice-cancel{background:var(--gyeote-accent);color:#fff}.consultation button[type=submit]:hover,.open:hover,.listening-overlay .voice-cancel:hover{background:#304aa2}
     .conversation article{background:var(--gyeote-soft)}.conversation article.user-message{background:var(--gyeote-accent);color:#fff}.conversation article.user-message small{color:#fff}.conversation:empty::before{color:var(--gyeote-muted)}
-    .question-suggestions button{background:var(--gyeote-soft);border-color:#b9c8e0;color:var(--gyeote-ink)}.onboarding{border-left:3px solid #725bed}.referral-notice{margin:10px 0;font-size:13px;line-height:1.6}.summary-tools{margin-bottom:8px}.profile-panel input,.profile-panel select{border-color:#7f8ea8;color:var(--gyeote-ink);background:#fff}
+    .question-suggestions button{background:var(--gyeote-soft);border-color:#b9c8e0;color:var(--gyeote-ink)}.onboarding{border-left:3px solid #725bed}.referral-notice{margin:10px 0;font-size:13px;line-height:1.6}.profile-panel input,.profile-panel select{border-color:#7f8ea8;color:var(--gyeote-ink);background:#fff}
     .conversation-warning,.unsaved-conversation{color:#6b4a00;background:#fff6e0;border-color:#b38e3a}.speak-answer[aria-pressed=true]{background:#e4eafd;color:#304aa2;border-color:#7f8ea8}
     .panel{right:clamp(4px,calc((100vw - var(--gyeote-width,400px))/2),12px);bottom:clamp(4px,calc((100vh - var(--gyeote-height,720px))/2),12px);max-width:calc(100% - 8px);max-height:calc(100% - 8px);background:transparent}
     .body{background:#fff}.consultation,.status{background:transparent}.head,.mode-reason{background:var(--gyeote-soft)}
-    .head{display:grid;grid-template-columns:44px minmax(36px,1fr) 60px 44px 44px 44px;gap:4px;padding:8px}.head>:not(.mode-switch):not(.ui-opacity){grid-row:1}.head .resize-handle{grid-column:1}.head strong{grid-column:2}.head .profile-toggle{grid-column:3}.head .menu-toggle{grid-column:4}.head .collapse{grid-column:5}.head .close{grid-column:6}
-    .head .resize-handle,.head .profile-toggle,.head .menu-toggle,.head .collapse,.head .close{width:44px;height:44px;min-height:44px;padding:0;border:1px solid #b9c8e0;border-radius:12px;background:#fff;box-shadow:0 1px 3px #22314d12}.head .profile-toggle{width:60px;font-size:13px;letter-spacing:-.5px}.head .menu-toggle,.head .collapse,.head .close{font-size:22px}.head .resize-handle{font-size:20px}
-    .head .ui-opacity{grid-row:2;grid-column:1/4;width:100%;height:44px;margin:0;accent-color:#725bed;cursor:pointer;touch-action:pan-y}.head .mode-switch{grid-row:2;grid-column:4/7;justify-self:end}.head .mode-switch button{min-width:64px;padding:7px 12px;font-size:14px}
-    @container(max-width:360px){.head{gap:2px;padding:6px}}
-    @container(min-width:700px){.head{display:flex}.head strong{flex:1}.head .ui-opacity{width:112px;flex:0 0 112px}.head .mode-switch{margin-right:6px}}
+    .head{display:grid;grid-template-columns:44px minmax(36px,1fr) 64px 60px 44px 44px 44px;gap:4px;padding:8px}.head>*{grid-row:1}.head .resize-handle{grid-column:1}.head strong{grid-column:2}.head .consultation-summary{grid-column:3}.head .profile-toggle{grid-column:4}.head .menu-toggle{grid-column:5}.head .collapse{grid-column:6}.head .close{grid-column:7}
+    .head .resize-handle,.head .consultation-summary,.head .profile-toggle,.head .menu-toggle,.head .collapse,.head .close{width:44px;height:44px;min-height:44px;padding:0;border:1px solid #b9c8e0;border-radius:12px;background:#fff;box-shadow:0 1px 3px #22314d12}.head .consultation-summary{width:64px;font-size:13px;letter-spacing:-.5px}.head .profile-toggle{width:60px;font-size:13px;letter-spacing:-.5px}.head .menu-toggle,.head .collapse,.head .close{font-size:22px}.head .resize-handle{font-size:20px}
+    .head .ui-opacity{grid-row:2;grid-column:1/5;width:100%;height:44px;margin:0;accent-color:#725bed;cursor:pointer;touch-action:pan-y}.head .mode-switch{grid-row:2;grid-column:5/8;justify-self:end}.head .mode-switch button{min-width:64px;padding:7px 12px;font-size:14px}
+    @container(max-width:380px){
+      .head{grid-template-columns:44px minmax(36px,1fr) 44px 44px 44px;gap:2px;padding:6px}
+      .head .menu-toggle{grid-column:3}.head .collapse{grid-column:4}.head .close{grid-column:5}
+      .head .consultation-summary{grid-row:2;grid-column:1/3;justify-self:end}.head .profile-toggle{grid-row:2;grid-column:3/6;justify-self:start}
+      .head .ui-opacity{grid-row:3;grid-column:1/3}.head .mode-switch{grid-row:3;grid-column:3/6}
+    }
+    @container(min-width:800px){.head{display:flex}.head strong{flex:1}.head .ui-opacity{width:112px;flex:0 0 112px}.head .mode-switch{margin-right:6px}}
     @media(max-height:480px){.body{display:block;overflow:auto;overscroll-behavior:contain}.transcript{min-height:0;overflow:visible}.status{max-height:none}.consultation{padding:8px 12px}}
   `;
   profilePanel.ready.then(()=>{if(initialProfileActive&&!profilePanel.state){profileOpen=true;updateProfileView();}});
@@ -418,10 +433,6 @@
   function showDocumentAccess(state){
     if(configurationReady&&(state?.origin!==GyeoteProtocol.documentOrigin()))throw new Error('document_access_changed');
     const changed=accessKey(state)!==accessKey(currentAccess);
-    if(configurationReady&&changed){
-      summaryAvailable=false;
-      void chrome.runtime.sendMessage({type:'gyeote:summary-capability'}).then(result=>{if(accessKey(state)===accessKey(currentAccess)){summaryAvailable=result?.available===true;updateSummaryControls();}}).catch(()=>{});
-    }
     currentAccess=state;
     if(changed)void refreshProfileUsage();else renderProfileUsage();
     if(changed)void refreshPublicNotice();

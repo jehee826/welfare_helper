@@ -18,13 +18,51 @@ function fixture(data=seed(),available=true){
 const button=f=>f.root.querySelector('.consultation-summary'),result=f=>f.root.querySelector('.consultation-summary-result');
 const reply=port=>({request_id:port.packet.requestId,text:'당시 상담한 서비스와 남은 확인사항입니다.',source_message_ids:port.packet.payload.messages.map(message=>message.id),partial:port.packet.payload.partial});
 
-test('서버 지원 확인 뒤 공개 상담에만 요약을 제공하고 이전 서버·빈 상담에서는 실행하지 않는다',async()=>{
+test('요약은 내 정보 왼쪽에 항상 표시하고 공개 상담의 실행 조건만 제한한다',async()=>{
   for(const available of [false,true]){
     const f=fixture(undefined,available);
-    try{await f.ready();assert.equal(button(f).parentElement.hidden,!available);if(available){await f.mode('screen');assert.equal(button(f).parentElement.hidden,true);}}
-    finally{f.close();}
+    try{
+      await f.ready();const summary=button(f),header=f.root.querySelector('.head'),profileButton=f.root.querySelector('.profile-toggle');
+      assert.equal(summary.parentElement,header);assert.equal(summary.nextElementSibling,profileButton);assert.equal(summary.hidden,false);assert.equal(header.hidden,false);assert.equal(summary.disabled,false);
+      assert.equal(f.root.querySelector('.summary-tools'),null);assert.equal(f.requests.filter(m=>m.type==='gyeote:summary-capability').length,0);
+      summary.focus();assert.equal(f.root.activeElement,summary);profileButton.focus();assert.equal(f.root.activeElement,profileButton);
+      if(!available){summary.click();await settle();assert.equal(f.ports.length,0);assert.match(result(f).textContent,/지원하지/);assert.equal(summary.hidden,false);assert.equal(summary.disabled,false);}
+      await f.mode('screen');assert.equal(summary.hidden,false);assert.equal(header.hidden,false);assert.equal(summary.disabled,true);assert.match(summary.title,/복지 상담/);
+    }finally{f.close();}
   }
-  const f=fixture({[profileKey]:profile});try{await f.ready();assert.equal(button(f).disabled,true);button(f).click();await settle();assert.equal(f.ports.length,0);}finally{f.close();}
+  const empty=fixture({[profileKey]:profile});
+  try{await empty.ready();assert.equal(button(empty).hidden,false);assert.equal(button(empty).disabled,true);assert.match(button(empty).title,/상담이 없습니다/);button(empty).click();await settle();assert.equal(empty.ports.length,0);}finally{empty.close();}
+  const server=worker(seed());server.session.documentAccess='admin';server.session.documentAccessId='admin';
+  const admin=ui(server);
+  try{await admin.ready();assert.equal(button(admin).hidden,false);assert.equal(button(admin).parentElement,admin.root.querySelector('.head'));assert.equal(button(admin).disabled,true);assert.match(button(admin).title,/공개 상담/);button(admin).click();await settle();assert.equal(admin.ports.length,0);assert.equal(admin.requests.filter(m=>m.type==='gyeote:summary-capability').length,0);}finally{admin.close();}
+});
+
+test('지원 조회 실패 뒤에도 버튼을 유지하고 다음 명시 클릭에서 한 번 다시 확인한다',async()=>{
+  let lookups=0;
+  const server=worker(seed(),{},undefined,async url=>{
+    if(url!==protocol.documentOrigin()+'/api/v1/conversation/summary')return new Response(JSON.stringify({profile_context_supported:false,referral_records_enabled:false}));
+    if(++lookups===1)throw Error('합성 지원 조회 실패');
+    return new Response(JSON.stringify({available:true,version:1}));
+  }),f=ui(server);
+  try{
+    await f.ready();assert.equal(lookups,0);button(f).click();await settle();
+    assert.equal(lookups,1);assert.equal(f.ports.length,0);assert.equal(button(f).hidden,false);assert.equal(button(f).disabled,false);assert.match(result(f).textContent,/지원하지/);
+    button(f).click();await settle();assert.equal(lookups,2);assert.equal(f.ports.length,1);
+    await f.answer(reply(f.ports[0]));assert.ok(server.data[displayKey]);assert.equal(button(f).hidden,false);
+  }finally{f.close();}
+});
+
+test('지원 조회를 기다리다 취소하면 늦은 응답은 포트와 저장 요약을 만들지 않는다',async()=>{
+  let lookups=0,release;const pending=new Promise(resolve=>{release=resolve;});
+  const server=worker(seed(),{},undefined,async url=>{
+    if(url!==protocol.documentOrigin()+'/api/v1/conversation/summary')return new Response(JSON.stringify({profile_context_supported:false,referral_records_enabled:false}));
+    lookups++;await pending;return new Response(JSON.stringify({available:true,version:1}));
+  }),f=ui(server);
+  try{
+    await f.ready();const input=f.root.querySelector('#gyeote-question');input.value='작성 중 초안';button(f).click();await settle();
+    assert.equal(lookups,1);assert.equal(button(f).disabled,true);await f.click('요약 취소');release();await settle();
+    assert.equal(f.ports.length,0);assert.equal(server.data[displayKey],undefined);assert.equal(input.value,'작성 중 초안');assert.equal(button(f).hidden,false);assert.equal(button(f).disabled,false);
+  }finally{release();f.close();}
 });
 
 test('현재 주제·시간 경계 뒤 완전 문답만 보내며 표시 요약을 RAG에 넣지 않는다',async()=>{
@@ -158,12 +196,12 @@ test('저장 요약은 다른 대화·세대와 관리자 접근에 노출하지
   }finally{f.close();}
 });
 
-test('준비 응답이 10초 기한 뒤 도착해도 요약 포트를 열거나 초안을 지우지 않는다',async()=>{
+for(const waitFor of ['gyeote:summary-capability','gyeote:prepare'])test(waitFor+' 응답이 10초 기한 뒤 도착해도 요약 포트를 열거나 초안을 지우지 않는다',async()=>{
   const f=fixture();let deadline,release;
   try{
     await f.ready();const send=f.w.chrome.runtime.sendMessage,set=f.w.setTimeout.bind(f.w);
     f.w.setTimeout=(fn,ms,...args)=>ms===10000?(deadline=fn,999997):set(fn,ms,...args);
-    f.w.chrome.runtime.sendMessage=message=>message.type==='gyeote:prepare'?new Promise(resolve=>{release=()=>send(message).then(resolve);}):send(message);
+    f.w.chrome.runtime.sendMessage=message=>message.type===waitFor?new Promise(resolve=>{release=()=>send(message).then(resolve);}):send(message);
     const input=f.root.querySelector('#gyeote-question');input.value='작성 중 초안';button(f).click();await settle();assert.equal(typeof release,'function');
     deadline();release();await settle();assert.equal(f.ports.length,0);assert.equal(input.value,'작성 중 초안');
     assert.equal(f.root.querySelector('button[type=submit]').disabled,false);assert.match(result(f).textContent,/연결하지 못|확인하지 못/);

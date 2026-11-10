@@ -1,21 +1,24 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:01 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:15 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 첫 PR 준비 후속 완료: EC2 ec3e880의 기존 검사 14파일 정합성과 options.html 패키징 정책 1항목 복원을 읽기 검토하고 로컬 계획7582a2d와 통합했다. 새 커밋은 미push이며 원격은 a44aa0f다. 테스트·구문검사·빌드·패키저·실제 추론은 실행하지 않았다. [상세](devlog.md#log-20261110-1501-pr-source)
+- 첫 PR #20 생성·병합 완료: 원격 main은 9a5ffce이며 로컬 기능 브랜치는 이 커밋으로 ff-only 반영했다. 원격 fix-merge와 EC2는 69ffb1b다. 현재 문서는 후속 로컬 기록이며 아직 push하지 않았다. 다음은 팀원 작업 종료·최종 push·작성권 인계 확인이다. [병합 기록](devlog.md#log-20261110-1513-pr20)
+- Vercel Preview는 jehee826 계정의 jehee 팀 접근 권한 문제로 차단됐다. Git 병합 성공과 웹 배포 성공을 구분하며 계정/팀 설정·유료 플랜·저장소 공개 범위는 바꾸지 않았다.
 
-- F8 코드·push 완료: 확장의 공개/관리자 상담 구분을 제거하고 저장 profile이 있으면 사용 토글을 바로 조작할 수 있게 했다. 중복 저장 중에만 잠시 비활성화한다. 명시 ON 뒤 기존 최종 LLM 전달을 유지한다. F8 제품125b399는 원격 a44aa0f에 포함돼 있으며, 후속 ec3e880은 EC2·로컬에만 반영됐다. 소스와 diff만 읽었고 테스트·구문검사·실행·배포는 하지 않았다. [변경 범위](devlog.md#log-20261110-1405-profile-simple)
+- 첫 PR 준비 후속 완료: EC2 ec3e880의 기존 검사 14파일 정합성과 options.html 패키징 정책 1항목 복원을 읽기 검토하고 로컬 계획7582a2d와 통합했다. 이후 69ffb1b까지 원격 push·EC2 동기화를 완료했고 PR #20에 병합했다. 테스트·구문검사·빌드·패키저·실제 추론은 실행하지 않았다. [상세](devlog.md#log-20261110-1501-pr-source)
+
+- F8 코드·push 완료: 확장의 공개/관리자 상담 구분을 제거하고 저장 profile이 있으면 사용 토글을 바로 조작할 수 있게 했다. 중복 저장 중에만 잠시 비활성화한다. 명시 ON 뒤 기존 최종 LLM 전달을 유지한다. F8 제품125b399는 원격 a44aa0f에 포함돼 있으며, 후속 ec3e880도 69ffb1b를 거쳐 원격·EC2에 반영됐다. 소스와 diff만 읽었고 테스트·구문검사·실행·배포는 하지 않았다. [변경 범위](devlog.md#log-20261110-1405-profile-simple)
 - 전체 질문 주제를 한 문장으로 요약하는 프롬프트의 원격·EC2 운영 반영을 완료했다. 실행 컨테이너의 프롬프트 일치·healthy·HTTPS 200을 확인했고 모델 출력 시험은 하지 않았다. [배포 결과](devlog.md#log-20261110-1332-summary-deploy)
 - W14 기록 테이블 연결과 backend/worker 수집 ON을 완료했다. 인증된 관리자 조회 200·비로그인 401을 확인했다. 실제 상담의 첫 연락처 기록과 Chrome 화면은 사용자 확인이 남는다. [활성화 결과](devlog.md#log-20261110-1338-referrals-on)
 - 활성 계획/진행/인계는 이 세 파일만 사용하며 설계가 단일 작성자다. 개발에는 새 지침 재로딩과 고정 문서 역할을 다시 전달했다. [문서 통합·재로딩 기록](devlog.md#log-20261110-1046-f8b909)
 
 ## 구현·배포 기준과 보존할 변경
 
-- 로컬루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, EC2 `/home/ubuntu/welfare_helper`, 브랜치 `codex/fix-merge`다. 운영 backend 소스 기준은 `f11e8af`, 원격 공유는 기록 포함 `a44aa0f`다. 새 확장 제품 `125b399`는 원격·EC2·로컬에 반영됐고 EC2 기록 추가 pull은 이번에 하지 않았다. B11은 보존하고 로컬/EC2 Git 조작을 직렬화한다.
+- 로컬루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, EC2 `/home/ubuntu/welfare_helper`, 브랜치 `codex/fix-merge`다. 운영 backend 소스 기준은 `f11e8af`, 원격 기능 브랜치와 EC2는 기록 포함 `69ffb1b`, 원격 main은 첫 PR 병합 `9a5ffce`다. 새 확장 제품 `125b399`는 원격·EC2·로컬에 반영됐고 EC2 기록도 69ffb1b로 동기화했다. B11은 보존하고 로컬/EC2 Git 조작을 직렬화한다.
 - backend는 f11e8af 커밋 소스 기반 `595f3713aa4f2a2ddc2af61d479b6a8bcb9a88647ef4f88cf9d6497501e6546c`, worker 이미지는 기존 `5ae7df5b290797e2249ac5489cae09299a9fb95aed4ddbb6359eb2ce5ae9e820`다. 두 서비스는 기록 설정 true로 재생성했고 healthy다. backend 부팅 이미지 pin과 Docker 영속 설정을 반영했다. Ollama/edge·기존 모델·문서/벡터·볼륨은 유지했고 재부팅 시험은 하지 않았다.
 - 확장은 기존 `Extension/`, MV3/0.1.0, API `https://15.164.190.21`이다. [이전 메뉴 변경 CI](https://github.com/jehee826/welfare_helper/actions/runs/42746898662)는 4job 성공이며 이번 요약/운영 변경의 시험 결과를 대신하지 않는다. 최신 모델·Chrome·CI 시험은 하지 않았다.
 - 기존 `Extension/README.md`·`docs/design/extension.md`를 실제 반영 계약으로 확정해 이 기록과 함께 공유한다. 모든 상세 검사·실패·수정과 원자료 위치는 일지를 따른다.
@@ -26,7 +29,7 @@
 
 1. 사용자가 기존 확장을 다시 로드하고 복지로 F5 뒤 요약 창의 요약하기를 직접 시험한다.
 2. 연락처가 안내되는 새 상담 이후 관리자 연락처 안내 기록에서 조회한다. 수집 ON 이전의 대화는 소급 기록하지 않는다. 별도 CSV는 보류한다.
-3. 첫 PR 본문 초안과 두 PR 통합 순서는 merge_plan 4절에 준비했다. 최신 F8과 요약의 기존 검사 계약은 소스로 정리했으며 실행하지 않았다. 새 통합 커밋 push 이후 사용자가 첫 PR을 생성·병합한다. 첫 PR 사용자 생성·병합과 팀원 최종 push·작성권 인계 전에는 Claude 브랜치를 수정하지 않는다. 웹은 단발성 기초 RAG로 유지한다. 두 PR 뒤 최종 main의 EC2·노트북·실행 이미지·Vercel 버전을 확인한다. RAG/CSV는 계속 보류한다.
+3. 첫 PR 본문 초안과 두 PR 통합 순서는 merge_plan 4절에 준비했다. 최신 F8과 요약의 기존 검사 계약은 소스로 정리했으며 실행하지 않았다. 첫 PR #20은 병합 완료다. 팀원 작업 종료·최종 push·작성권 인계 확인 전에는 Claude 브랜치를 수정하지 않는다. 웹은 단발성 기초 RAG로 유지한다. 두 PR 뒤 최종 main의 EC2·노트북·실행 이미지·Vercel 버전을 확인한다. RAG/CSV는 계속 보류한다.
 
 ## 계속 대기할 범위
 

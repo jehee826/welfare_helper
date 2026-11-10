@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 13:53 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 14:17 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -897,3 +897,17 @@
 - backend/worker는 기존 각 이미지 595f3713/5ae7df5b를 그대로 사용하고 REFERRAL_RECORDS_ENABLED=true만 바꿔 재생성했다. 두 서비스 healthy, 나머지 환경·볼륨·네트워크·권한·GPU·restart 설정과 Ollama/edge의 ID/image/StartedAt은 유지했다. 기존 이름 기반 부팅 스크립트는 환경을 덮어쓰지 않고 컨테이너를 시작하므로 Docker 영속 설정과 재시작 정책에서 ON을 유지한다. 실제 재부팅은 하지 않았다.
 - 공개 capabilities 200·referral_records_enabled=true, 비로그인 관리자 GET 401, 정상 credentials의 메모리 사용으로 login 200→관리자 referrals GET 200→logout 204를 확인했다. 토큰·비밀 출력, .env 읽기/편집, 관리자 재발급·인증 우회는 없었다. 재기동으로 기존 관리자 세션은 재로그인이 필요할 수 있다.
 - 실제 상담·합성 기록 행은 만들지 않았다. 수집 1건 쓰기·실제 Chrome 화면·모델 출력·재부팅은 미실측이며 API 준비상태와 구분한다. B11 전후 동일·빈 index를 확인했고 추가 제품 코드·CSV/문서 적재·모델/자동테스트/CI 실행은 없었다. W14 원자료는 같은 배포 폴더의 `w14-activation/result.json`과 `readiness.json`이다.
+
+<a id="log-20261110-1405-profile-simple"></a>
+## 2026-11-10 14:05 KST · 확장 접근 모드·내 정보 사용 단순화
+
+- 앞선 운영 결과 문서 1a0cf62의 원격·EC2 동기화를 마쳤다. 새 작업 기준은 같은 기능 브랜치의 1a0cf62이며 B11은 계속 보존한다.
+- 소스 검토에서 내 정보 토글이 확장 관리자 상태·모달·편집 상태·서버 지원 조회·별도 사용 선택 로딩 등에 묶여 있음을 확인했다. 관리자 세션 만료도 자동 익명 전환이 아니며, 수정 중 창만 닫아도 편집 상태가 남는다. 실제 사용자 화면의 단일 차단 원인은 수집하지 않았다.
+- 확장은 항상 공개 상담으로 요청하고 관리자 웹 링크만 남긴다. 확장 내부 관리자 로그인/세션 연결과 Authorization 첨부를 제거하되 서버·관리자 웹 인증과 비공개 문서 접근 제한은 유지한다. 토글 조작 가능 여부는 로컬 profile 존재를 기준으로 하고 불필요한 UI/서버 상태 결합을 제거한다. 저장 정보 존재가 자동 ON이나 자동 동의가 되지는 않는다.
+- 사용자가 ON하면 기존 동의/정보 revision을 저장하고 질문의 profile_context를 통해 최종 생성에 제공한다. BackEnd/documents/qa.py는 검색 준비에 consent를 전달하지 않고 generation 단계 fit_answer(saved_profile=consent.profile.model_dump())에서만 사용한다. 데이터/저장/서버 계약은 유지한다.
+- 기존 개발 채팅이 EC2 Extension 코드만 작성하고 설계는 읽기 검토·로컬 Git·기존 문서를 담당한다. 테스트·node 구문검사·컴파일·빌드·HTTP·모델·Chrome·CI·DB·서비스 작업 없이 소스와 diff만 읽는다. 새 push·배포는 포함하지 않는다.
+
+- 14:17 EC2 제품 커밋 `125b39976be3bff591c48eb0cd0dea4cbdb9eb96`의 Extension 6파일(content/worker/offscreen/protocol/options.js/options.html), 81줄 추가/194줄 삭제를 읽기 검토했다. readAuth는 옛 관리자 상태·토큰을 읽지 않고 익명으로 고정하고, 확장 관리자 로그인/세션 처리와 Authorization 첨부·관리자 임시 대화 분기를 제거했다. 관리자 웹 링크와 서버 인증은 유지했다.
+- 토글 disabled는 `profileUsageBusy || !profilePanel.state?.profile`뿐이다. 클릭 시 기존 5초 기한 안에 로컬 사용 선택을 읽고 현재 revision으로 저장한다. ON 저장의 서버 지원 조회를 제거했으며 사용 선택의 읽기 오류·편집/모달·서버 지원 결과는 버튼을 막지 않는다. 정보만으로 자동 ON하지 않는다.
+- 저장 중 낡은 읽기 결과가 덮지 않도록 기존 version 경로를 유지하고 시작 시 profileUsageLoading을 해제한다. worker의 currentProfileContext→conversations-begin→content profile_context→offscreen 전후 확인→chat API→qa.py의 최종 fit_answer(saved_profile) 경로를 소스로 확인했다. 정보 변경/삭제·OFF와 동의 revision 및 W14 실제 질문 전 수집 고지 확인은 유지한다.
+- 설계가 SSH fetch 후 1a0cf62→125b399 ff-only로 로컬 Extension에 반영했다. B11·기존 서비스는 보존했고 Backend/FrontEnd/검사파일은 수정하지 않았다. 테스트·구문검사·컴파일·빌드·HTTP·LLM·Chrome·CI·DB·배포는 0이다. 옛 관리자 확장 계약을 가정한 기존 검사도 수정하거나 통과했다고 주장하지 않는다. 원격 push는 아직이다.

@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 16:03 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 16:18 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -987,3 +987,12 @@
 - welfare7 프로젝트의 production dpl_DoCjmFZiDCtdS19C66tAX4RFcvbh를 get_deployment로 조회해 READY·main3c18f4f·aliasError=null 및 welfare-helper-iota.vercel.app 연결을 확인했다. 운영 URL https://welfare-helper-iota.vercel.app/webchat 에 같은 배포의 웹 화면이 제공되는 설정이다. 실제 사용자 화면·API 질의·음성 동작을 실행한 것은 아니다.
 - 로컬 claude/FrontEnd-webchat은 origin/main으로 ff-only 반영했다. 원격 Claude는76f9c51, 로컬 기존 codex/fix-merge는2c292d1로 보존한다. 병합 후 완료 기록3파일은 로컬 후속 문서로 누적하며 이번 PR에 소급 포함됐다고 적지 않는다.
 - 이번 범위의 push·PR·main 병합·Vercel 확인은 완료했다. EC2 접속·pull·서비스 재생성·DB·환경·실행 이미지 변경은 하지 않았다. 후속은 B11과 런타임을 보존한 최종 main의 EC2·노트북 동기화와 사용자 실제 확인이며 RAG 정확도·별도 CSV는 계속 보류한다.
+
+<a id="log-20261110-1618-main-sync"></a>
+## 2026-11-10 16:18 KST · 남은 문서 공유·노트북/EC2 main 동기화
+
+- 문서853c576을 기존 Claude 브랜치에 push하고 PR #21로 main/c3c81611c86f096b4f3450b96d99b07faa366564에 병합했다. 변경은 기존 기록3파일뿐이다. 노트북 hostname은 Jehee-Laptop이며 main을 ff-only 동기화하고 clean을 확인했다.
+- EC2 담당은 /home/ubuntu/welfare_helper의69ffb1b에서 B11 원본11개·binary diff·status를 .local/co-op/checks-runtime/main-sync-preflight-20261110-161415에 백업했다. main/c3c8161 동기화·checkout 뒤 원본/diff/status 해시 동일을 확인했다. index는 비어 있으며 B11은 미커밋 상태 그대로다.
+- 노트북의 Claude·fix-rag-normal-flow 브랜치를 main 포함 확인 후 삭제했다. fix-merge는 원격 추적 ref와의 차이 때문에 -d가 거절됐으나 main에는 전부 포함돼 있다. 해당 브랜치는 이 완료 기록의 정상 PR 공유에 사용한 뒤 삭제한다. EC2의 완료 브랜치도 main 포함 여부와 오래된 upstream을 대조해 안전 삭제하며 강제 삭제·reset·stash는 사용하지 않는다.
+- EC2는 main만 남겼다. fix-rag-normal-flow·fix-screen-guidance·feat-floating-ui·fix-merge 4개를 -d로 삭제했다. 뒤2개는 main 포함을 재확인하고 오래된 upstream만 해제했다. B11 diff SHA256은4ff7518bfb5505c4b0a106eb4217fd6808e7e096e492e5b5717860d8200b3bd4, status SHA256은2df7932a8b16249feda42ff90ad08b1c5e04b216a302611c01fdd0e02fe16b1e로 전후 동일하다.
+- 제품 코드·서비스·이미지·모델·Caddy·환경설정·DB를 변경하거나 실행 시험하지 않았다. 이 완료 기록 PR은 문서만 포함한다. 병합 뒤 양쪽 main을 ff-only 동기화하고 원격/로컬 완료 브랜치 삭제까지 끝낸 결과와 최종 SHA를 채팅에 보고한다. 실제 사용자 확인과 보류 RAG/CSV 범위는 유지한다.

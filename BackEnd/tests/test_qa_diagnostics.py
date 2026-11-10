@@ -46,6 +46,30 @@ def test_success_logs_six_stages_to_default_handler_and_clears_scope(stream):
     assert 'MAE' not in output and current_diagnostic() is None
 
 
+@pytest.mark.parametrize('token_count', [128, 129])
+def test_reranker_query_budget_failure_records_only_token_counts(stream, monkeypatch, token_count):
+    from unittest.mock import Mock
+    from BackEnd.rag.reranker import LocalReranker, RerankerError
+    repo, service, _ = components()
+    reranker = LocalReranker('unused', 'revision', 'unused-cache')
+    monkeypatch.setattr(reranker, 'count_tokens', lambda _text: token_count)
+    files = Mock(side_effect=RerankerError('SYNTHETIC_PRIVATE_CACHE'))
+    monkeypatch.setattr(reranker, 'model_files', files)
+    service.reranker = reranker
+    with pytest.raises(DocumentError, match='document_reranker_failed'):
+        answer_document(repo, service, 'SYNTHETIC_PRIVATE_QUERY')
+    output, rows = records(stream)
+    budget = [row for row in rows if row['event'] == 'rerank_input_budget']
+    assert len(budget) == int(token_count > 128)
+    if budget:
+        assert budget[0]['query_tokens'] == token_count and budget[0]['query_limit'] == 128
+        assert set(budget[0]) == {'request_id', 'event', 'elapsed_ms', 'code', 'stage', 'query_tokens', 'query_limit'}
+        files.assert_not_called()
+    else:
+        files.assert_called_once()
+    assert 'SYNTHETIC_PRIVATE' not in output and current_diagnostic() is None
+
+
 def test_failure_logs_only_safe_code_without_private_markers_and_clears_scope(stream):
     marker='SYNTHETIC_PRIVATE_MARKER'
     repo,service,calls=components()

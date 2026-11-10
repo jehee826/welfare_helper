@@ -14,6 +14,28 @@ def test_dimension_incompatible_with_existing_schema_is_rejected():
         Settings(_env_file=None, embed_dim=768)
 
 
+def test_verified_project_preview_requires_explicit_exact_origin():
+    preview = "https://welfare-helper-git-codex-fix-merge-welfare7.vercel.app"
+    assert preview not in Settings(_env_file=None).cors_allowed_origins
+    settings = Settings(_env_file=None, cors_allowed_origins=[preview, preview])
+    assert settings.cors_allowed_origins == [preview]
+
+
+@pytest.mark.parametrize("origin", [
+    "*", "https://*.vercel.app", "https://welfare-helper-git-branch-other-team.vercel.app",
+    "https://other-project-git-branch-welfare7.vercel.app",
+    "https://welfare-helper-git-branch-welfare7.vercel.app.attacker.invalid",
+    "http://welfare-helper-git-branch-welfare7.vercel.app",
+    "https://welfare-helper-git-branch-welfare7.vercel.app:443",
+    "https://welfare-helper-git-branch-welfare7.vercel.app/path",
+    "https://welfare-helper-git-branch-welfare7.vercel.app?x=1",
+    "https://user@welfare-helper-git-branch-welfare7.vercel.app",
+])
+def test_other_or_malformed_preview_origins_are_rejected(origin):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, cors_allowed_origins=[origin])
+
+
 @pytest.mark.parametrize('values', [
     {'ollama_llm': ' '}, {'ollama_embed': 'bad model'},
     {'ollama_base_url': 'http://a:b@localhost:11434'},
@@ -44,6 +66,7 @@ def test_document_and_screen_use_the_same_model_settings(monkeypatch):
     from BackEnd.rag import factory
 
     settings = Settings(_env_file=None, desktop_guidance_enabled=True,
+                        embed_cpu_only=True,
                         ollama_llm='qwen3:30b-a3b-instruct-2507-q4_K_M',
                         ollama_timeout=900, llm_num_ctx=8192,
                         llm_num_predict=512, llm_num_thread=8, llm_temperature=0)
@@ -69,6 +92,7 @@ def test_document_and_screen_use_the_same_model_settings(monkeypatch):
         settings.ollama_base_url, 'bge-m3', settings.ollama_llm, 900,
         {'temperature': 0, 'num_ctx': 8192, 'num_predict': 512, 'num_thread': 8})
     assert document[1]['embed_dim'] == screen[1]['embed_dim'] == 1024
+    assert document[1]['embed_cpu_only'] is True
     assert reranker_args[0][:2] == (
         'onnx-community/bge-reranker-v2-m3-ONNX',
         '6f5ff65298512715a1e669753bc754d2bc8f367b')

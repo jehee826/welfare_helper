@@ -44,6 +44,27 @@ def test_embed_returns_valid_vectors_and_disables_silent_truncation(client, monk
     assert captured["truncate"] is False
 
 
+@pytest.mark.parametrize("cpu_only", [False, True])
+def test_embedding_device_option_is_preserved_for_requests_and_excluded_from_generation(client, monkeypatch, cpu_only):
+    client.embed_cpu_only = cpu_only
+    cloned = client.for_request(100, lambda: False)
+    assert cloned.embed_cpu_only is cpu_only
+    requests, generation = [], []
+    def post(url, **kwargs):
+        requests.append(kwargs["json"])
+        return httpx.Response(200, json={"embeddings": [[1.0, 0, 0, 0]]}, request=httpx.Request("POST", url))
+    def invoke(model, *_args, **_kwargs):
+        generation.append(model.num_gpu)
+        return AIMessage(content='{"text":"합성 답변"}', response_metadata={"done_reason": "stop"})
+    monkeypatch.setattr(httpx, "post", post)
+    monkeypatch.setattr(ChatOllama, "invoke", invoke)
+    assert client.embed(["검색 문장"]) == [[1.0, 0, 0, 0]]
+    assert requests == [{"model": "bge-m3", "input": ["검색 문장"], "truncate": False,
+                         **({"options": {"num_gpu": 0}} if cpu_only else {})}]
+    assert client.chat("규칙", "질문") == {"text": "합성 답변"}
+    assert generation == [None] and "num_gpu" not in client.llm_options
+
+
 @pytest.mark.parametrize("content,metadata", [
     ("[]", {}), ("", {}), ("자유 형식 답변입니다.", {}),
     ('{"service_ids": []}', {"done_reason": "length"}),

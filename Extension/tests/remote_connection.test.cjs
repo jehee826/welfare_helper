@@ -18,7 +18,7 @@ test('주소 주입은 prepare와 전송 경계에서 거절한다',async()=>{co
 test('원격 아이콘은 패널을 닫고 열며 포커스를 복원한다',async()=>{const server=worker(undefined,{},read),f=ui(server);try{await f.ready();const tab={id:1,url:'https://www.bokjiro.go.kr/'};await server.click(tab);await settle();assert.equal(f.root.querySelector('.panel').hidden,true);await server.click(tab);await settle();assert.equal(f.root.querySelector('.panel').hidden,false);assert.equal(f.root.activeElement,f.root.querySelector('#gyeote-question'));}finally{f.close();}});
 test('연결 JSON 없이 공개 질문과 문서 응답을 표시한다',async()=>{const server=worker(undefined,{},read),f=ui(server);try{await f.ready();await f.question('합성 공개 질문');assert.equal(f.ports.length,1);await f.answer({kind:'answer',text:'합성 문서 응답',evidence:[]});assert.match(f.root.querySelector('.conversation').textContent,/합성 문서 응답/);assert.equal(server.session.connection,undefined);}finally{f.close();}});
 test('설정 기한 경계와 420초 문서·90초 화면 예산을 유지한다',async()=>{for(const n of [1,1800])assert.equal(installed.validateDocumentTimeout(n),n);const dir=packageExtension({origin,name:'t8-bounds-'+crypto.randomUUID(),timeoutSeconds:420}),custom=n=>fs.readFileSync(path.join(dir,n),'utf8'),server=worker(undefined,{},custom);for(const [mode,seconds] of [['document',420],['screen',90]])assert.equal((await server.send({type:'gyeote:prepare',mode},server.sender(1))).timeoutSeconds,seconds);const f=offscreen({policy:protocol(custom)});await f.run();assert.equal(JSON.parse(f.calls[0].options.body).timeout_seconds,420);});
-test('origin 없는 관리자 인증은 raw offscreen에서 fetch 전에 거절한다',async()=>{for(const auth of [{mode:'admin',accessId:'one',session:{token,expiresAt}},{mode:'admin',accessId:'one',origin,session:{token,expiresAt}}]){const f=offscreen({auth});await f.run({documentAccess:'admin:ready:one'});assert.equal(f.calls.length,0);assert.equal(f.sent[0].type,'error');assert.ok(['document_access_changed','document_auth_required'].includes(f.sent[0].error));}});
+test('origin 없는 관리자 인증은 raw offscreen에서 fetch 전에 거절한다',async()=>{for(const auth of [{mode:'admin',accessId:'one',session:{token,expiresAt}},{mode:'admin',accessId:'one',origin,session:{token,expiresAt}}]){const f=offscreen({auth});await f.run({documentAccess:'admin:ready:one'});assert.equal(f.calls.length,0);assert.equal(f.sent[0].type,'error');assert.equal(f.sent[0].error,'connection_failed');}});
 
 test('운영 allowlist 패키지는 정적 origin·정확한 host·CSP를 일치시키고 기존 출력과 소스를 보존한다',()=>{
   assert.deepEqual(fs.readdirSync(packagePath).sort(),[...runtimeFiles].sort());
@@ -30,7 +30,7 @@ test('운영 allowlist 패키지는 정적 origin·정확한 host·CSP를 일치
   assert.equal(source('protocol.js'),sourceProtocol);
 });
 
-test('기본 설정은 HTTPS EC2와 원격 DOM을 사용한다',()=>{assert.equal(installed.documentOrigin(),'https://15.164.190.21');assert.equal(installed.documentTimeoutSeconds(),600);assert.equal(installed.screenTimeoutSeconds(),90);assert.equal(installed.documentSession({token,expiresAt}),false);assert.deepEqual(JSON.parse(source('manifest.json')).host_permissions,[installed.documentOrigin()+'/*']);});
+test('기본 설정은 HTTPS EC2와 원격 DOM을 사용한다',()=>{assert.equal(installed.documentOrigin(),'https://15.164.190.21');assert.equal(installed.documentTimeoutSeconds(),600);assert.equal(installed.screenTimeoutSeconds(),90);assert.equal(Object.hasOwn(installed,'documentSession'),false);assert.equal(Object.hasOwn(installed,'adminSession'),false);assert.deepEqual(JSON.parse(source('manifest.json')).host_permissions,[installed.documentOrigin()+'/*']);});
 
 for(const value of ['http://api.example.invalid','http://127.0.0.1:8000','https://127.0.0.1:8443','https://localhost','https://[::1]:8443','https://a.invalid/path','https://a.invalid/','https://u:p@a.invalid','https://*.invalid','https://a.invalid?q=1','https://a.invalid#h','https://a.invalid;evil','https://a.invalid' + String.fromCharCode(39) + ';evil','https://bad_label.invalid','https://a.invalid:0','https://a.invalid:65536',' https://a.invalid','https://a.invalid\\other'])test('정적 origin 거절: '+value,()=>assert.throws(()=>installed.validateDocumentOrigin(value),/connection_configuration_invalid/));
 
@@ -51,21 +51,16 @@ test('설정 오류는 fallback 없이 통신 0회와 안전한 오류로 종료
 
 test('정적 기한은 문서 600초와 화면 90초를 유지한다',async()=>{assert.equal(protocol().documentTimeoutSeconds(),600);assert.equal(protocol().screenTimeoutSeconds(),90);for(const value of [0,1801,1.5,'600',NaN])assert.throws(()=>installed.validateDocumentTimeout(value));const customPath=packageExtension({origin,name:'t8-timeout-'+crypto.randomUUID(),timeoutSeconds:45}),custom=name=>fs.readFileSync(path.join(customPath,name),'utf8');const server=worker(undefined,{},custom);assert.equal((await server.send({type:'gyeote:prepare',mode:'document'},server.sender(1))).timeoutSeconds,45);assert.equal((await server.send({type:'gyeote:prepare',mode:'screen'},server.sender(1))).timeoutSeconds,45);const stopped=offscreen();await stopped.run({deadlineAt:Date.now()-1});assert.equal(stopped.calls.length,0);assert.equal(stopped.sent[0].error,'request_stopped');});
 
-test('관리자 세션은 문서 origin이 정확히 일치해야 한다',async()=>{
-  assert.equal(installed.documentSession({token,expiresAt}),false);assert.equal(protocol().documentSession({token,expiresAt}),false);
-  const calls=[],server=worker(undefined,{},read,async(url,options)=>{calls.push({url,options});return new Response('{}');}),options={id:'x',url:'chrome-extension://x/options.html'};
-  for(const session of [{token,expiresAt},{token,expiresAt,origin:'https://other.invalid'},{token,expiresAt,origin,extra:1}])assert.equal((await server.send({type:'gyeote:admin-connect',session},options)).ok,false);
-  assert.equal((await server.send({type:'gyeote:admin-connect',session:{token,expiresAt,origin}},options)).ok,true);
-  await server.send({type:'gyeote:admin-check'},options);await server.send({type:'gyeote:admin-logout'},options);
-  assert.deepEqual(calls.map(call=>call.url),[origin+'/api/v1/admin/session',origin+'/api/v1/admin/logout']);
-  for(const {options} of calls){assert.equal(options.headers.Authorization,'Bearer '+token);assert.equal(options.redirect,'error');assert.equal(options.credentials,'omit');}
-  server.session.documentAccess='admin';server.session.documentAdminSession={token,expiresAt,origin:'https://other.invalid'};
-  assert.equal((await server.send({type:'gyeote:admin-check'},options)).status,'expired');assert.equal(server.session.documentAdminSession,null);assert.equal(calls.length,2);
+test('기존 관리자 선택·토큰은 원격 공개 접근에 반영하지 않고 관리자 메시지는 무시한다',async()=>{
+ const calls=[],server=worker(undefined,{},read,async(url,options)=>{calls.push({url,options});return new Response('{}');}),options={id:'x',url:'chrome-extension://x/options.html'};
+ for(const type of ['gyeote:admin-connect','gyeote:admin-check','gyeote:admin-logout'])assert.equal(await server.send({type,session:{token,expiresAt,origin}},options),undefined);
+ Object.assign(server.session,{documentAccess:'admin',documentAdminSession:{token,expiresAt:1,origin:'https://other.invalid'}});
+ const access=await server.send({type:'gyeote:document-access'});assert.equal(access.mode,'anonymous');assert.equal(access.status,'anonymous');assert.equal(access.origin,origin);assert.equal(JSON.stringify(access).includes(token),false);assert.equal(calls.length,0);
 });
 
 test('다른 서버 관리자 세션과 리다이렉트 실패는 결과로 반환하지 않는다',async()=>{
   const auth={mode:'admin',accessId:'one',origin,session:{token,expiresAt,origin:'https://other.invalid'}};
-  const a=offscreen({auth});await a.run({documentAccess:'admin:ready:one'});assert.equal(a.calls.length,0);assert.equal(a.sent[0].error,'document_auth_required');
+  const a=offscreen({auth});await a.run({documentAccess:'admin:ready:one'});assert.equal(a.calls.length,0);assert.equal(a.sent[0].error,'connection_failed');
   const b=offscreen({fetcher:async(_url,options)=>{assert.equal(options.redirect,'error');throw new TypeError('redirect blocked');}});await b.run();assert.equal(b.calls.length,1);assert.equal(b.sent[0].type,'error');
 });
 
@@ -79,13 +74,8 @@ test('수신 중 origin이 바뀌면 늦은 답변을 반환하거나 상담에 
   }finally{f.close();}
 });
 
-test('원격 옵션 로그인만 비밀번호를 보내고 세션 origin을 붙이며 화면 JSON을 읽지 않는다',async()=>{
-  const dom=new JSDOM(read('options.html'),{runScripts:'outside-only'}),w=dom.window,messages=[],calls=[];
-  w.GyeoteProtocol=protocol();w.AbortController=AbortController;w.chrome={storage:{session:{set:async()=>assert.fail('화면 토큰 저장 금지')}},runtime:{sendMessage:async message=>{messages.push(message);return {ok:true,mode:message.type==='gyeote:admin-connect'?'admin':'anonymous',status:'ready'};}}};
-  w.fetch=async(url,options)=>{calls.push({url,options});assert.equal(w.document.querySelector('#admin-password').value,'');return new Response(JSON.stringify({access_token:token,expires_at:expiresAt}));};
-  w.eval(read('options.js'));try{
-    assert.equal(calls.length,0);assert.equal(w.document.querySelector('#file'),null);
-    w.document.querySelector('#admin-password').value='합성 비밀번호';w.document.querySelector('#admin-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();
-    assert.equal(calls.length,1);assert.equal(calls[0].url,origin+'/api/v1/admin/login');assert.equal(calls[0].options.redirect,'error');assert.equal(messages.find(message=>message.type==='gyeote:admin-connect').session.origin,origin);assert.ok(!w.document.body.textContent.includes(token));
-  }finally{w.close();}
+test('원격 옵션은 서버 안내·관리자 웹 링크만 보이고 인증 통신을 하지 않는다',async()=>{
+ const dom=new JSDOM(read('options.html'),{runScripts:'outside-only'}),w=dom.window,messages=[],calls=[];
+ w.GyeoteProtocol=protocol();w.chrome={runtime:{sendMessage:async message=>messages.push(message)}};w.fetch=async(...args)=>{calls.push(args);throw Error('옵션 통신 금지');};w.eval(read('options.js'));
+ try{w.dispatchEvent(new w.Event('focus'));await settle();assert.equal(calls.length,0);assert.deepEqual(messages,[]);assert.equal(w.document.querySelector('#file'),null);assert.equal(w.document.querySelector('#admin-form'),null);assert.equal(w.document.querySelector('#admin-password'),null);assert.ok(w.document.querySelector('#document-server').textContent.includes(origin));assert.equal(w.document.querySelector('a').href,'https://welfare-helper-iota.vercel.app/admin/documents');assert.ok(!w.document.body.textContent.includes(token));}finally{w.close();}
 });

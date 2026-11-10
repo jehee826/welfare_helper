@@ -81,6 +81,14 @@ def qa_stage(name):
     _emit(state, "stage_start", "ok", stage=name, started=state.stage_started)
 
 
+def record_rerank_input_budget(token_count: int, token_limit: int):
+    state = _current.get()
+    if state is not None:
+        # 질문이나 재작성 문장을 남기지 않고 기존 입력 한도 초과만 구분한다.
+        _emit(state, "rerank_input_budget", "document_reranker_failed", stage="rerank",
+              completion={"query_tokens": token_count, "query_limit": token_limit})
+
+
 def diagnose_qa(function):
     @wraps(function)
     def wrapped(*args, **kwargs):

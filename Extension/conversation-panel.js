@@ -2,7 +2,7 @@
   const errors={conversation_conflict:'다른 탭에서 대화가 바뀌었습니다. 최신 대화를 다시 불러오세요.',conversation_access_changed:'문서 접근 상태가 바뀌었습니다.',conversation_profile_changed:'내 정보가 바뀌어 답변을 저장하지 않았습니다.',conversation_request_stopped:'중지된 요청의 답변은 저장하지 않았습니다.',conversation_bytes_limit:'대화 저장 공간 4MiB 한도입니다. 공간을 확인한 뒤 다시 저장하세요.',conversation_data_invalid:'저장된 대화의 형식을 확인하지 못했습니다. 원본은 유지했습니다.',conversation_storage_failed:'대화 저장소에 접근하지 못했습니다. 공간과 확장 상태를 확인하세요.'};
   errors.conversation_save_timeout='10초 안에 저장 완료를 확인하지 못했습니다. 대화를 다시 불러와 저장 여부를 확인하세요.';
   errors.conversation_context_conflict='요청 당시 대화 맥락과 현재 기록이 달라 자동 저장하지 않았습니다.';
-  function create(slot,{invalidate,render,onStateChange=()=>{},alerts=slot,onError=()=>{}}){
+  function create(slot,{invalidate,render,onStateChange=()=>{},onSummary=()=>{},alerts=slot,onError=()=>{}}){
     const details=document.createElement('details'),summary=document.createElement('summary'),notice=document.createElement('p'),actions=document.createElement('div'),confirmation=document.createElement('div'),unsaved=document.createElement('div');
     details.className='conversation-settings';summary.textContent='대화 저장 관리';notice.className='muted';notice.setAttribute('role','status');actions.className='row';confirmation.hidden=true;unsaved.hidden=true;unsaved.className='unsaved-conversation';unsaved.setAttribute('role','status');
     const warning=document.createElement('p');warning.className='conversation-warning';warning.setAttribute('role','status');
@@ -39,10 +39,10 @@
       }
       const latestMessage=current()?.messages.at(-1),latest=latestMessage?.contextUpdate;
       const failed=response.warning==='conversation_migration_unsaved'?'이전 대화 이관을 저장하지 못했습니다. 원본은 유지했습니다. 대화 저장 관리에서 다시 불러오세요.':response.warning?'개인정보 정제 결과를 저장하지 못했습니다. 원본은 유지했습니다. 다시 불러오세요.':'';
-      notice.textContent=failed||'이 기기의 공개 대화만 저장합니다. 최근 대화와 제한된 요약을 참고하며, 이전 근거의 현재 유효성을 보장하지 않습니다.';
-      warning.textContent=failed||(latest?.status==='failed'?'마지막 요약 갱신에 실패했습니다.':latest?.status==='omitted'||latestMessage?.contextUsage?.omitted?'일부 대화 맥락은 제외됐습니다.':'');
+      notice.textContent=failed;notice.hidden=!failed;
+      warning.textContent=failed||(latest?.status==='failed'?'마지막 요약 갱신에 실패했습니다.':'');
       if(failed){details.open=true;onError();}
-      show();if(display)render(current());if(pending)showUnsaved(new Error(pending.errorCode));
+      show();if(display)render(current());if(Object.hasOwn(response,'displaySummary'))onSummary(response.displaySummary);if(pending)showUnsaved(new Error(pending.errorCode));
     }
     function errorNotice(error){
       if(error.resetToken)resetToken=error.resetToken;
@@ -92,13 +92,17 @@
       unsaved.append(label,reason,body,destination,retry,discard);
       onStateChange();
     }
-    async function begin(value,pairId,revision){
+    async function begin(value,pairId,revision,resume=false){
       if(!matches(value))throw new Error('conversation_conflict');
-      ownedPair=pairId;
-      const response=await send('begin',{...value,pairId,profileRevision:revision});
-      if(!matches(value)||ownedPair!==pairId)throw new Error('conversation_request_stopped');
-      if(response.state.revision!==value.expectedRevision)throw new Error('conversation_conflict');
-      return response.input;
+      ownedPair=pairId;changing=true;notification=null;const owner=version;show();
+      try{
+        const response=await send(resume?'resume':'begin',{...value,pairId,profileRevision:revision});
+        if(owner!==version||!matches(value)||ownedPair!==pairId)throw new Error('conversation_request_stopped');
+        if(response.state.revision!==value.expectedRevision+(resume?0:1))throw new Error('conversation_conflict');
+        changing=false;apply(response,false);
+        Object.assign(value,{expectedRevision:state.revision,conversationId:state.lastActiveConversationId});
+        return {...response.input,...(response.profileContext?{profile_context:response.profileContext}:{})};
+      }finally{if(owner===version){changing=false;show();const message=notification;notification=null;if(message)changed(message.revision,message.generation);}}
     }
     async function save(value,pairId,question,answer,revision,isOwner=()=>true){
       if(!matches(value)||!isOwner()||ownedPair!==pairId)throw new Error('conversation_request_stopped');
@@ -124,7 +128,7 @@
           if(retry.context.generation!==state?.generation)throw new Error('conversation_context_conflict');
           value=context();
         }
-        await begin(value,retry.pairId,retry.profileRevision);
+        await begin(value,retry.pairId,retry.profileRevision,true);
         const answer={...retry.answer};if(moved)delete answer.context_update;
         await save(value,retry.pairId,retry.question,answer,retry.profileRevision);
       }catch(error){if(pending===retry)showUnsaved(error);}
@@ -133,8 +137,30 @@
       if(ownedPair)void chrome.runtime.sendMessage({type:'gyeote:conversation-cancel',pairId:ownedPair}).catch(()=>{});
       ownedPair=null;
     }
+    async function summaryRequest(){
+      const value={expectedRevision:state?.revision,generation:state?.generation,conversationId:state?.lastActiveConversationId,accessId:access?.accessId};
+      const response=await send('summary',{expectedRevision:value.expectedRevision,generation:value.generation,conversationId:value.conversationId});
+      if(!matches(value))throw new Error('conversation_conflict');
+      if(!Number.isSafeInteger(response.displaySummaryRevision))throw new Error('conversation_summary_invalid');
+      return {context:value,summaryRevision:response.displaySummaryRevision,...response.input};
+    }
+    async function saveSummary(value,summaryRevision,result){
+      if(!matches(value))throw new Error('conversation_conflict');
+      const owner=version;
+      const response=await send('summary-save',{expectedRevision:value.expectedRevision,generation:value.generation,conversationId:value.conversationId,summaryRevision,text:result.text,partial:result.partial});
+      if(owner!==version||!matches(value))throw new Error('conversation_conflict');
+      return response.displaySummary;
+    }
+    async function refreshSummary(){
+      if(!state||access?.mode!=='anonymous'||changing||disposed)return;
+      try{
+        const value=context(),owner=version;
+        const response=await send('summary-read',{expectedRevision:value.expectedRevision,generation:value.generation,conversationId:value.conversationId});
+        if(owner===version&&matches(value)&&response.displaySummaryRevision!==null)onSummary(response.displaySummary);
+      }catch{}
+    }
     function changed(revision,generation){
-      if(!access||access.mode!=='anonymous'||disposed||state&&revision===state.revision&&generation===state.generation)return;
+      if(!access||access.mode!=='anonymous'||disposed||state&&Number.isSafeInteger(revision)&&revision<=state.revision&&generation===state.generation)return;
       if(changing){notification={revision,generation};return;}
       invalidate();cancelRequest();void load(true);
     }
@@ -143,11 +169,11 @@
       const becameVisible=visible&&!visibleNow;visibleNow=visible;
       slot.hidden=!visible||value?.mode!=='anonymous';
       if(alerts!==slot)alerts.hidden=slot.hidden;
-      if(same){if(visible&&!state&&!changing)await load();else if(becameVisible&&state)render(current());return;}
+      if(same){if(visible&&!state&&!changing)await load();else if(becameVisible&&state){render(current());void refreshSummary();}return;}
       version++;cancelRequest();access=value;state=null;pending=null;resetToken=null;changing=false;unsaved.hidden=true;warning.textContent='';notification=null;readOnly=false;
       if(value?.mode==='anonymous'&&visible)await load();else show();
     }
-    return {context,begin,save,changed,setAccess,cancelRequest,get state(){return state;},get ready(){return !!state&&!changing&&!resetToken&&!readOnly;},get hasUnsaved(){return !!pending;},history:revision=>GyeoteConversations.history(current(),revision),dispose(){disposed=true;version++;cancelRequest();},resume(){disposed=false;void load();}};
+    return {context,begin,save,changed,setAccess,cancelRequest,summaryRequest,saveSummary,refreshSummary,get state(){return state;},get ready(){return !!state&&!changing&&!resetToken&&!readOnly;},get hasUnsaved(){return !!pending;},history:revision=>GyeoteConversations.history(current(),revision),dispose(){disposed=true;version++;cancelRequest();},resume(){disposed=false;void load();}};
   }
   globalThis.GyeoteConversationPanel=Object.freeze({create});
 })();

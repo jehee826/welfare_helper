@@ -37,6 +37,15 @@ jobs:
       - run: python -m pip check
       - run: python scripts/ci_python.py imports --profile ${{ matrix.profile }}
       - if: matrix.profile == 'dev'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: FrontEnd/package-lock.json
+      - if: matrix.profile == 'dev'
+        run: npm ci
+        working-directory: FrontEnd
+      - if: matrix.profile == 'dev'
         run: python scripts/ci_python.py tests
 
   web-extension:
@@ -59,4 +68,38 @@ jobs:
         working-directory: FrontEnd
         env:
           VITE_API_BASE_URL: https://example.invalid
-      - run: node --test Extension/tests/protocol.test.cjs Extension/tests/profile_content.test.cjs Extension/tests/conversations_content.test.cjs Extension/tests/conversation_context.test.cjs Extension/tests/continuous_conversation.test.cjs Extension/tests/panel_usability.test.cjs Extension/tests/timeout.test.cjs Extension/tests/remote_screen.test.cjs Extension/tests/remote_connection.test.cjs
+      - run: >-
+          node --test
+          Extension/tests/protocol.test.cjs
+          Extension/tests/profile_content.test.cjs
+          Extension/tests/conversations_content.test.cjs
+          Extension/tests/conversation_context.test.cjs
+          Extension/tests/continuous_conversation.test.cjs
+          Extension/tests/panel_usability.test.cjs
+          Extension/tests/timeout.test.cjs
+          Extension/tests/remote_screen.test.cjs
+          Extension/tests/remote_connection.test.cjs
+          Extension/tests/ui_preferences.test.cjs
+          Extension/tests/answer_speech.test.cjs
+          Extension/tests/dom.test.cjs
+          Extension/tests/profile_worker.test.cjs
+          Extension/tests/conversation_layout.test.cjs
+          Extension/tests/input_assist.test.cjs
+          Extension/tests/input_assist_content.test.cjs
+          Extension/tests/mode.test.cjs
+          Extension/tests/privacy.test.cjs
+          Extension/tests/visibility_document.test.cjs
+          Extension/tests/conversations_worker.test.cjs
+          Extension/tests/context_expiry.test.cjs
+          Extension/tests/consultation_summary.test.cjs
+          Extension/tests/profile_usage.test.cjs
+          Extension/tests/referral_notice.test.cjs
+          Extension/tests/stale_extra.test.cjs
+          Extension/tests/profile_offscreen.test.cjs
+          Extension/tests/options_extra.test.cjs
+          Extension/tests/offscreen.test.cjs
+          Extension/tests/lifecycle_extra.test.cjs
+          Extension/tests/document_timeout.test.cjs
+          Extension/tests/document_manager.test.cjs
+          Extension/tests/admin_content.test.cjs
+          Extension/tests/admin_auth.test.cjs

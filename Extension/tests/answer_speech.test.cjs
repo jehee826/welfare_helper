@@ -18,6 +18,19 @@ function speechHarness(initialVoices=[local]){
 function fixture(harness,extra=()=>{}){const f=ui(worker(),1,w=>{harness?.setup(w);extra(w);});return f;}
 const speakButtons=f=>[...f.root.querySelectorAll('.speak-answer')];
 
+test('본문 URL과 내부 식별자는 낭독에서만 빼고 조건·예외·숫자·업무 연락처를 보존한다',async()=>{
+  const h=speechHarness(),f=fixture(h);
+  const text='신청은 https://www.example.go.kr/help?doc=10 또는 [공식 안내](https://example.go.kr/path)에서 확인하세요.\n만 65세 이상, 소득 2.5% 이하, 1,000,000원. 예외는 별도 확인하세요. 전화 02-123-4567.\n문서 참조 document_id: doc-123, chunk_id=C1, snapshot_id=ABCDEF0123456789ABCD, target_id: ABCDEF0123456789ABCE. 123e4567-e89b-12d3-a456-426614174000';
+  try{
+    await f.ready();await f.question('합성 질문');await f.answer({...answer,text,contacts:[contact]});
+    speakButtons(f)[0].click();await settle();const spoken=h.spoken.map(item=>item.text).join(' ');
+    assert.doesNotMatch(spoken,/https|www|example|doc-123|document|chunk|snapshot|target|ABCDEF|123e4567|\bC1\b/);
+    assert.match(spoken,/공식 안내/);assert.match(spoken,/만 65세 이상, 소득 2\.5% 이하, 1,000,000원/);
+    assert.match(spoken,/예외는 별도 확인하세요/);assert.match(spoken,/02-123-4567/);assert.match(spoken,/0 2, 1 2 3, 4 5 6 7/);
+    assert.equal(f.root.querySelector('.assistant-message div').textContent,text);
+  }finally{f.close();}
+});
+
 test('완료된 답변은 자동 재생하지 않고 로컬 한국어 음성으로만 본문과 문의처를 읽는다',async()=>{
   const h=speechHarness([remote,english,local]),f=fixture(h);
   try{

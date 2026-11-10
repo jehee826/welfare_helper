@@ -240,8 +240,8 @@ def test_normal_generation_preserves_text_and_returns_server_references(status):
         assert result['evidence'][0]['role']=='retrieved' and result['evidence'][0]['quote']==''
     assert trace['answer_validation']=='accepted'
     schema=seen[0]
-    assert set(schema['required'])=={'status','text'} and schema['additionalProperties'] is False
-    assert set(schema['properties'])=={'status','text'}
+    assert set(schema['required'])=={'status','text','source_ids'} and schema['additionalProperties'] is False
+    assert set(schema['properties'])=={'status','text','source_ids'}
 
 def test_extra_forged_citation_is_technical_failure_not_a_source():
     repo,service,_=components()

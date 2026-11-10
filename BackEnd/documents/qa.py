@@ -13,6 +13,7 @@ from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM, EMPTY_EVIDENCE_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
+from BackEnd.profile_context import ProfileContext
 
 MAX_CACHED_CHUNKS = 2000
 MAX_CACHED_INDEX_CHARACTERS = 2_000_000
@@ -39,7 +40,8 @@ def _document_keyword_index(repo, service, snapshot, digest):
 
 @diagnose_qa
 def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None,
-                    select_contacts=False):
+                    select_contacts=False, profile_context=None):
+    consent = ProfileContext.model_validate(profile_context) if profile_context is not None else None
     qa_stage("snapshot")
     checkpoint()
     budget = current_budget()
@@ -192,7 +194,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                 for candidate in contact_options if candidate['document_id'] == document['document_id']
                 and candidate['document_version'] == document['version']]
     qa_stage("generation")
-    prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output, system=generation_system)
+    prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output, system=generation_system,
+                                                 saved_profile=consent.profile.model_dump() if consent else None)
     trace["context"]["context_omitted"] |= omitted
     trace["budget"] = {"context_limit": capacity, "reserved_output": output,
                        "estimated_input": llm.input_cost(generation_system, prompt) if prompt else None,
@@ -220,6 +223,9 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     try:
         checkpoint()
         schema = (ContactSelectionAnswer if select_contacts else WelfareAnswer).model_json_schema()
+        schema['properties']['source_ids'] = {'type': 'array', 'maxItems': min(6, len(references)),
+            'items': {'type': 'string', **({'enum': list(references)} if references else {})}}
+        schema['required'] = [*schema['required'], 'source_ids']
         if empty_evidence:
             schema['properties']['status']['enum'] = ['out_of_scope', 'no_evidence']
         raw_answer = llm.chat(generation_system, prompt, schema=schema)
@@ -248,13 +254,28 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         if current_digest != digest:
             service._document_bm25 = None
             raise DocumentError("embedding_digest_changed")
+    referenced = included
     try:
         answer = ContactSelectionAnswer.model_validate(raw_answer) if select_contacts else validate_answer(raw_answer)
         if not answer.text.strip():
             raise ValueError('empty_answer')
+        if answer.source_ids is not None:
+            source_ids = answer.source_ids
+            if (len(set(source_ids)) != len(source_ids) or any(identifier not in references for identifier in source_ids)
+                    or answer.status == 'answer' and not source_ids):
+                raise ValueError('invalid_source_selection')
+            versions = {(document['document_id'], document['version']) for document in included
+                        if document['reference_id'] in source_ids}
+            # 표시·문의처만 좁히며 선택 문서의 조건·예외와 원문 버전은 함께 보존한다.
+            referenced = [document for document in included if (document['document_id'], document['version']) in versions]
+            selected_chunks = {document['id'] for document in referenced}
+            evidence = [item for item in evidence if item['chunk_id'] in selected_chunks]
+            trace['source_reference_selection'] = 'model_selected_document_versions'
+        else:
+            trace['source_reference_selection'] = 'legacy_server_references'
         allowed_contacts = {candidate['id']: candidate for candidate in contact_options
                             if any(d['document_id'] == candidate['document_id'] and d['version'] == candidate['document_version']
-                                   for d in included)}
+                                   for d in referenced)}
         if select_contacts and (len(set(answer.contact_ids)) != len(answer.contact_ids)
                                 or any(identifier not in allowed_contacts for identifier in answer.contact_ids)
                                 or answer.status != 'answer' and answer.contact_ids):
@@ -289,13 +310,15 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         trace['selected_contacts'] = [{key: candidate[key] for key in (
             'label', 'phone', 'source_url', 'document_id', 'document_version', 'contact_version')}
             for candidate in chosen]
+    elif status == 'answer' and answer.source_ids is not None:
+        contacts = [candidate['contact'] for candidate in contact_candidates(snapshot, referenced)]
     elif status in {'answer', 'no_evidence'}:
-        confirmed_ids = ([document['document_id'] for document in included]
+        confirmed_ids = ([document['document_id'] for document in referenced]
                          if status == 'answer' else list(conversation['document_ids']))
         if repo.document_scope:
             confirmed_ids.append(str(repo.document_scope))
         contact_query = search_query if context_trace['preparation'] in {'used', 'skipped'} else query
-        contacts = fallback_contacts(snapshot, included, query=contact_query, confirmed_document_ids=confirmed_ids)
+        contacts = fallback_contacts(snapshot, referenced, query=contact_query, confirmed_document_ids=confirmed_ids)
     return {"kind": "answer" if status == 'answer' else 'fallback',
             'contacts': contacts,
             **({'reason': status} if status != 'answer' else {}),

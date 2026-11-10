@@ -139,6 +139,15 @@ def http(monkeypatch):
     api.app.dependency_overrides.clear()
 
 
+def test_public_capabilities_report_actual_collection_flag_without_writing(http):
+    for enabled in (True, False):
+        http.settings.referral_records_enabled = enabled
+        response = http.client.get('/api/v1/chat/capabilities')
+        assert response.status_code == 200 and response.json()['referral_records_enabled'] is enabled
+        assert response.headers['cache-control'] == 'no-store'
+    http.written.assert_not_called();http.generation.assert_not_called()
+
+
 def admin(http):
     response = http.client.post('/api/v1/admin/login', json={'password': 'synthetic-admin'})
     return {'Authorization': 'Bearer ' + response.json()['access_token']}

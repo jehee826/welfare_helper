@@ -42,6 +42,7 @@ class OllamaClient:
         embed_dim: int = 1024,
         request_deadline: float | None = None,
         request_cancelled: Callable[[], bool] | None = None,
+        embed_cpu_only: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.embed_model = embed_model
@@ -49,6 +50,7 @@ class OllamaClient:
         self.timeout = timeout
         self.llm_options = llm_options or {}
         self.embed_dim = embed_dim
+        self.embed_cpu_only = embed_cpu_only
         self.request_deadline = request_deadline
         self.request_cancelled = request_cancelled
         self._chat_chain = None
@@ -58,7 +60,8 @@ class OllamaClient:
 
     def for_request(self, deadline: float, cancelled: Callable[[], bool]):
         return OllamaClient(self.base_url, self.embed_model, self.llm_model, self.timeout,
-                            dict(self.llm_options), self.embed_dim, deadline, cancelled)
+                            dict(self.llm_options), self.embed_dim, deadline, cancelled,
+                            embed_cpu_only=self.embed_cpu_only)
 
     def remaining_timeout(self) -> float:
         if self.request_cancelled and self.request_cancelled():
@@ -226,9 +229,13 @@ class OllamaClient:
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
+        payload = {"model": self.embed_model, "input": texts, "truncate": False}
+        if self.embed_cpu_only:
+            # 작은 임베딩 모델이 생성 모델의 GPU 메모리를 축출하지 않도록 분리한다.
+            payload["options"] = {"num_gpu": 0}
         data = self._post(
             "/api/embed",
-            {"model": self.embed_model, "input": texts, "truncate": False},
+            payload,
             timeout=self.timeout,
         )
         embeddings = data.get("embeddings")

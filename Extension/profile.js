@@ -1,7 +1,7 @@
 (() => {
-  const errors={profile_conflict:'다른 탭에서 내 정보가 바뀌었습니다. 최신 정보를 불러온 뒤 다시 저장하세요.',profile_data_invalid:'저장된 정보를 읽을 수 없습니다. 기존 자료는 지우지 않았습니다. 재설정하려면 아래 버튼을 선택하세요.',profile_revision_limit:'저장 버전의 한도에 도달했습니다. 기존 정보는 유지했습니다.',invalid_profile:'입력한 조건을 확인하세요. 나이는 0~120의 정수로 입력할 수 있습니다.',profile_storage_failed:'내 정보를 저장하거나 읽지 못했습니다. 저장 공간과 확장 상태를 확인한 뒤 다시 시도하세요.'};
+  const errors={profile_conflict:'다른 탭에서 내 정보가 바뀌었습니다. 최신 정보를 불러온 뒤 다시 저장하세요.',profile_data_invalid:'저장된 정보를 읽을 수 없습니다. 기존 자료는 지우지 않았습니다. 재설정하려면 아래 버튼을 선택하세요.',profile_revision_limit:'저장 버전의 한도에 도달했습니다. 기존 정보는 유지했습니다.',invalid_profile:'입력한 조건을 확인하세요. 나이는 0~120의 정수로 입력할 수 있습니다.',profile_read_timeout:'5초 안에 내 정보 확인 응답을 받지 못했습니다. 원본은 유지했습니다. 최신 정보를 다시 불러와 주세요.',profile_storage_failed:'내 정보를 저장하거나 읽지 못했습니다. 저장 공간과 확장 상태를 확인한 뒤 다시 시도하세요.'};
   function create(container,onInvalidate,onViewChange){
-    let state=null,editing=false,busy=false,serial=0,pendingChange=false,resetToken=null,disposed=false;
+    let state=null,editing=false,busy=false,loading=false,serial=0,pendingChange=false,resetToken=null,disposed=false;
     const section=document.createElement('section');section.className='profile-panel';section.setAttribute('aria-label','내 정보');container.append(section);
     const style=document.createElement('style');style.textContent='.profile-panel{margin:12px 0;padding:10px;border:1px solid #ddd;border-radius:10px}.profile-panel[hidden],.consultation form[hidden]{display:none}.profile-panel form{display:grid;gap:9px}.profile-panel label{display:grid;gap:4px}.profile-panel input,.profile-panel select{box-sizing:border-box;max-width:100%;width:100%;padding:8px;border:1px solid #bbb;border-radius:7px}.profile-panel .profile-error{color:#8b2020}.profile-panel h2{font-size:17px;margin:0}.profile-panel button{white-space:normal}';section.before(style);
     const node=(tag,text)=>{const result=document.createElement(tag);if(text)result.textContent=text;return result;};
@@ -13,15 +13,18 @@
     }
     function lock(value){busy=value;section.setAttribute('aria-busy',String(value));for(const control of section.querySelectorAll('button,input,select'))control.disabled=value;onViewChange();}
     async function get(){
-      const response=await chrome.runtime.sendMessage({type:'gyeote:profile-get'});
-      if(!response?.ok){resetToken=typeof response?.resetToken==='string'?response.resetToken:null;throw new Error(response?.error||'profile_storage_failed');}
-      resetToken=null;return GyeoteProtocol.profileRecord(response.state);
+      let timer;
+      try{
+        const response=await Promise.race([chrome.runtime.sendMessage({type:'gyeote:profile-get'}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('profile_read_timeout')),5000);})]);
+        if(!response?.ok){resetToken=typeof response?.resetToken==='string'?response.resetToken:null;throw new Error(response?.error||'profile_storage_failed');}
+        resetToken=null;return GyeoteProtocol.profileRecord(response.state);
+      }finally{clearTimeout(timer);}
     }
     function render(){
       section.replaceChildren(node('h2',editing?'내 정보 입력':'내 정보'));
-      const notice=node('p','입력은 선택입니다. 저장 정보는 추천 질문 초안에만 사용합니다. 초안의 안내 대상을 확인·수정해 주세요. 최종 지원 자격은 담당 기관에서 확인해 주세요.');notice.className='muted';section.append(notice);
+      const notice=node('p','입력은 선택입니다. 저장 정보는 추천 질문 초안에 사용하며, 별도의 저장 정보 사용을 켠 경우에만 답변 생성에도 제공합니다. 초안의 안내 대상을 확인·수정해 주세요. 최종 지원 자격은 담당 기관에서 확인해 주세요.');notice.className='muted';section.append(notice);
       const storageDetails=node('details'),storageSummary=node('summary','정보 저장·전송 안내');
-      const storageNotice=node('p','이 브라우저에 저장하며 문서 질문에 자동으로 첨부하지 않습니다. 추천 초안을 직접 전송하면 초안에 보이는 조건이 질문에 포함됩니다. 같은 브라우저를 공유하면 정보도 공유됩니다. 확장을 지우거나 저장소를 삭제하면 복구되지 않습니다. 아래에서 내 정보를 삭제할 수 있습니다.');storageNotice.className='muted';storageDetails.append(storageSummary,storageNotice);section.append(storageDetails);
+      const storageNotice=node('p','이 브라우저에 저장하며 별도 사용 선택이 꺼져 있으면 문서 질문에 첨부하지 않습니다. 추천 초안을 직접 전송하면 초안에 보이는 조건이 질문에 포함됩니다. 같은 브라우저를 공유하면 정보도 공유됩니다. 확장을 지우거나 저장소를 삭제하면 복구되지 않습니다. 아래에서 내 정보를 삭제할 수 있습니다.');storageNotice.className='muted';storageDetails.append(storageSummary,storageNotice);section.append(storageDetails);
       const error=node('p');error.className='profile-error';error.setAttribute('role','alert');section.append(error);
       const reload=button('최신 정보 다시 불러오기',()=>void refresh());reload.className='profile-reload';reload.hidden=true;section.append(reload);
       if(!state){
@@ -62,9 +65,9 @@
       if(busy||disposed)return;
       const owner=++serial;
       section.textContent='내 정보 확인 중…';
-      state=null;editing=false;onViewChange();
-      try{const latest=await get();if(owner!==serial)return;state=latest;editing=!latest.onboardingCompleted;render();}
-      catch(error){if(owner!==serial)return;state=null;render();alert(error.message);}
+      state=null;editing=false;loading=true;onViewChange();
+      try{const latest=await get();if(owner!==serial)return;loading=false;state=latest;editing=!latest.onboardingCompleted;render();}
+      catch(error){if(owner!==serial)return;loading=false;state=null;render();alert(error.message);}
     }
     async function mutate(action,profile){
       if(busy||disposed)return;
@@ -90,7 +93,7 @@
       void refresh();
     }
     const ready=Promise.resolve().then(refresh);
-    return {get state(){return state;},get busy(){return busy;},get allowed(){return !!state?.onboardingCompleted&&!editing&&!busy&&!disposed;},defer:()=>!state?.onboardingCompleted?mutate('save',null):Promise.resolve(),ready,changed,setVisible:visible=>section.hidden=!visible,dispose:()=>{disposed=true;serial++;},resume:()=>{disposed=false;void refresh();}};
+    return {get state(){return state;},get busy(){return busy;},get loading(){return loading;},get allowed(){return !!state?.onboardingCompleted&&!editing&&!busy&&!disposed;},defer:()=>!state?.onboardingCompleted?mutate('save',null):Promise.resolve(),ready,changed,setVisible:visible=>section.hidden=!visible,dispose:()=>{disposed=true;serial++;},resume:()=>{disposed=false;void refresh();}};
   }
   function incomeLabel(value){return ({unknown:'모름',under50:'50% 이하',under100:'50~100%',under150:'100~150%',over150:'150% 초과'})[value];}
   function householdLabel(value){return ({single:'혼자 살아요',couple:'부부',withChildren:'자녀 있음',singleParent:'한부모 가정',grandparent:'조부모와 손자녀',other:'기타'})[value]||'모름';}

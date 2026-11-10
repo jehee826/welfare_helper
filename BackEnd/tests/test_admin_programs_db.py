@@ -11,7 +11,6 @@ import psycopg2
 import pytest
 
 from BackEnd.admin.program_store import ProgramError, ProgramStore
-from BackEnd.rag.chat import ChatService
 from BackEnd.rag.repository import PgServiceRepository
 
 DATABASE_URL = os.environ.get("WELFARE_TEST_DATABASE_URL", "")
@@ -122,21 +121,23 @@ def test_delete_is_blocked_while_documents_exist(store):
         store.delete(removed["program_id"])
 
 
-def test_admin_edit_is_reflected_in_the_next_chat_answer(store):
+def test_admin_edit_is_reflected_in_the_next_catalog_snapshot(store):
     created = new_program(store)
-    chat = ChatService(PgServiceRepository(connect), llm=None, min_similarity=0.52, top_n=40)
-    before = chat.answer("행복 반찬나눔 문의처", None)
-    assert before["services"][0]["summary"] == "홀로 사는 어르신께 반찬을 전달합니다."
+    repo = PgServiceRepository(connect)
+    before = repo.snapshot()
+    assert before.services[0].summary == "홀로 사는 어르신께 반찬을 전달합니다."
 
     store.update(created["program_id"], {"summary": "주 2회 반찬을 전달합니다.",
                                          "contacts": [{"label": "행복복지관 상담실", "phone": "02-555-0000"}]},
                  created["updated_at"])
-    after = chat.answer("행복 반찬나눔 문의처", None)
-    assert after["services"][0]["summary"] == "주 2회 반찬을 전달합니다."
-    assert "02-555-0000" in after["text"]
+    after = repo.snapshot()
+    assert after.services[0].summary == "주 2회 반찬을 전달합니다."
+    assert after.services[0].contacts == [{"label": "행복복지관 상담실", "phone": "02-555-0000"}]
+    assert before.stamp != after.stamp
 
 
-def test_test_only_program_is_hidden_from_public_chat(store):
+def test_test_only_program_is_hidden_from_public_catalog(store):
     new_program(store, program_name="가상 반찬나눔", external_service_id="TEST_SIDE_DISH", test_only=True)
-    chat = ChatService(PgServiceRepository(connect), llm=None, min_similarity=0.52, top_n=40)
-    assert chat.answer("가상 반찬나눔 문의처", None)["kind"] == "fallback"
+    assert not PgServiceRepository(connect).snapshot().services
+    scoped = PgServiceRepository(connect, include_local_documents=True).snapshot()
+    assert [service.service_id for service in scoped.services] == ["TEST_SIDE_DISH"]

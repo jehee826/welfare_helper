@@ -81,7 +81,16 @@
     return {age,income,household,region,disability};
   }
   const uiDefaults=Object.freeze({width:400,height:720,backgroundOpacity:100,dock:'right',left:null,top:null});
-  const uiLimits=Object.freeze({minWidth:320,maxWidth:640,minHeight:360,maxHeight:900,step:20,opacities:Object.freeze([100,95,90,85])});
+  function profileUsageRecord(value){
+    if(!value||Object.keys(value).sort().join(',')!=='enabled,profileRevision,revision,schemaVersion'||value.schemaVersion!==1||!Number.isSafeInteger(value.revision)||value.revision<0||typeof value.enabled!=='boolean'||(value.enabled?!Number.isSafeInteger(value.profileRevision)||value.profileRevision<0:value.profileRevision!==null))throw new Error('profile_usage_invalid');
+    return {schemaVersion:1,revision:value.revision,enabled:value.enabled,profileRevision:value.profileRevision};
+  }
+  function profileContext(value){
+    if(!value||Object.keys(value).sort().join(',')!=='consent_revision,enabled,profile,profile_revision'||value.enabled!==true||![value.consent_revision,value.profile_revision].every(revision=>Number.isSafeInteger(revision)&&revision>=0))throw new Error('invalid_profile');
+    const normalized=profile(value.profile);if(!normalized)throw new Error('invalid_profile');
+    return {enabled:true,consent_revision:value.consent_revision,profile_revision:value.profile_revision,profile:normalized};
+  }
+  const uiLimits=Object.freeze({minWidth:320,maxWidth:16384,minHeight:360,maxHeight:16384,step:20,opacities:Object.freeze(Array.from({length:91},(_,index)=>100-index))});
   function uiPreferences(value){
     if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='backgroundOpacity,dock,height,left,top,width')throw new Error('invalid_ui_preferences');
     const {width,height,backgroundOpacity,dock,left,top}=value,coordinate=item=>Number.isInteger(item)&&item>=0&&item<=10000;
@@ -171,10 +180,30 @@
   }
   function documentRequest(payload){
     if(payload&&(typeof payload.query==='string'&&sensitiveInput(payload.query)||Array.isArray(payload.history)&&payload.history.some(h=>typeof h?.content==='string'&&sensitiveInput(h.content))))throw new Error('sensitive_input');
-    if(!payload||Object.keys(payload).some(k=>!['query','history','timeout_seconds','profile','conversation_context'].includes(k))||!documentText(payload.query,300)||payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('invalid_request');
+    if(!payload||Object.keys(payload).some(k=>!['query','history','timeout_seconds','profile','conversation_context','profile_context'].includes(k))||!documentText(payload.query,300)||payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('invalid_request');
     const history=payload.history||[];
     if(!Array.isArray(history)||history.length>12||history.some(h=>!h||!['user','assistant'].includes(h.role)||!documentText(h.content,6000)||Object.keys(h).some(k=>!['role','content'].includes(k)))||history.reduce((n,h)=>n+h.content.length,0)>6000)throw new Error('invalid_request');
-    return {query:payload.query,history,...(payload.timeout_seconds===undefined?{}:{timeout_seconds:payload.timeout_seconds}),...(Object.hasOwn(payload,'conversation_context')?{conversation_context:conversationContext(payload.conversation_context)}:{})};
+    return {query:payload.query,history,...(payload.timeout_seconds===undefined?{}:{timeout_seconds:payload.timeout_seconds}),...(Object.hasOwn(payload,'conversation_context')?{conversation_context:conversationContext(payload.conversation_context)}:{}),...(Object.hasOwn(payload,'profile_context')?{profile_context:profileContext(payload.profile_context)}:{})};
+  }
+  function summaryRequest(payload){
+    if(!payload||Object.keys(payload).some(key=>!['request_id','messages','partial','timeout_seconds'].includes(key))||!id(payload.request_id)||typeof payload.partial!=='boolean'||!Array.isArray(payload.messages)||!payload.messages.length||payload.messages.length>60||payload.messages.length%2)throw new Error('summary_input_budget');
+    if(payload.timeout_seconds!==undefined&&(!Number.isInteger(payload.timeout_seconds)||payload.timeout_seconds<1||payload.timeout_seconds>1800))throw new Error('summary_input_budget');
+    let size=0;const ids=new Set();
+    const messages=payload.messages.map((message,index)=>{
+      const role=index%2?'assistant':'user',pair=typeof message?.id==='string'?message.id.slice(0,20):'';
+      if(!message||Object.keys(message).sort().join(',')!=='content,id,role'||!id(pair)||message.id!==pair+':'+role||message.role!==role||!documentText(message.content,12000)||ids.has(message.id)||index%2&&pair!==payload.messages[index-1].id.slice(0,20))throw new Error('summary_input_budget');
+      if(sensitiveInput(message.content))throw new Error('sensitive_input');
+      ids.add(message.id);size+=message.content.length;return {id:message.id,role,content:message.content};
+    });
+    if(size>12000)throw new Error('summary_input_budget');
+    return {request_id:payload.request_id,messages,partial:payload.partial,...(payload.timeout_seconds===undefined?{}:{timeout_seconds:payload.timeout_seconds})};
+  }
+  function summaryReply(body,submitted){
+    const ids=submitted.messages.map(message=>message.id);
+    if(!body||Object.keys(body).sort().join(',')!=='partial,request_id,source_message_ids,text'||body.request_id!==submitted.request_id||!documentText(body.text,1200)||typeof body.partial!=='boolean'||submitted.partial&&!body.partial||!Array.isArray(body.source_message_ids)||!body.source_message_ids.length||body.source_message_ids.length%2)throw new Error('invalid_reply');
+    const selected=body.source_message_ids,start=ids.indexOf(selected[0]);
+    if(start<0||start%2||JSON.stringify(selected)!==JSON.stringify(ids.slice(start))||start>0&&!body.partial)throw new Error('invalid_reply');
+    return {request_id:body.request_id,text:maskText(body.text,true),source_message_ids:[...selected],partial:body.partial};
   }
   function documentReply(body,submitted){
     if(!body||!['answer','fallback'].includes(body.kind)||!documentText(body.text,60000)||body.evidence!==undefined&&!Array.isArray(body.evidence))throw new Error('invalid_reply');
@@ -191,8 +220,6 @@
     }
     return redactDocument({kind:body.kind,text:body.text,evidence,...(Object.hasOwn(body,'contacts')?{contacts:documentContacts(body.contacts)}:{}),...(update?{context_update:update}:{}),...(Object.hasOwn(body,'context_usage')?{context_usage:contextUsage(body.context_usage)}:{})});
   }
-  const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
-  const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&value.origin===documentOrigin();
-  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,documentReply,documentContacts,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,uiDefaults,uiLimits,uiPreferences,uiPreferenceRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
+  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,summaryRequest,summaryReply,documentReply,documentContacts,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,profileUsageRecord,profileContext,uiDefaults,uiLimits,uiPreferences,uiPreferenceRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

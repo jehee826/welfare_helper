@@ -1,15 +1,15 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {worker,ui,key,profileKey,profile,expected,answer,append,settle}=require('./conversation_fixture.cjs');
+const {worker,ui,key,profileKey,profile,expected,answer,append,settle,activeBoundary}=require('./conversation_fixture.cjs');
 const protocol=require('../protocol.js'),policy=require('../conversations.js');
 const date='2026-11-01T00:00:00.000Z';
 const pairId=i=>i.toString(16).toUpperCase().padStart(20,'0');
 function seed(count=6,custom={}){
   const messages=[];
   for(let i=1;i<=count;i++)messages.push(...policy.pair(pairId(i),'사용자 주제 '+i,{...answer,text:custom[i]||'모델의 이전 설명 '+i},1,date));
-  return {[profileKey]:profile,[key]:{...policy.empty(),revision:1,lastActiveConversationId:'conversation',conversations:[{id:'conversation',createdAt:date,updatedAt:date,title:messages[0]?.content.slice(0,60)||'새 상담',messages}]}};
+  return {[profileKey]:profile,[key]:{...policy.empty(),revision:1,lastActiveConversationId:'conversation',conversations:[{id:'conversation',createdAt:date,updatedAt:date,title:messages[0]?.content.slice(0,60)||'새 상담',messages,contextBoundary:activeBoundary()}]}};
 }
 const update=(input,status='updated',text='사용자는 합성 서비스의 신청처를 찾고 있음')=>({status,text:status==='updated'?text:input.text,coveredThroughMessageId:status==='updated'?input.batch.at(-1).id:input.coveredThroughMessageId,profileRevision:input.profileRevision});
-async function begin(f,state,id=pairId(100),rev=1){return f.action('begin',{...expected(state),pairId:id,profileRevision:rev});}
+async function begin(f,state,id=pairId(100),rev=1){const result=await f.action('begin',{...expected(state),pairId:id,profileRevision:rev});if(result.ok)Object.assign(state,result.state);return result;}
 
 test('새 주제 표식은 저장과 worker 재생성 뒤 이전 맥락을 제외하고 화면 기록은 보존한다',async()=>{
   const f=worker(seed(2)),state=(await f.action('get')).state,plan=await begin(f,state),ctx=plan.input.conversation_context;
@@ -148,9 +148,10 @@ test('첫6쌍의 오래된3쌍만 요약하고 이후3쌍 누적 때 연속 범�
   const next=await begin(f,state,pairId(103));assert.equal(next.input.conversation_context.batch.length,6);assert.equal(next.input.conversation_context.batch[0].id,pairId(4)+':user');assert.equal(next.input.conversation_context.text,state.conversations[0].summary.text);
   const ids=new Set(next.input.conversation_context.batch.map(m=>m.id));assert.ok(!state.conversations[0].messages.slice(-next.input.history.length).some(m=>ids.has(m.id)));
 });
-test('기존schema1 무요약 상담을 초기화하지 않고 worker 재생성 후 요약과 경계를 복원한다',async()=>{
-  const data=seed();data[key].schemaVersion=1;const f=worker(data),state=(await f.action('get')).state;assert.equal(f.calls.set.length,1);assert.equal(state.schemaVersion,2);
-  const plan=await begin(f,state),body={...answer,context_update:update(plan.input.conversation_context)};
+test('기존schema1 기록은 보존하고 모르는 전송 시각의 자동 맥락은 이관 뒤 제외한다',async()=>{
+  const data=seed();data[key].schemaVersion=1;const f=worker(data),state=(await f.action('get')).state;assert.equal(f.calls.set.length,1);assert.equal(state.schemaVersion,3);
+  const plan=await begin(f,state),body={...answer,context_update:update(plan.input.conversation_context,'unchanged')};
+  assert.deepEqual(plan.input.history,[]);assert.deepEqual(plan.input.conversation_context.userMessages,[]);
   const saved=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'신청처',answer:body});
   const restored=await worker(data).action('get');assert.deepEqual(restored.state,saved.state);assert.equal(restored.state.conversations[0].messages.length,14);
 });
@@ -187,11 +188,11 @@ test('프로필 변경은 기존 대화 태그와 요약을 바꾸지 않는다'
   await f.send({type:'gyeote:profile-save',expectedRevision:1,profile:{household:'single'}});
   const next=await begin(f,saved.state,pairId(101),1);assert.ok(next.input.history.length);assert.equal(next.input.conversation_context.text,f.data[key].conversations[0].summary.text);assert.equal(next.input.conversation_context.profileRevision,1);
 });
-test('요약 응답도 삭제·권한·소유권 변화 뒤 옛 대화를 되살리지 않는다',async()=>{
+test('요약 응답도 삭제·접근 ID·소유권 변화 뒤 옛 대화를 되살리지 않는다',async()=>{
   for(const operation of ['clear','auth','cancel']){
     const f=worker(seed()),state=(await f.action('get')).state,plan=await begin(f,state);
     if(operation==='clear')await f.action(operation,{expectedRevision:state.revision,generation:state.generation});
-    else if(operation==='auth'){f.session.documentAccess='admin';f.session.documentAccessId='changed';}
+    else if(operation==='auth')f.session.documentAccessId='changed';
     else await f.send({type:'gyeote:conversation-cancel',pairId:pairId(100)});
     const before=JSON.stringify(f.data[key]);
     const result=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'늦은 질문',answer:{...answer,context_update:update(plan.input.conversation_context)}});
@@ -230,11 +231,11 @@ test('프로토콜은 summary 임의 필드·불완전 batch·화면 모드·응
   assert.throws(()=>protocol.documentReply({...answer,context_usage:{omitted:'true'}}));
   assert.throws(()=>protocol.documentReply({...answer,context_usage:{omitted:true,rawHistory:'no'}}));
 });
-test('요약 갱신 성공과 서버 맥락 제외를 함께 저장하고 새 패널에도 표시한다',async()=>{
+test('자동 요약과 맥락 제외는 내부 저장하되 복원 화면에 기술 안내를 덧붙이지 않는다',async()=>{
   const server=worker(seed()),f=ui(server);try{
     await f.ready();await f.question('그 서비스는?');const input=f.ports.at(-1).packet.payload.conversation_context;assert.equal(input.omitted,false);
     await f.answer({...answer,context_update:update(input),context_usage:{omitted:true}});
     assert.ok(server.data[key].conversations[0].summary);assert.equal(server.data[key].conversations[0].messages.at(-1).contextUsage.omitted,true);assert.match(f.root.querySelector('.status').textContent,/일부 대화 맥락/);
   }finally{f.close();}
-  const g=ui(server);try{await g.ready();assert.match(g.root.querySelector('.conversation').textContent,/입력 예산에 따라 일부 대화 맥락/);assert.match(g.root.querySelector('.conversation-warning').textContent,/일부 대화 맥락/);}finally{g.close();}
+  const g=ui(server);try{await g.ready();assert.doesNotMatch(g.root.querySelector('.conversation').textContent,/입력 예산에 따라 일부 대화 맥락/);assert.equal(g.root.querySelector('.conversation-warning').textContent,'');assert.equal(server.data[key].conversations[0].messages.at(-1).contextUsage.omitted,true);}finally{g.close();}
 });

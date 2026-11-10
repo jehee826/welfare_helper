@@ -59,6 +59,28 @@ def test_cors_accepts_exact_frontend_and_rejects_other_origins():
         Settings(_env_file=None, cors_allowed_origins=["*"])
 
 
+def test_configured_preview_preflight_does_not_allow_unlisted_branch(monkeypatch):
+    from starlette.middleware import Middleware
+    from starlette.middleware.cors import CORSMiddleware
+
+    preview = "https://welfare-helper-git-codex-fix-merge-welfare7.vercel.app"
+    settings = Settings(_env_file=None, cors_allowed_origins=["https://welfare-helper-iota.vercel.app", preview])
+    middleware = [Middleware(item.cls, *item.args, **{
+        **item.kwargs, **({"allow_origins": settings.cors_allowed_origins} if item.cls is CORSMiddleware else {})
+    }) for item in api.app.user_middleware]
+    monkeypatch.setattr(api.app, "user_middleware", middleware)
+    monkeypatch.setattr(api.app, "middleware_stack", None)
+    client = TestClient(api.app)
+    for origin, status in [(preview, 200), ("https://welfare-helper-git-other-welfare7.vercel.app", 400)]:
+        response = client.options("/api/v1/chat", headers={
+            "Origin": origin, "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        })
+        assert response.status_code == status
+        assert (response.headers.get("access-control-allow-origin") == origin) is (status == 200)
+        assert "access-control-allow-credentials" not in response.headers
+
+
 def test_readiness_only_reads_dependencies(monkeypatch):
     class Connection:
         def __init__(self):

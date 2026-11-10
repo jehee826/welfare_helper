@@ -74,12 +74,12 @@ test('탭 열기 실패는 안전한 오류이며 다음 시도를 막지 않는
   f.failure.createTab=false;assert.deepEqual(await f.send(request),{ok:true});assert.equal(f.calls.openTabs.length,2);
 });
 
-test('패널 문서 관리와 연결 설정은 별개이며 관리자 로그인 전에도 진입 버튼을 제공한다',async()=>{
+test('패널은 별도 확장 옵션 버튼 없이 관리자 로그인 전에도 관리자 접근을 제공한다',async()=>{
   const server=worker({}),f=ui(server);try{
     await f.ready();assert.ok(f.button('관리자 접근'));
     await f.click('관리자 접근');assert.deepEqual(server.calls.openTabs,[{url}]);
     assert.deepEqual(f.requests.filter(m=>m.type===request.type),[request]);assert.equal(server.calls.optionsOpened,0);
-    await f.click('확장 옵션');assert.equal(server.calls.optionsOpened,1);assert.equal(server.calls.openTabs.length,1);
+    assert.equal(f.root.querySelector('.settings'),null);assert.equal(server.calls.optionsOpened,0);assert.equal(server.calls.openTabs.length,1);
     await f.mode('screen');await f.click('관리자 접근');assert.equal(server.calls.openTabs.length,2);assert.equal(f.ports.length,0);assert.deepEqual(server.data,{});
   }finally{f.close();}
 });

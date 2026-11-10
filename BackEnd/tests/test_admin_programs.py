@@ -70,7 +70,10 @@ def valid_body(**values):
 
 
 def test_admin_program_routes_require_admin_token(monkeypatch):
-    monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: Settings(documents_enabled=True, documents_local_mode=False))
+    settings = Settings(_env_file=None, documents_enabled=True, documents_local_mode=False,
+                        admin_password="virtual-program-admin-password")
+    monkeypatch.setattr("BackEnd.documents.auth.get_settings", lambda: settings)
+    monkeypatch.setattr("BackEnd.admin.session.get_settings", lambda: settings)
     app.dependency_overrides[get_program_store] = lambda: RecordingStore()
     try:
         response = TestClient(app).get("/api/v1/admin/programs")

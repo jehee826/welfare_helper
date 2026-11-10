@@ -1,14 +1,19 @@
 :root {
-  --ink: #141414;
-  --ink-muted: #5f5f5f;
+  --ink: #22314d;
+  --ink-muted: #4b5b73;
   --surface: #ffffff;
-  --surface-soft: #f3f3f3;
-  --surface-input: #f0f0f0;
-  --line: #e3e3e3;
+  --surface-soft: #f3f6fc;
+  --surface-input: #f8faff;
+  --line: #d9e1ef;
+  --control-line: #7f8ea8;
+  --accent: #3e61d7;
+  --accent-strong: #304aa2;
+  --success-bg: #edf7f2;
+  --success-ink: #216247;
   --accent-warn-bg: #fff6e0;
   --accent-warn-ink: #6b4a00;
   --danger: #b3261e;
-  --focus: #1a56db;
+  --focus: #3e61d7;
   --radius-pill: 9999px;
   --radius-card: 24px;
   --radius-inner: 16px;

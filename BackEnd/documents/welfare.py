@@ -12,6 +12,7 @@ class WelfareAnswer(BaseModel):
     model_config = ConfigDict(extra='forbid')
     status: Literal['answer', 'clarify', 'no_evidence', 'out_of_scope']
     text: str = Field(min_length=1, max_length=3000)
+    source_ids: list[str] | None = Field(default=None, max_length=6)
 
 
 def complete_sources(snapshot, selected, query=''):

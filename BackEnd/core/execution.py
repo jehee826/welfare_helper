@@ -1,4 +1,4 @@
-"""문서·화면 추론의 프로세스 내 단일 실행과 협력적 기한·취소를 관리한다."""
+"""문서·화면 추론의 프로세스 내 실행 상한과 협력적 기한·취소를 관리한다."""
 
 import asyncio
 from collections import deque
@@ -34,7 +34,8 @@ class RequestBudget:
         return remaining
 
 
-inference_gate = BoundedSemaphore(1)
+INFERENCE_CONCURRENCY = 3
+inference_gate = BoundedSemaphore(INFERENCE_CONCURRENCY)
 _budget: ContextVar[RequestBudget | None] = ContextVar("inference_budget", default=None)
 
 
@@ -73,7 +74,7 @@ def inference_request(transport, server_timeout: float, timeout_seconds: int | N
 
 
 def inference_path(path: str) -> bool:
-    return path in {"/api/v1/chat", "/debug/rag", "/api/v1/desktop/guide", "/api/v1/screen/guide"} or (
+    return path in {"/api/v1/chat", "/debug/rag", "/api/v1/conversation/summary", "/api/v1/desktop/guide", "/api/v1/screen/guide"} or (
         path.startswith("/api/v1/admin/documents/") and path.endswith(("/query", "/search")))
 
 

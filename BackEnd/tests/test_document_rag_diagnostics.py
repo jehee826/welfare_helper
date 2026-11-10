@@ -13,7 +13,7 @@ from pydantic import SecretStr
 from BackEnd.core.settings import Settings
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.qa import answer_document
-from BackEnd.documents.context import PREPARE_SYSTEM, ANSWER_SYSTEM
+from BackEnd.documents.context import PREPARE_SYSTEM, ANSWER_SYSTEM, EMPTY_EVIDENCE_SYSTEM
 from BackEnd.rag.chat import ChatService
 from BackEnd.rag.evidence import EvidenceChunk
 from BackEnd.rag.repository import CatalogSnapshot
@@ -38,7 +38,10 @@ def components(settings, *, private=False):
     def generate(system, user):
         if system == PREPARE_SYSTEM:
             payload=json.loads(user)
-            return json.dumps({'search_query':payload['current_question'],'source_ids':[item['id'] for item in payload['sources']][:8], 'document_ids':[], 'needs_clarification':False})
+            return json.dumps({'relation':'followup' if payload['sources'] else 'independent',
+                               'search_query':payload['current_question'],'source_ids':[item['id'] for item in payload['sources']][:8], 'document_ids':[], 'needs_clarification':False})
+        if system == EMPTY_EVIDENCE_SYSTEM:
+            return json.dumps({'status':'no_evidence','text':'현재 자료에서 확인하지 못했습니다.'})
         sources = json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
         documents = [chunk for source in sources for chunk in source['chunks']]
         return json.dumps({'status':'answer','text':('관리자' if private else '공개') + ' 답변. 가상 991399-1234567. 2026년 129/1355 안내'}, ensure_ascii=False)
@@ -178,7 +181,7 @@ def test_expired_admin_session_cannot_open_private_debug(diagnostic_api, monkeyp
 
 
 @pytest.mark.parametrize("empty", ["snapshot", "candidates"])
-def test_no_evidence_has_matching_fallback_and_no_generation(diagnostic_api, empty):
+def test_no_evidence_has_matching_fallback_and_one_final_generation(diagnostic_api, empty):
     api = diagnostic_api
     if empty == "snapshot":
         api.public.repo.snapshot.return_value = CatalogSnapshot([], [], "empty")
@@ -189,9 +192,11 @@ def test_no_evidence_has_matching_fallback_and_no_generation(diagnostic_api, emp
     debug = api.client.post("/debug/rag", headers={"X-Rag-Debug-Token": TOKEN}, json=body)
     assert chat.status_code == debug.status_code == 200
     assert chat.json() == debug.json()["response"] and chat.json()["kind"] == "fallback"
-    assert chat.json()['contacts'][0]['phone']=='129' and chat.json()['contacts'][0]['kind']=='general'
-    assert debug.json()["diagnostics"]["reason"] == "no_document_evidence"
-    assert "generation" not in debug.json()["diagnostics"]["timings_ms"]
+    assert chat.json()['contacts'] == [] and chat.json()['reason'] == 'no_evidence'
+    assert debug.json()["diagnostics"]["reason"] == "no_evidence"
+    assert "generation" in debug.json()["diagnostics"]["timings_ms"]
+    assert api.public.llm.chat.call_count == 2
+    assert all(call.args[0] == EMPTY_EVIDENCE_SYSTEM for call in api.public.llm.chat.call_args_list)
     api.public.llm.chat_text.assert_not_called()
     if empty == "snapshot":
         api.public.llm.embed.assert_not_called()
@@ -201,16 +206,21 @@ def test_actual_synthetic_api_contact_dto_is_rendered_and_restored(diagnostic_ap
     import subprocess
     from pathlib import Path
     api=diagnostic_api
-    api.public.repo.snapshot.return_value=CatalogSnapshot([],[],'empty')
+    snapshot=api.public.repo.snapshot.return_value
+    chunk=replace(snapshot.chunks[0],heading_context='문의처',text='합성 기관 1355',source_url='https://www.example.go.kr/help')
+    record=SimpleNamespace(service_id=chunk.service_id,name='합성 복지 서비스',contacts=[])
+    api.public.repo.snapshot.return_value=replace(snapshot,services=[record],chunks=[chunk])
+    api.public.repo.dense_search.return_value=[replace(chunk,score=.99)]
     response=api.client.post('/api/v1/chat',json={'query':'합성 질문'})
-    assert response.status_code==200 and response.json()['reason']=='no_document_evidence'
+    assert response.status_code==200 and response.json()['kind']=='answer'
+    assert response.json()['contacts'][0]['phone']=='1355'
     script=r"""
 const assert=require('node:assert/strict');
 const {worker,ui}=require('./Extension/tests/conversation_fixture.cjs');
 let text='';process.stdin.setEncoding('utf8');process.stdin.on('data',x=>text+=x);process.stdin.on('end',async()=>{
   const body=JSON.parse(text),server=worker(),f=ui(server);
-  try{await f.ready();await f.question('합성 질문');await f.answer(body);assert.ok(f.root.querySelector('.conversation a[href="tel:129"]'));assert.match(f.root.querySelector('.conversation').textContent,/공식 안내 검토일/);}finally{f.close();}
-  const restored=ui(server);try{await restored.ready();assert.ok(restored.root.querySelector('.conversation a[href="tel:129"]'));}finally{restored.close();}
+  try{await f.ready();await f.question('합성 질문');await f.answer(body);assert.ok(f.root.querySelector('.conversation a[href="tel:1355"]'));assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/자료 대조일/);}finally{f.close();}
+  const restored=ui(server);try{await restored.ready();assert.ok(restored.root.querySelector('.conversation a[href="tel:1355"]'));}finally{restored.close();}
   process.stdout.write('API_DTO_RENDER_RESTORE_OK');
 });
 """
@@ -317,7 +327,8 @@ def test_runtime_reports_effective_document_policy_without_external_calls(diagno
     assert response.status_code == 200
     body = response.json()
     assert body["configuration_only"] is True and body["readiness_checked"] is False
-    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": False,
+    assert body["qa"] == {"mode": "document_rag", "policy": "welfare_document_evidence", "profile_supported": True,
+                          "profile_requires_consent": True, "profile_usage_stage": "generation_only",
                           "history_supported": True, "conversation_summary_supported": True,
                           "usage_is_request_specific": True, "strict_citation_validation_enabled": False,
                           "source_span_validation_enabled": False, "semantic_entailment_verified": False}

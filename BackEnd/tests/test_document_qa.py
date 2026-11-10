@@ -58,6 +58,48 @@ def components(*, empty=False, failure=None):
     return repo, service, calls
 
 
+@pytest.mark.parametrize('include_other', [False, True])
+def test_model_selected_reference_retains_conditions_and_contacts_for_only_used_sources(include_other):
+    repo, service, _ = components()
+    first = replace(repo.snapshot().chunks[0], text="사업 조건입니다.\n- 문의: 테스트 담당 기관 1355",
+                    source_url="https://www.bokjiro.go.kr/selected-source")
+    condition = replace(first, chunk_id="source:condition", text="이 사업의 제외 조건입니다.", heading_context="제외·예외")
+    other = replace(first, chunk_id="source:other", document_id="00000000-0000-0000-0000-000000000002",
+                    service_id="PROGRAM_2", document_name="다른 사업", text="다른 사업 원문입니다.\n- 문의: 다른 담당 기관 1523",
+                    source_url="https://www.bokjiro.go.kr/other-source")
+    snapshot = replace(repo.snapshot(), chunks=[first, condition, other])
+    repo.document_scope = None
+    repo.snapshot = lambda: snapshot
+    repo.dense_search = lambda *args, **kwargs: [replace(chunk, score=.65) for chunk in snapshot.chunks]
+    def generate(system, user, **kwargs):
+        sources = json.loads(user.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
+        source = next(item for item in sources if item['document_id'] == DOC_ID)
+        ids = {chunk['id'] for item in sources for chunk in item['chunks']}
+        assert set(kwargs['schema']['properties']['source_ids']['items']['enum']) == ids
+        assert 'source_ids' in kwargs['schema']['required']
+        selected = [source['chunks'][0]['id']]
+        if include_other:
+            selected.extend(item['chunks'][0]['id'] for item in sources if item['document_id'] != DOC_ID)
+        return {'status': 'answer', 'text': '선택 원문의 조건을 안내합니다.', 'source_ids': selected}
+    service.llm.chat = generate
+    answer, trace = answer_document(repo, service, "선택 자료의 조건을 알려주세요")
+    assert answer['kind'] == 'answer'
+    assert {item['chunk_id'] for item in answer['evidence']} == {first.chunk_id, condition.chunk_id} | ({other.chunk_id} if include_other else set())
+    assert {item['document_id'] for item in answer['evidence']} == {DOC_ID} | ({other.document_id} if include_other else set())
+    assert {item['phone'] for item in answer['contacts']} == ({'1355', '1523'} if include_other else {'1355'})
+    assert trace['source_reference_selection'] == 'model_selected_document_versions'
+
+
+@pytest.mark.parametrize('selection', [[], ['C999'], ['C1', 'C1']])
+def test_invalid_explicit_answer_reference_selection_does_not_publish_evidence(selection):
+    repo, service, _ = components()
+    service.llm.chat = lambda *args, **kwargs: {'status': 'answer', 'text': '합성 답변', 'source_ids': selection}
+    answer, trace = answer_document(repo, service, "선택 자료의 조건을 알려주세요")
+    assert answer['reason'] == 'invalid_evidence_answer'
+    assert answer['evidence'] == [] and answer['contacts'] == []
+    assert trace['answer_validation'] == 'invalid_answer'
+
+
 @pytest.mark.parametrize(('score','expected'),[(.519999,'no_evidence'),(.52,'answer'),(.520001,'answer')])
 def test_document_similarity_threshold_includes_equal_and_withholds_facts_below(score,expected):
     repo,service,calls=components()

@@ -18,6 +18,7 @@ postgres_data/
 # 로컬 개발·테스트 환경
 .pytest_cache/
 .reranker_cache/
+.playwright-mcp/
 
 .CLAUDE.md
 
@@ -89,14 +90,19 @@ postgres_data/
 /docs/design/database/*
 !/docs/design/database/복지챗봇.erd
 
-# 협업 계획 한 개만 공유, 다른 개인 계획은 로컬 보관
+# 활성 계획·진행·인계는 세 문서만 공유
 /docs/plan/*
-!/docs/plan/collaboration-plan.md
-!/docs/plan/collaboration-plan-review.md
+!/docs/plan/merge_plan.md
+!/docs/plan/handoff.md
+!/docs/plan/devlog.md
 
 # 과거 문서는 기본 로컬 보관, 기존 공유 문서의 이동본만 추적
 /docs/archive/*
 !/docs/archive/README.md
+!/docs/archive/collaboration-plan.md
+!/docs/archive/collaboration-plan-review.md
+!/docs/archive/merge_decisions.md
+!/docs/archive/laptop_handoff.md
 !/docs/archive/designs/
 /docs/archive/designs/*
 !/docs/archive/designs/rag-accuracy-design.md

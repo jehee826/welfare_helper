@@ -61,12 +61,14 @@ def bounded_api(api, monkeypatch):
         monkeypatch.setattr(module, "get_settings", lambda: settings)
     monkeypatch.delenv("VERCEL", raising=False)
     monkeypatch.setenv("BACKEND_BIND_HOST", "127.0.0.1")
-    entered, release, calls, budgets = Event(), Event(), [], []
+    entered, release, calls, budgets, contexts = Event(), Event(), [], [], []
     def work(question):
         calls.append(question)
         budgets.append(execution.current_budget().remaining())
+        contexts.append(execution.current_budget())
         if question == "대기":
-            entered.set()
+            if calls.count("대기") == execution.INFERENCE_CONCURRENCY:
+                entered.set()
             assert release.wait(2), "검사가 native 대역을 정리하지 못했습니다."
         execution.checkpoint()
     result = {"kind": "fallback", "text": "문서 근거 없음", "contacts": [], "suggestions": []}
@@ -91,14 +93,15 @@ def bounded_api(api, monkeypatch):
         work(request.question)
         return guide.GuideAnswer(kind="설명", answer="공개 화면입니다.", targets=[])
     monkeypatch.setattr(guide, "generate_step", generate)
-    return SimpleNamespace(**vars(api), settings=settings, entered=entered, release=release, calls=calls, budgets=budgets)
+    return SimpleNamespace(**vars(api), settings=settings, entered=entered, release=release, calls=calls,
+                           budgets=budgets, contexts=contexts)
 
 
 @pytest.mark.parametrize("first_path", PATHS)
-def test_all_expensive_routes_share_one_slot_without_a_queue(bounded_api, first_path):
+def test_three_native_calls_share_bounded_slots_and_fourth_has_no_queue(bounded_api, first_path):
     api = bounded_api
     async def run():
-        first = Exchange(api.main.app, first_path, body(first_path, "대기"))
+        active = [Exchange(api.main.app, first_path, body(first_path, "대기")) for _ in range(3)]
         try:
             assert await asyncio.to_thread(api.entered.wait, 1)
             for path in PATHS:
@@ -106,11 +109,13 @@ def test_all_expensive_routes_share_one_slot_without_a_queue(bounded_api, first_
                 assert await other.finish() == 429
                 start = next(m for m in other.messages if m["type"] == "http.response.start")
                 assert (b"retry-after", b"1") in start["headers"]
-            assert api.calls == ["대기"]
+            assert api.calls == ["대기"] * 3
+            assert len({id(context) for context in api.contexts}) == 3
+            assert len({id(context.cancelled) for context in api.contexts}) == 3
         finally:
             api.release.set()
-            await first.finish()
-        assert first.status == 200
+            await asyncio.gather(*(request.finish() for request in active))
+        assert [request.status for request in active] == [200] * 3
         assert await Exchange(api.main.app, PATHS[0], body(PATHS[0])).finish() == 200
         assert not [t for t in asyncio.all_tasks() if t.get_name() == "inference-disconnect"]
     asyncio.run(run())
@@ -122,7 +127,8 @@ def test_native_work_keeps_slot_until_it_exits_and_never_returns_success(bounded
     if stop == "timeout":
         monkeypatch.setattr(api.main, "get_settings", lambda: api.settings.model_copy(update={"ollama_timeout": .08}))
     async def run():
-        first = Exchange(api.main.app, PATHS[0], body(PATHS[0], "대기"))
+        active = [Exchange(api.main.app, PATHS[0], body(PATHS[0], "대기")) for _ in range(3)]
+        first = active[0]
         try:
             assert await asyncio.to_thread(api.entered.wait, 1)
             if stop == "disconnect":
@@ -140,11 +146,12 @@ def test_native_work_keeps_slot_until_it_exits_and_never_returns_success(bounded
             assert await Exchange(api.main.app, PATHS[1], body(PATHS[1])).finish() == 429
         finally:
             api.release.set()
-            try:
-                await first.finish()
-            except asyncio.CancelledError:
-                assert stop == "task_cancel"
+            results = await asyncio.gather(*(request.finish() for request in active), return_exceptions=True)
+            assert all(not isinstance(result, BaseException) or
+                       (isinstance(result, asyncio.CancelledError) and stop == "task_cancel") for result in results)
         assert first.status != 200
+        if stop != "timeout":
+            assert [request.status for request in active[1:]] == [200, 200]
         if stop == "timeout":
             assert first.status == 504
         for _ in range(100):
@@ -183,8 +190,9 @@ def test_body_replay_has_one_consumer_and_cleans_watcher():
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("path", [PATHS[0], "/api/v1/conversation/summary"])
 @pytest.mark.parametrize("case,status", [("limit", 413), ("body_timeout", 504)])
-def test_body_limits_reject_before_application_without_env(case, status):
+def test_body_limits_reject_before_application_without_env(case, status, path):
     async def run():
         app = Mock()
         messages = []
@@ -194,7 +202,7 @@ def test_body_limits_reject_before_application_without_env(case, status):
             await asyncio.sleep(1)
         async def send(message):
             messages.append(message)
-        await execution.InferenceBodyLimit(app, timeout_seconds=lambda: .01)({"type": "http", "method": "POST", "path": PATHS[0]}, receive, send)
+        await execution.InferenceBodyLimit(app, timeout_seconds=lambda: .01)({"type": "http", "method": "POST", "path": path}, receive, send)
         assert messages[0]["status"] == status
         app.assert_not_called()
     asyncio.run(run())

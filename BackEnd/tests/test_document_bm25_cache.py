@@ -71,7 +71,7 @@ def test_cached_index_never_bypasses_snapshot_failure_empty_catalog_or_wrong_sco
         ask(repo, service)
     assert service.analyzer.query_calls == 1
     repo.snapshot = lambda: replace(snapshot, chunks=[])
-    assert ask(repo, service)[0]["reason"] == "no_document_evidence"
+    assert ask(repo, service)[0]["reason"] == "no_evidence"
     assert service._document_bm25 is None
     repo.snapshot = lambda: snapshot
     ask(repo, service)

@@ -149,3 +149,82 @@ it("공개 모드에서 서버가 관리자 권한을 거부하면 문서 API를
   expect(screen.getByRole("heading", { name: "관리자 로그인" })).toBeInTheDocument();
   expect(fetch).not.toHaveBeenCalled();
 });
+
+
+it.each(["http503", "network"])("설정 조회 %s 실패는 미설정이나 빈 제도로 단정하지 않는다", async failure => {
+  vi.stubEnv("DEV", true);
+  const fetch = vi.fn(async (url: string) => {
+    if (url.endsWith("/processing")) {
+      if (failure === "network") throw new TypeError("synthetic network failure");
+      return { ...json({ detail: "processing_unavailable" }), ok: false, status: 503 };
+    }
+    return json({ items: [], next_offset: null });
+  });
+  vi.stubGlobal("fetch", fetch); mount();
+  await screen.findByRole("alert");
+  expect(screen.queryByText(/0005 마이그레이션/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/제도 등록·관리에서 먼저 등록/)).not.toBeInTheDocument();
+  expect(fetch.mock.calls.some(([url]) => url.includes("/programs?"))).toBe(false);
+  expect(screen.getByRole("button", { name: "업로드·자동 처리" })).toBeDisabled();
+  await act(async () => { fireEvent.submit(screen.getByRole("button", { name: "업로드·자동 처리" }).closest("form")!); });
+  expect(fetch.mock.calls.some(([url]) => url.endsWith("/documents"))).toBe(false);
+});
+
+it.each([false, true])("목록 조회 실패는 업로드를 막고 성공 재조회로 회복한다: 이전 목록=%s", async previous => {
+  vi.stubEnv("DEV", true);
+  let ready = previous;
+  const fetch = vi.fn(async (url: string) => {
+    if (url.endsWith("/processing")) return json({ ready: true });
+    if (url.includes("/programs?")) return ready
+      ? json({ items: [{ service_id: "WLF_SAMPLE", program_name: "일반 제도", test_only: false }], next_offset: null })
+      : { ...json({ detail: "programs_unavailable" }), ok: false, status: 503 };
+    throw new Error("unexpected request");
+  });
+  vi.stubGlobal("fetch", fetch); mount();
+  if (previous) {
+    await screen.findByRole("option", { name: /일반 제도/ });
+    fireEvent.change(screen.getByLabelText("연결할 제도"), { target: { value: "WLF_SAMPLE" } });
+    fireEvent.change(screen.getByLabelText("문서명"), { target: { value: "보존할 문서명" } });
+    ready = false;
+    fireEvent.click(screen.getByRole("button", { name: "설정·제도 목록 다시 불러오기" }));
+  }
+  await screen.findByRole("alert");
+  expect(screen.getByRole("button", { name: "업로드·자동 처리" })).toBeDisabled();
+  expect(screen.queryByText(/0005 마이그레이션|제도 등록·관리에서 먼저 등록/)).not.toBeInTheDocument();
+  if (previous) {
+    expect(screen.getByLabelText("문서명")).toHaveValue("보존할 문서명");
+    expect(screen.getByLabelText("연결할 제도")).toHaveValue("WLF_SAMPLE");
+  }
+  await act(async () => { fireEvent.submit(screen.getByRole("button", { name: "업로드·자동 처리" }).closest("form")!); });
+  expect(fetch.mock.calls.some(([url]) => url.endsWith("/documents"))).toBe(false);
+  ready = true;
+  fireEvent.click(screen.getByRole("button", { name: "설정·제도 목록 다시 불러오기" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "업로드·자동 처리" })).toBeEnabled());
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  if (previous) expect(screen.getByLabelText("문서명")).toHaveValue("보존할 문서명");
+});
+
+it("업로드 자체의 실패는 확인된 설정과 목록을 무효화하지 않고 재시도를 허용한다", async () => {
+  vi.stubEnv("DEV", true);
+  let posts = 0;
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
+    if (url.endsWith("/processing")) return json({ ready: true });
+    if (url.includes("/programs?")) return json({ items: [{ service_id: "WLF_SAMPLE", program_name: "일반 제도", test_only: false }], next_offset: null });
+    if (url.endsWith("/documents") && options.method === "POST") {
+      posts++;
+      return posts === 1 ? { ...json({ detail: "temporary_failure" }), ok: false, status: 503 }
+        : json({ document_id: id, job_id: jobId });
+    }
+    if (url.includes("/jobs/")) return json(makeJob("queued"));
+    return json(makeDoc(makeJob("queued")));
+  }));
+  mount();
+  await screen.findByRole("option", { name: /일반 제도/ });
+  fireEvent.change(screen.getByLabelText("연결할 제도"), { target: { value: "WLF_SAMPLE" } });
+  const button = screen.getByRole("button", { name: "업로드·자동 처리" });
+  fireEvent.submit(button.closest("form")!);
+  await screen.findByRole("alert");
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.submit(button.closest("form")!);
+  await waitFor(() => expect(posts).toBe(2));
+});

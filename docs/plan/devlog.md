@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 10:06 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 10:39 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -226,3 +226,13 @@
 - 현재상담요약은입력창위버튼/대화영역끝별도영역에있고F5에사라지는메모리전용이었다. 사용자표시용요약을worker소유로컬저장소에영속화하되기존RAG자동맥락summary와분리하도록계약을정했다. 마지막성공본1개·새성공시교체·대화삭제/reset시정리·닫기는숨김·취소/오류/늦은응답이저장성공본을덮지않는범위다.
 - UI의참고자료/출처/대조일·저장시점유효성/부분인용등자체추가메타안내를제거한다. 원문/답변내용·문의처실내용·전송동의/실제실패안내는보존하고서버/내부출처데이터는변경하지않는다. 기존검사의삭제문구기대값만관련변경에맞춰갱신한다.
 - 로컬착수기준은codex/fix-merge·HEAD2f3259d/clean이다. 제품수정은기존EC2개발담당에배정했고RAG11보존·후속Git직렬화조건을전달했다. BackEnd/tests/test_document_rag_diagnostics.py에도자료대조일단언이있지만B안보존파일과겹치므로통째로stage/원복하지않고최소반영안을먼저조율한다. 실제Chrome재로드·LLM·DB·운영이미지변경/새예방시험은착수에서수행하지않았다.
+
+## 2026-11-10 10:39 KST · 초기 구현 검토·격리 검사와 SSH 접속 차단
+
+- 문서b6afc8a를GitHub에공유하고EC2가2f3259d에서ff-onlypull했다. 개발이보존백업과B안11파일의rawSHA일치·pull전후보존·빈index를확인했다. 초기확장제품수정은EC2미커밋이며로컬실제Extension소스에는아직반영하지않았다.
+- 설계가EC2실제diff를읽었다. profile-usage-get은로컬프로필/선택만읽어반환하고capabilities지원확인은별도로표시한다. 읽기리뷰에서OFF스위치가pending지원응답을기다리던조건을추가발견해,로컬준비시조작가능·명시미지원만차단으로수정했다. 실제ON저장과전송의동의/프로필revision/서버지원재확인과자동ON금지는유지했다.
+- 표시용요약은worker소유 `gyeote.displaySummary`의schemaVersion/revision/generation/conversationId/text(최대1200자)/partial6필드다. 대화revision/세대/ID와요약revision을대조해직렬저장하고get의별도필드로복원한다. 기존schema3와RAG summary·요청payload는유지하며clear/reset은동일storage.set에서요약도정리한다. 렌더diff에서참고자료패널/출처/날짜/복원면책안내제거와답변본문·기관·전화·운영시간보존을확인했다.
+- 개발의Node24.14.0격리검사원자료는 `.local/co-op/checks-runtime/extension-feedback-20261110/`에있다. round1실제EC2사본은157중153성공/4실패였고설계도원로그를읽어옛맥락누락안내·쪽/출처링크·날짜·지원대기버튼기대값충돌을확인했다. 검증사본은운영추론/Chrome시험이아니다.
+- 후속기대값수정명령은SSH접속단계의timeout으로원격실행전실패했다. 개발의1회분리확인은SSH TCP false/HTTPS health200,설계의승격된기존SSH true1회도22번connect timeout이었다. 접속원인은미확정이며운영재시작·보안설정변경·SSH대체접근은수행하지않았다.
+- EC2원본을유지한로컬ignored round2-proposed에서기대값수정과닫은요약의동일record통지재열림방지를검사했다. round2는156/157로저장URL원문끝슬래시기대값1건만실패했다. round3-proposed에서그단언만바꾸고해당conversations_content파일26/26성공을확인했다. 전체157개최종일괄성공/EC2적용완료로기록하지않는다. 설계도제안코드의로컬준비스위치조건·generation/ID/revision기반닫기상태와원로그를읽었다.
+- 제품커밋/push와EC2최종반영·로컬Git소스동기화는미완료다. Backend겹침검사는원본11백업을보존하고committedbaseline의UI단언1줄만index에올리는합의이며아직실행하지않았다. README/현행확장설계2문서는설계의로컬초안으로남겨제품적용뒤확정한다. 다음은SSH접근복구뒤현재상태/제안해시를재대조하고후속수정·검사·선별커밋·동기화를직렬진행하는것이다.

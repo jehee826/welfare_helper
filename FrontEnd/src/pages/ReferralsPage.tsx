@@ -73,9 +73,9 @@ export function ReferralsPage() {
 
   return <section className="stack-lg">
     <h1>연락처 안내 기록</h1>
-    <p>공개 상담에서 서버가 생성한 연락처 안내 건수입니다. 실제 이용자·화면 수신·전화 발신·신청 횟수가 아닙니다.</p>
-    <p>질문·답변·요약·프로필·IP는 저장하지 않습니다. 기록은 90일 후 삭제되며 만료·삭제된 기록은 통계에서도 제외됩니다.</p>
-    <form className="card stack" onSubmit={refresh}>
+    <p className="muted">공개 상담에서 서버가 생성한 연락처 안내 건수입니다. 실제 이용자·화면 수신·전화 발신·신청 횟수가 아닙니다.</p>
+    <p className="muted">질문·답변·요약·프로필·IP는 저장하지 않습니다. 기록은 90일 후 삭제되며 만료·삭제된 기록은 통계에서도 제외됩니다.</p>
+    <form className="card filter-form" onSubmit={refresh}>
       <label className="field">시작일 (한국 시각)<input type="date" value={filter.dateFrom} required disabled={busy || deleting} onChange={event => setFilter({ ...filter, dateFrom: event.target.value })} /></label>
       <label className="field">종료일 (한국 시각)<input type="date" value={filter.dateTo} required disabled={busy || deleting} onChange={event => setFilter({ ...filter, dateTo: event.target.value })} /></label>
       <label className="field">담당 부서<select value={filter.departmentId} disabled={busy || deleting} onChange={event => setFilter({ ...filter, departmentId: event.target.value })}>
@@ -103,17 +103,19 @@ export function ReferralsPage() {
           <a href={item.source_url} target="_blank" rel="noreferrer">연락처 증명 출처</a>
         </li>)}
       </ul>}
-      <div className="stack">
+      <div className="record-actions">
         {query.offset > 0 && <button className="btn btn--soft" disabled={busy || deleting} onClick={() => setQuery({ ...query, offset: Math.max(0, query.offset - 50) })}>이전 기록</button>}
         {result.next_offset !== null && <button className="btn btn--soft" disabled={busy || deleting} onClick={() => setQuery({ ...query, offset: result.next_offset! })}>다음 기록</button>}
-        <button ref={deleteButton} className="btn btn--soft" disabled={busy || deleting || result.contact_count === 0} onClick={() => setConfirm(true)}>조회 조건의 기록 삭제</button>
+        <button ref={deleteButton} className="btn btn--danger-outline" disabled={busy || deleting || result.contact_count === 0} onClick={() => setConfirm(true)}>조회 조건의 기록 삭제</button>
       </div>
     </>}
     {confirm && <dialog ref={confirmDialog} className="password-dialog card" aria-labelledby="delete-referrals-title" onCancel={event => { event.preventDefault(); closeConfirm(); }}>
       <h2 id="delete-referrals-title">연락처 기록 삭제</h2>
       <p>{query.filter.dateFrom} ~ {query.filter.dateTo}, {query.filter.departmentId ? "선택한 부서" : "전체 부서"}의 기록을 삭제합니다. 집계도 줄어들며 되돌릴 수 없습니다.</p>
-      <button className="btn btn--soft" disabled={deleting} onClick={closeConfirm}>취소</button>
-      <button className="btn btn--primary" disabled={deleting} onClick={() => void remove()}>{deleting ? "삭제 중…" : "해당 기록 영구 삭제"}</button>
+      <div className="modal__actions">
+        <button className="btn btn--soft" disabled={deleting} onClick={closeConfirm}>취소</button>
+        <button className="btn btn--primary" disabled={deleting} onClick={() => void remove()}>{deleting ? "삭제 중…" : "해당 기록 영구 삭제"}</button>
+      </div>
     </dialog>}
   </section>;
 }

@@ -5,9 +5,11 @@
   --surface-soft: #f3f3f3;
   --surface-input: #f0f0f0;
   --line: #e3e3e3;
+  --line-strong: #c9c9c9;
   --accent-warn-bg: #fff6e0;
   --accent-warn-ink: #6b4a00;
   --danger: #b3261e;
+  --danger-bg: #fcebea;
   --focus: #1a56db;
   --radius-pill: 9999px;
   --radius-card: 24px;

@@ -10,7 +10,7 @@ const validId = (value: string) => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
 export function DocumentsPage() {
   return <section className="documents stack-lg">
     <h1>문서 관리</h1>
-    <p>원문을 올리면 자동 분석·청크 분할·임베딩·게시까지 처리합니다. 분류·검토 승인은 필요하지 않습니다.</p>
+    <p className="muted">원문을 올리면 자동 분석·청크 분할·임베딩·게시까지 처리합니다. 분류·검토 승인은 필요하지 않습니다.</p>
     <DocumentRegistration />
   </section>;
 }
@@ -101,14 +101,16 @@ function DocumentRegistration() {
         <option value="">{loading ? "불러오는 중" : "제도 선택"}</option>
         {programs.map(p => <option key={p.service_id} value={p.service_id}>{p.program_name} ({p.service_id}){p.test_only ? " · 일반 상담 미노출" : ""}</option>)}
       </select></label>
-      <p>일반 상담 미노출 제도의 문서는 로그인한 관리자 검증에만 사용합니다. 일반 사용자에게 제공할 원문은 공개 가능한 일반 제도에 등록하세요. 기존 문서의 공개 범위는 자동으로 바꾸지 않습니다.</p>
-      {!loading && !programs.length && <p>연결할 제도를 제도 등록·관리에서 먼저 등록하세요.</p>}
+      <p className="document-hint">일반 상담 미노출 제도의 문서는 로그인한 관리자 검증에만 사용합니다. 일반 사용자에게 제공할 원문은 공개 가능한 일반 제도에 등록하세요. 기존 문서의 공개 범위는 자동으로 바꾸지 않습니다.</p>
+      {!loading && !programs.length && <p className="document-hint">연결할 제도를 제도 등록·관리에서 먼저 등록하세요.</p>}
       <label className="field">문서명<input name="name" maxLength={160} required /></label>
       <label className="field">공개 원문 URL (HTTPS)<input name="source_url" type="url" pattern="https://.*" maxLength={1000} required /></label>
       <label className="field">발행 기관<input name="source_organization" maxLength={300} required /></label>
-      <label className="field">확인한 기준연도 (선택)<input name="basis_year" pattern="(19|20)[0-9]{2}" /></label>
-      <label className="field">원문 기준일 (선택)<input name="source_updated_at" type="date" /></label>
-      <p>원문에서 확인한 정보만 입력하세요. 확인할 수 없는 날짜는 비워 두고 URL에는 인증정보를 넣지 마세요.</p>
+      <div className="grid-2">
+        <label className="field">확인한 기준연도 (선택)<input name="basis_year" pattern="(19|20)[0-9]{2}" inputMode="numeric" /></label>
+        <label className="field">원문 기준일 (선택)<input name="source_updated_at" type="date" /></label>
+      </div>
+      <p className="document-hint">원문에서 확인한 정보만 입력하세요. 확인할 수 없는 날짜는 비워 두고 URL에는 인증정보를 넣지 마세요.</p>
       <label className="field">원문 파일 (PDF·DOCX·UTF-8 Markdown)<input name="file" type="file" accept=".pdf,.docx,.md" required /></label>
       <label className="field">교체할 문서 ID (신규 등록은 비움)<input name="document_id" value={replacementId} onChange={e => setReplacementId(e.target.value)} /></label>
       <button className="btn btn--primary" disabled={busy || loading || !prepared || !programs.length}>{busy ? "업로드 중" : "업로드·자동 처리"}</button>

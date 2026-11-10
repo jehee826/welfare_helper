@@ -92,7 +92,7 @@ test('기본 상담은 문서 안내와 텍스트 입력을 제공하고 개발 
     assert.doesNotMatch(f.root.querySelector('.mode-intro').textContent,/화면/);assert.equal(f.root.querySelector('.screen-controls').hidden,true);
     assert.equal(f.root.querySelector('[data-test],.body-test'),null);assert.doesNotMatch(f.root.textContent,/개발용 표시 검사|이미지 범위 검사/);
     assert.equal(f.root.querySelectorAll('.question-suggestions button').length,3);assert.equal(f.root.querySelector('#gyeote-question').placeholder,'질문을 입력하세요');
-    await f.mode('screen');assert.equal(f.root.querySelector('.screen-controls').hidden,false);assert.match(f.root.querySelector('.mode-intro').textContent,/공개 복지로 화면/);assert.equal(f.root.querySelector('.screen-controls > p'),null);assert.ok(f.root.querySelector('.screen-settings'));assert.ok(f.root.querySelector('.voice-input'));assert.ok(f.root.querySelector('button[type=submit]'));
+    await f.mode('screen');assert.equal(f.root.querySelector('.screen-controls').hidden,false);assert.match(f.root.querySelector('.mode-intro').textContent,/공개 복지로 화면/);assert.equal(f.root.querySelector('.screen-controls > p'),null);assert.equal(f.root.querySelector('.screen-settings'),null);assert.equal(f.root.querySelector('.voice-input'),null);assert.ok(f.root.querySelector('button[type=submit]'));
     assert.equal(f.root.querySelector('.question-suggestions').hidden,true);
     const css=[...f.root.querySelectorAll('style')].map(node=>node.textContent).join('');
     assert.match(css,/font-size:16px/);assert.match(css,/min-height:40px/);assert.match(css,/select:focus-visible/);assert.match(css,/\.transcript\{[^}]*overflow:auto/);assert.doesNotMatch(css,/font-size:(?:11|12)px/);

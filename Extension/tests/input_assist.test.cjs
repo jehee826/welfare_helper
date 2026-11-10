@@ -59,7 +59,7 @@ for(const prefixed of [false,true])test(`명시 클릭으로만 한국어 단회
     recognition.onresult(f.result('중간 결과',false));assert.equal(f.input.value,'');
     recognition.onresult(f.result('  <img src=x> 합성 질문  '));assert.equal(f.input.value,'<img src=x> 합성 질문');assert.equal(f.form.querySelector('img'),null);
     assert.equal(recognition.aborts,1);assert.equal(f.timers.size,0);assert.deepEqual(f.counts(),{submits:0,fetches:0});
-    assert.match(f.form.querySelector('.voice-input').textContent,/외부 인식 서비스/);
+    assert.equal(f.form.querySelector('details'),null);assert.match(f.form.querySelector('.voice-notice').textContent,/외부 인식 서비스/);
   }finally{f.close();}
 });
 test('수동 편집은 인식을 중단하고 옛 result/end/error가 새 인식을 건드리지 않는다',()=>{

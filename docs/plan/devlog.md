@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:49 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:56 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -967,3 +967,13 @@
 - 공개 /webchat와 관리자 /admin/*의 인증 분리, credentials omit·Authorization 미포함, 질문300자·600초 요청, answer/fallback·contacts 계약을 main과 대조했다. 이 범위에서 추가 확정 결함은 없었다. 대화 이력·연속 상담 부재는 의도된 단발성 설계이므로 변경하지 않았다.
 - 검증은 코드·diff·충돌 표식 텍스트·Git 상태 읽기뿐이다. 테스트·node·타입/구문검사·빌드·HTTP·Chrome·모델·CI 실행은 하지 않았으며 실제 동작 통과를 주장하지 않는다. EC2 B11·환경설정·DB·실행 서비스는 이번 작업에서 접근하거나 변경하지 않았다.
 - 첫 PR/Vercel 결과를 담은 로컬 후속 문서 c09bf61·706aec3·2c292d1을 정상 merge로 통합하고 현재 계획·인계·두 번째 PR 본문을 갱신한다. 다음 범위는 원격 push·두 번째 PR 생성/병합·배포 메타데이터 확인이다. 기존14b8bf8 Preview 차단은 새 HEAD에서 별도 확인하며 성공을 미리 가정하지 않는다.
+
+<a id="log-20261110-1556-webchat-ci"></a>
+## 2026-11-10 15:56 KST · 기존 PR #19 갱신·Preview 성공·자동 CI 기대값 정정
+
+- 기존 팀원 PR #19(head14b8bf8→main)을 발견해 중복 생성하지 않고 재사용했다. 문서 이력 병합ff3d47426dc34afe8fa12cb110deb30adddd0d90까지 원격 Claude ref에 정상 push하고 제목·본문을 통합 결과로 갱신했다. main9a5ffce·headff3d474·mergeable=true·11커밋/22파일을 확인했다.
+- 실제 welfare7 프로젝트의 ff3d474 Preview dpl_Dyx6qZrtxiWER6PbvGVLLjoLd2jq가 READY이며 GitHub Vercel 상태도success다. 기존14b8bf8의 팀 접근 BLOCKED는 새 커밋에서 재현되지 않았다. Git 작성자·계정·멤버십·환경설정·배포보호는 변경하지 않았다.
+- push로 시작된 자동 CI run42771311022의 Python worker/backend/dev3job은success다. web-extension은 웹 test:ci와 build:ci 성공 후 확장507건 중505통과/2실패했다. 해당 실패 로그만 읽었으며 수동 검사·재실행 요청은 하지 않았다.
+- 실패1은 conversation_layout.test.cjs:7의 이전 문서 연결 오류 기대값이다. 현행 공개 상담 오류 문구로 정정하고 닫힌 메뉴 밖 .status 표시 단언을 유지했다. 실패2는 profile_usage.test.cjs:186의 재조회 중 확인 문구 기대값이다. 현행 코드는 성공 전까지 기존 오류를 보여 주므로 error 동일 단언으로 정정하고 retry 비활성·저장 profile 존재 시 toggle 활성 단언을 함께 유지했다.
+- 개발이 검사2파일만 각1행 교체했고 설계가 diff를 검토했다. 제품 코드는 변경하지 않았다. 5초 기한·현재 질문 profile_context 미첨부·늦은 응답 무시·저장 ON 보존·성공 ON 복구 단언은 그대로다. 새 자동 CI 성공은 아직 확인 전이며 후속 push 뒤 결과를 확인한다.
+- 팀원 기존 PR의146개/tsc/build 및 대역 화면 통과는 팀원 이전 보고이며 이번 통합 검증과 구분한다. 실제 Chrome·운영 API 종단·마이크·기기 음성은 미확인이다.

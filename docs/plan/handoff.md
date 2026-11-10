@@ -1,13 +1,13 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:49 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:56 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 첫 PR #20 병합 뒤 팀원 웹의 로컬 통합·코드 검토를 완료했다. 현재 로컬은 `claude/FrontEnd-webchat`, main9a5ffce 통합은 b527320, 민감정보 거절 안내 수정은55a791d다. 기존 fix-merge의 후속 문서3커밋도 이력을 보존해 합친다. 다음은 원격 push·두 번째 PR 생성/병합·Vercel 확인이다. [통합 기록](devlog.md#log-20261110-1549-webchat-integration)
-- Vercel 판정 정정: 실제 운영은 캡스톤 계정 welfare7/welfare-helper(prj_HkwhPJ62wroO3duFqX1qGAujtW0L)다. main9a5ffce production과 fix-merge69ffb1b Preview 모두 READY이고 기존 welfare-helper-iota.vercel.app은 최신 main에 연결됐다. 앞서 본 실패는 본계정 jehee의 동명 프로젝트(prj_DnJIpAfxJL3xyuHcANX2e9esEtBZ)다. 본계정 Git 연결은 사용자 직접 해제 뒤 API에서 연결 목록 제외를 확인했다. 캡스톤 계정의 기존 Git 연결·운영 도메인·production READY는 유지됐다. Claude 브랜치14b8bf8 Preview는 welfare7에서도 BLOCKED이며 별도 후속 조건이다. [확인 근거](devlog.md#log-20261110-1522-vercel-target)
+- 현재 `claude/FrontEnd-webchat` 통합ff3d474까지 원격 push했고 기존 PR #19 본문을 갱신했다. 새 Preview는 READY다. 자동 CI의 확장 기대값2건 실패를 검사2파일만 정정했다. 다음은 후속 push·자동 결과 확인·PR #19 병합이다. [통합 기록](devlog.md#log-20261110-1549-webchat-integration) / [실패·정정](devlog.md#log-20261110-1556-webchat-ci)
+- 실제 Vercel 운영은 welfare7/welfare-helper(prj_HkwhPJ62wroO3duFqX1qGAujtW0L)이며 welfare-helper-iota.vercel.app은 main9a5ffce production READY다. 본계정 jehee 중복 Git 연결은 해제됐다. 기존 Claude14b8bf8은 BLOCKED였지만 새 통합ff3d474 Preview는 READY다. 실제 UI/API 동작은 새로 확인하지 않았다. [확인 근거](devlog.md#log-20261110-1556-webchat-ci)
 
 - 첫 PR 준비 후속 완료: EC2 ec3e880의 기존 검사 14파일 정합성과 options.html 패키징 정책 1항목 복원을 읽기 검토하고 로컬 계획7582a2d와 통합했다. 이후 69ffb1b까지 원격 push·EC2 동기화를 완료했고 PR #20에 병합했다. 테스트·구문검사·빌드·패키저·실제 추론은 실행하지 않았다. [상세](devlog.md#log-20261110-1501-pr-source)
 
@@ -29,7 +29,7 @@
 
 1. 사용자가 기존 확장을 다시 로드하고 복지로 F5 뒤 요약 창의 요약하기를 직접 시험한다.
 2. 연락처가 안내되는 새 상담 이후 관리자 연락처 안내 기록에서 조회한다. 수집 ON 이전의 대화는 소급 기록하지 않는다. 별도 CSV는 보류한다.
-3. 두 번째 PR 본문은 merge_plan 4절에 준비했다. 이번에는 원격 push·PR 생성·main 병합까지 진행한다. 새 HEAD와 PR 상태를 대조하고 Vercel Preview/production을 확인한다. 실행 시험은 하지 않으며 웹은 단발성 기초 RAG로 유지한다. 두 PR 뒤 최종 main의 EC2·노트북·실행 이미지·Vercel 버전을 확인하고 B11·환경·DB는 보존한다. RAG/CSV는 계속 보류한다.
+3. 기존 PR #19로 통합한다. 확장 검사 정정 push 뒤 자동 결과·정확한 HEAD를 확인하고 main에 PR 병합한다. Vercel production을 확인하며 직접 실행 시험은 하지 않는다. 웹은 단발성 기초 RAG로 유지한다. 두 PR 뒤 최종 main의 EC2·노트북·실행 이미지 버전을 맞추되 B11·환경·DB를 보존한다. RAG/CSV는 계속 보류한다.
 
 ## 계속 대기할 범위
 

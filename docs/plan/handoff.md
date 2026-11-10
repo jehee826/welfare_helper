@@ -1,12 +1,13 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 16:03 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 16:18 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 두 PR 통합 완료: PR #20에 이어 기존 팀원 PR #19를16:01 KST 병합했다. 원격 main은3c18f4f, 원격 Claude는76f9c51이며 후자의 자동 CI4job이 모두 성공했다. 로컬 기능 브랜치도main으로 ff-only 동기화했다. 현재 완료 기록은 병합 뒤 로컬 후속 문서이며 아직 원격에 보내지 않았다. [병합·검증](devlog.md#log-20261110-1603-pr19-complete)
+- 문서853c576도 PR #21로 main에 반영했다. 노트북 Jehee-Laptop과 EC2를 main/c3c8161로 동기화했고 EC2 B11의 원본·diff·status 해시는 동일하다. 현재는 완료 기록만 후속 공유하는 단계이며 제품 기준3c18f4f는 변하지 않았다. 이 기록의 PR 병합 뒤 양쪽 main을 다시 ff-only 동기화하고 완료 브랜치 정리를 마친다. [동기화 기록](devlog.md#log-20261110-1618-main-sync)
+- 제품 통합 완료: PR #20에 이어 PR #19를16:01 KST 병합했다. 제품 기준main3c18f4f와 병합 전 head76f9c51의 자동 CI4job 성공을 확인했다. 후속 문서853c576도 PR #21로 공유했다. [병합·검증](devlog.md#log-20261110-1603-pr19-complete)
 - 실제 Vercel welfare7/welfare-helper(prj_HkwhPJ62wroO3duFqX1qGAujtW0L)의 main3c18f4f production은 READY이고 기존 welfare-helper-iota.vercel.app alias도 연결됐다. 본계정 jehee 중복 Git 연결은 해제 상태이며 새 Preview도 READY다. 실제 UI/API 종단·음성 동작은 새로 확인하지 않았다. [배포 근거](devlog.md#log-20261110-1603-pr19-complete)
 
 - 첫 PR 준비 후속 완료: EC2 ec3e880의 기존 검사 14파일 정합성과 options.html 패키징 정책 1항목 복원을 읽기 검토하고 로컬 계획7582a2d와 통합했다. 이후 69ffb1b까지 원격 push·EC2 동기화를 완료했고 PR #20에 병합했다. 테스트·구문검사·빌드·패키저·실제 추론은 실행하지 않았다. [상세](devlog.md#log-20261110-1501-pr-source)
@@ -18,7 +19,7 @@
 
 ## 구현·배포 기준과 보존할 변경
 
-- 로컬루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 현재 브랜치는 `claude/FrontEnd-webchat`이며 최종 제품 기준은main3c18f4f다. 제품 작성권은 설계에 반환됐고 병합 뒤 후속 문서만 로컬 기록한다. 기존 `codex/fix-merge`는2c292d1로 보존한다. EC2 `/home/ubuntu/welfare_helper`는 마지막 확인 기준 `codex/fix-merge`·69ffb1b이며 이번 작업에서 접속·변경하지 않았다. 운영 backend 소스는f11e8af, B11은 계속 보존한다.
+- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, EC2 루트 `/home/ubuntu/welfare_helper`다. 양쪽 인계 브랜치는 main이며 제품 기준3c18f4f 뒤 변경은 기록 문서뿐이다. EC2는 main/c3c8161 동기화와 로컬 기능 브랜치4개 삭제를 확인했고 B11은 그대로 보존했다. 운영 backend 소스는f11e8af이며 실행 이미지는 Git HEAD와 별개다.
 - backend는 f11e8af 커밋 소스 기반 `595f3713aa4f2a2ddc2af61d479b6a8bcb9a88647ef4f88cf9d6497501e6546c`, worker 이미지는 기존 `5ae7df5b290797e2249ac5489cae09299a9fb95aed4ddbb6359eb2ce5ae9e820`다. 두 서비스는 기록 설정 true로 재생성했고 healthy다. backend 부팅 이미지 pin과 Docker 영속 설정을 반영했다. Ollama/edge·기존 모델·문서/벡터·볼륨은 유지했고 재부팅 시험은 하지 않았다.
 - 확장은 기존 `Extension/`, MV3/0.1.0, API `https://15.164.190.21`이다. PR #19의 head76f9c51 [자동 CI](https://github.com/jehee826/welfare_helper/actions/runs/42772081069)는 4job 성공이다. 모델·Chrome 실제 시험은 하지 않았으며 자동 CI가 실제 사용자 확인을 대신하지 않는다.
 - 기존 `Extension/README.md`·`docs/design/extension.md`를 실제 반영 계약으로 확정해 이 기록과 함께 공유한다. 모든 상세 검사·실패·수정과 원자료 위치는 일지를 따른다.
@@ -29,7 +30,7 @@
 
 1. 사용자가 기존 확장을 다시 로드하고 복지로 F5 뒤 요약 창의 요약하기를 직접 시험한다.
 2. 연락처가 안내되는 새 상담 이후 관리자 연락처 안내 기록에서 조회한다. 수집 ON 이전의 대화는 소급 기록하지 않는다. 별도 CSV는 보류한다.
-3. PR #20·#19와 Vercel production 확인은 완료했다. 다음은 최종 main의 EC2·노트북 소스 동기화와 사용자 실제 확인이다. 먼저 B11·환경·DB·기존 서비스 보존 범위를 확인하고 Git HEAD와 실행 이미지를 구분한다. 이번에는 EC2를 변경하지 않았다. 웹은 단발성 기초 RAG이며 RAG/CSV는 계속 보류한다.
+3. 노트북·EC2의 main 소스 동기화까지 완료했고 실행 서비스·이미지·DB·환경은 유지했다. 완료 기록 PR 뒤 양쪽 main ff-only와 브랜치 정리를 마치며 최종 SHA/브랜치 목록은 완료 보고에서 확인한다. 다음 기능 확인은 사용자 실제 화면·음성 시험이며 웹은 단발성 기초 RAG다. RAG/CSV는 계속 보류한다.
 
 ## 계속 대기할 범위
 

@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 14:17 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 14:33 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -911,3 +911,13 @@
 - 토글 disabled는 `profileUsageBusy || !profilePanel.state?.profile`뿐이다. 클릭 시 기존 5초 기한 안에 로컬 사용 선택을 읽고 현재 revision으로 저장한다. ON 저장의 서버 지원 조회를 제거했으며 사용 선택의 읽기 오류·편집/모달·서버 지원 결과는 버튼을 막지 않는다. 정보만으로 자동 ON하지 않는다.
 - 저장 중 낡은 읽기 결과가 덮지 않도록 기존 version 경로를 유지하고 시작 시 profileUsageLoading을 해제한다. worker의 currentProfileContext→conversations-begin→content profile_context→offscreen 전후 확인→chat API→qa.py의 최종 fit_answer(saved_profile) 경로를 소스로 확인했다. 정보 변경/삭제·OFF와 동의 revision 및 W14 실제 질문 전 수집 고지 확인은 유지한다.
 - 설계가 SSH fetch 후 1a0cf62→125b399 ff-only로 로컬 Extension에 반영했다. B11·기존 서비스는 보존했고 Backend/FrontEnd/검사파일은 수정하지 않았다. 테스트·구문검사·컴파일·빌드·HTTP·LLM·Chrome·CI·DB·배포는 0이다. 옛 관리자 확장 계약을 가정한 기존 검사도 수정하거나 통과했다고 주장하지 않는다. 원격 push는 아직이다.
+
+<a id="log-20261110-1433-pr-sequence"></a>
+## 2026-11-10 14:33 KST · F8 push 완료와 두 PR 통합 준비
+
+- 사용자 요청에 따라 제품 125b399·기록 a44aa0f를 원격 codex/fix-merge에 push했다. 원격은 1a0cf62→a44aa0f다. EC2 추가 pull·재기동·검사는 하지 않았다.
+- 두 PR 통합 순서를 기존 계획 4절과 인계에 반영하고 첫 PR 제목·본문 초안을 같은 절에 준비했다. 첫 PR 사용자 병합→팀원 종료·최종 push·작성권 인계→Claude 브랜치 충돌 조정·필요 검사·Preview→두 번째 PR 사용자 병합→최종 main의 EC2·노트북 동기화 순서다.
+- 원격 fetch에서 main=eb760b6, fix-merge=a44aa0f, claude/FrontEnd-webchat=14b8bf8을 확인했다. 팀원 종료·작성권 인계는 미확인이며 checkout·merge·PR 생성·배포를 하지 않았다.
+- 첫 PR 비교는 466파일, 9,474줄 추가/666줄 삭제로 원문 자료와 누적 기록이 포함된다. admin_auth.test.cjs가 제거된 admin-connect·관리자 세션을 여전히 요구함을 코드 읽기로 확인했다. 테스트는 실행하지 않았으며 계약 정합성을 병합 전 잔여로 명시했다.
+- 웹의 단발성 기초 RAG는 의도한 범위다. 이전 후속 대화 포팅 계획을 대체하고 대화 이력·연속 상담을 복원하지 않는다. 네 개 겹침 경로의 업로드/로딩 수정과 화면 배치를 함께 보존한다.
+- 문서·Git 상태만 다뤘으며 제품 변경·테스트·구문검사·HTTP·LLM·Chrome·DB·서비스 작업은 없었다. B11·환경·DB 보존과 Git/이미지/Vercel 별도 확인을 유지한다.

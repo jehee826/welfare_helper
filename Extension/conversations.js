@@ -150,7 +150,7 @@
     return full.slice(topicStart);
   }
   function summaryInput(conversation){
-    const all=contextMessages(conversation),messages=[];let size=0;
+    const all=conversation?.messages||[],messages=[];let size=0;
     for(let index=all.length-2;index>=0;index-=2){
       const pair=all.slice(index,index+2),cost=pair.reduce((sum,message)=>sum+message.content.length,0);
       if(size+cost>12000)break;

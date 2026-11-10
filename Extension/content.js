@@ -21,7 +21,7 @@
   let selected=[],snapshot=null,serial=0,frame=0,collapsed=false,ownMutation=false,observer,requestPort=null,busy=false,activeReply=null,history=[],historyUrl='',requestTimer;
   let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
   let configurationReady=false,pendingQuestion=null,pendingReply=null,accessVersion=0;
-  let summaryBusy=false,summaryPort=null,summaryVersion=0,summaryTimer,summaryDisplayKey=null,summaryClosedKey=null;
+  let summaryBusy=false,summaryPort=null,summaryVersion=0,summaryTimer,lastSummary=null;
   let profileUsageState=null,profileUsageSupported=null,profileUsageValid=false,profileUsageBusy=false,profileUsageLoading=false,profileUsageDeferred=false,profileUsageVersion=0,profileUsageError='';
   let publicNoticeVersion=0;
   try{GyeoteProtocol.documentOrigin();configurationReady=true;}catch{}
@@ -107,9 +107,14 @@
     sendButton.setAttribute('aria-label',label);sendButton.title=label;sendButton.disabled=summaryBusy;
     updateSummaryControls();
   }
-  const summaryButton=document.createElement('button'),summaryPanel=document.createElement('section'),summaryHeading=document.createElement('strong'),summaryBody=document.createElement('p'),summaryClose=document.createElement('button');
+  const summaryButton=document.createElement('button'),summaryPanel=document.createElement('section'),summaryHeading=document.createElement('strong'),summaryBody=document.createElement('p'),summaryClose=document.createElement('button'),summaryRun=document.createElement('button'),summaryCancel=document.createElement('button');
   summaryButton.type='button';summaryButton.className='consultation-summary';summaryButton.textContent='상담 요약';
-  summaryPanel.className='consultation-summary-result';summaryPanel.hidden=true;summaryPanel.setAttribute('aria-label','이전 상담 요약');summaryPanel.setAttribute('role','region');summaryBody.style.whiteSpace='pre-wrap';summaryBody.setAttribute('role','status');summaryClose.type='button';summaryClose.textContent='요약 닫기';summaryPanel.append(summaryHeading,summaryBody,summaryClose);transcript.append(summaryPanel);
+  summaryPanel.className='consultation-summary-result modal-dialog';summaryPanel.id='gyeote-summary';summaryPanel.hidden=true;summaryPanel.setAttribute('role','dialog');summaryPanel.setAttribute('aria-modal','true');summaryPanel.setAttribute('aria-labelledby','gyeote-summary-title');
+  summaryButton.setAttribute('aria-haspopup','dialog');summaryButton.setAttribute('aria-controls',summaryPanel.id);summaryButton.setAttribute('aria-expanded','false');
+  summaryHeading.id='gyeote-summary-title';summaryHeading.textContent='상담 요약';summaryBody.style.whiteSpace='pre-wrap';summaryBody.setAttribute('role','status');summaryBody.textContent='저장된 상담 요약이 없습니다.';
+  const summaryTop=document.createElement('div'),summaryActions=document.createElement('div');summaryTop.className='profile-heading';summaryActions.className='row';
+  summaryClose.type=summaryRun.type=summaryCancel.type='button';summaryClose.className='summary-dismiss';summaryClose.textContent='×';summaryClose.setAttribute('aria-label','요약 창 닫기');summaryRun.className='summary-run';summaryRun.textContent='요약하기';summaryCancel.textContent='요약 취소';summaryCancel.hidden=true;
+  summaryTop.append(summaryHeading,summaryClose);summaryActions.append(summaryRun,summaryCancel);summaryPanel.append(summaryTop,summaryBody,summaryActions);
   function updateSummaryControls(){
     const reason=mode!=='document'?'복지 상담 모드에서 요약할 수 있습니다.':
       !currentAccess?'문서 접근 상태를 확인 중입니다.':
@@ -119,41 +124,39 @@
       !savedPanel?.ready?'대화 저장 상태를 확인한 뒤 요약할 수 있습니다.':
       savedPanel.hasUnsaved?'미저장 답변을 처리한 뒤 요약할 수 있습니다.':
       !savedPanel.state.conversations[0]?.messages.length?'요약할 상담이 없습니다.':'';
-    summaryButton.disabled=!!reason;summaryButton.title=reason||'현재 상담을 요약합니다.';
+    summaryButton.disabled=false;summaryButton.title='상담 요약 열기';summaryRun.disabled=!!reason;summaryRun.title=reason||'보관된 대화를 요약합니다. 길면 최근 일부만 사용합니다.';summaryCancel.hidden=!summaryBusy;
   }
   function stopSummary(){
     summaryVersion++;clearTimeout(summaryTimer);const port=summaryPort;summaryPort=null;summaryBusy=false;
-    summaryPanel.hidden=true;summaryBody.textContent='';port?.disconnect();
+    port?.disconnect();showSavedSummary(lastSummary);
     updateRequestControl();inputAssist?.update();
   }
   function showSavedSummary(summary){
+    lastSummary=currentAccess?.mode==='anonymous'?summary:null;
     if(summaryBusy)return;
-    if(!summary||mode!=='document'||currentAccess?.mode!=='anonymous'){summaryPanel.hidden=true;return;}
-    summaryDisplayKey=[summary.generation,summary.conversationId,summary.revision].join(':');
-    if(summaryDisplayKey===summaryClosedKey)return;
-    summaryHeading.textContent=summary.partial?'보관된 최근 상담 일부 요약':'이전 상담 요약';
-    summaryBody.textContent=summary.text;summaryClose.textContent='요약 닫기';summaryPanel.hidden=false;
+    summaryHeading.textContent=lastSummary?.partial?'보관된 최근 상담 일부 요약':'상담 요약';
+    summaryBody.textContent=lastSummary?.text||'저장된 상담 요약이 없습니다. 요약하기를 눌러 보관된 대화를 요약하세요.';
   }
-  summaryClose.addEventListener('click',()=>{summaryClosedKey=summaryDisplayKey;stopSummary();summaryButton.focus();});
-  summaryButton.addEventListener('click',()=>void summarizeConversation());
+  summaryClose.addEventListener('click',closeModal);
+  summaryCancel.addEventListener('click',()=>{stopSummary();summaryRun.focus();});
+  summaryButton.addEventListener('click',()=>{profileOpen=false;setModal('summary');updateProfileView();showSavedSummary(lastSummary);void savedPanel?.refreshSummary();});
+  summaryRun.addEventListener('click',()=>void summarizeConversation());
   async function summarizeConversation(){
-    if(summaryButton.disabled||mode!=='document'||currentAccess?.mode!=='anonymous')return;
+    if(summaryRun.disabled||activeModal!=='summary'||mode!=='document'||currentAccess?.mode!=='anonymous')return;
     stopSummary();stopSpeech();inputAssist?.cancel();summaryBusy=true;updateRequestControl();inputAssist?.update();
     const version=summaryVersion,requestId=GyeoteDOM.id(),startedAt=Date.now();let submitted;
     const finish=error=>{
       if(version!==summaryVersion)return;
       clearTimeout(summaryTimer);const port=summaryPort;summaryPort=null;summaryBusy=false;port?.disconnect();
-      summaryClose.textContent='요약 닫기';if(error){summaryVersion++;summaryBody.textContent=documentError(error);}
+      if(error){summaryVersion++;summaryBody.textContent=documentError(error);}
       updateRequestControl();inputAssist?.update();
     };
-    summaryPanel.hidden=false;summaryHeading.textContent='이전 상담 요약';summaryBody.textContent='현재 상담을 요약하고 있어요.';summaryClose.textContent='요약 취소';
-    summaryClose.focus();
+    summaryHeading.textContent='상담 요약';summaryBody.textContent='보관된 대화를 요약하고 있어요.';
+    summaryCancel.focus();
     summaryTimer=setTimeout(()=>finish('connection_failed'),10000);
     try{
       const selected=await savedPanel.summaryRequest();if(version!==summaryVersion)return;
-      if(!selected.messages.length){summaryBody.textContent=selected.partial?'한 문답의 길이가 요약 한도를 넘어 요약할 수 없습니다. 원래 상담 내용을 확인해 주세요.':'요약할 최근 상담이 없습니다. 마지막 질문 후 7일 이상 지난 기록은 자동으로 포함하지 않아요.';finish();return;}
-      const capability=await chrome.runtime.sendMessage({type:'gyeote:summary-capability'});if(version!==summaryVersion)return;
-      if(capability?.available!==true)throw new Error('summary_unavailable');
+      if(!selected.messages.length){summaryBody.textContent=selected.partial?'한 문답의 길이가 요약 한도를 넘어 요약할 수 없습니다. 원래 상담 내용을 확인해 주세요.':'요약할 저장 대화가 없습니다.';finish();return;}
       const prepared=await chrome.runtime.sendMessage({type:'gyeote:prepare',mode:'summary'});if(version!==summaryVersion)return;
       if(!prepared?.ok)throw new Error(prepared?.error||'connection_failed');
       if(prepared.documentAccess?.mode!=='anonymous'||accessKey(prepared.documentAccess)!==accessKey(currentAccess))throw new Error('document_access_changed');
@@ -171,10 +174,10 @@
           const current=savedPanel.context();
           if(current.expectedRevision!==selected.context.expectedRevision||current.generation!==selected.context.generation||current.conversationId!==selected.context.conversationId||current.accessId!==selected.context.accessId)throw new Error('conversation_conflict');
           const result=GyeoteProtocol.summaryReply(packet.body,submitted);
-          clearTimeout(summaryTimer);summaryPort=null;port.disconnect();summaryClose.textContent='요약 닫기';
+          clearTimeout(summaryTimer);summaryPort=null;port.disconnect();
           let stored;
           try{stored=await savedPanel.saveSummary(selected.context,selected.summaryRevision,result);}
-          catch(error){if(version===summaryVersion){finish('summary_storage_failed');setStatus('요약을 저장하지 못했습니다. 이전에 저장한 요약은 유지했습니다.');void savedPanel.refreshSummary();}return;}
+          catch(error){if(version===summaryVersion){finish('summary_storage_failed');setStatus('요약을 저장하지 못했습니다. 이전에 저장한 요약은 유지했습니다.');}return;}
           if(version!==summaryVersion)return;
           finish();showSavedSummary(stored);
         }catch(error){finish(error.message);}
@@ -215,7 +218,7 @@
   const onboarding=document.createElement('section');onboarding.className='onboarding';onboarding.setAttribute('aria-label','상담 시작 안내');onboarding.hidden=true;
   onboarding.innerHTML='<p>바로 질문할 수 있어요. 내 정보는 선택이며 추천 질문 초안에만 사용해요.</p><div class="row"><button class="onboarding-edit">내 정보 입력</button><button class="onboarding-later">나중에 입력</button></div>';
   profileSlot.before(onboarding);
-  const modalLayer=document.createElement('div');modalLayer.className='modal-layer';modalLayer.hidden=true;modalLayer.append(profileSlot,tools);shadow.append(modalLayer);
+  const modalLayer=document.createElement('div');modalLayer.className='modal-layer';modalLayer.hidden=true;modalLayer.append(profileSlot,tools,summaryPanel);shadow.append(modalLayer);
   profileSlot.hidden=true;
   profileSlot.setAttribute('role','dialog');profileSlot.setAttribute('aria-modal','true');profileSlot.setAttribute('aria-labelledby','gyeote-profile-title');profileSlot.classList.add('modal-dialog');
   tools.classList.add('modal-dialog');tools.setAttribute('role','dialog');tools.setAttribute('aria-modal','true');tools.setAttribute('aria-labelledby','gyeote-menu-title');
@@ -230,7 +233,7 @@
     if(previous!==root.getAttribute('style'))modalStyleMutations.push(previous);
   }
   function modalFocusTargets(){
-    const dialog=activeModal==='profile'?profileSlot:tools;
+    const dialog=activeModal==='profile'?profileSlot:activeModal==='summary'?summaryPanel:tools;
     return [...dialog.querySelectorAll('button,input,select,summary,a[href],[tabindex="0"]')].filter(node=>{
       if(node.disabled||node.closest('[hidden],[inert]'))return false;
       const closed=node.closest('details:not([open])');return !closed||closed.querySelector('summary')===node;
@@ -247,18 +250,19 @@
   function setModal(next){
     if(next===activeModal)return;
     const previous=activeModal;
+    if(previous==='summary'&&next!=='summary'&&summaryBusy)stopSummary();
     if(!previous&&next){
       modalReturnFocus=shadow.activeElement||document.activeElement;modalScroll={transcript:transcript.scrollTop,body:$('.body').scrollTop};
       pageInert={node:document.body,attribute:document.body.getAttribute('inert'),value:document.body.inert,overflow:['overflow','overflow-x','overflow-y'].map(property=>({property,value:document.documentElement.style.getPropertyValue(property),priority:document.documentElement.style.getPropertyPriority(property)}))};document.body.inert=true;document.body.setAttribute('inert','');pageOverflow('hidden','important');
     }
-    activeModal=next;modalLayer.hidden=!next;profileSlot.hidden=next!=='profile';tools.hidden=next!=='menu';
+    activeModal=next;modalLayer.hidden=!next;profileSlot.hidden=next!=='profile';tools.hidden=next!=='menu';summaryPanel.hidden=next!=='summary';summaryButton.setAttribute('aria-expanded',String(next==='summary'));
     panel.inert=!!next;panel.toggleAttribute('inert',!!next);if(next)panel.setAttribute('aria-hidden','true');else panel.removeAttribute('aria-hidden');
     menuButton.setAttribute('aria-expanded',String(next==='menu'));
-    if(next){if(next==='profile')focusProfile();else $('.documents').focus({preventScroll:true});}
+    if(next){if(next==='profile')focusProfile();else if(next==='summary')summaryClose.focus({preventScroll:true});else $('.documents').focus({preventScroll:true});}
     else{
       if(pageInert){pageInert.node.inert=pageInert.value;if(pageInert.attribute===null)pageInert.node.removeAttribute('inert');else pageInert.node.setAttribute('inert',pageInert.attribute);for(const item of pageInert.overflow)pageOverflow(item.value,item.priority,item.property);pageInert=null;}
       if(modalScroll){transcript.scrollTop=modalScroll.transcript;$('.body').scrollTop=modalScroll.body;modalScroll=null;}
-      const target=modalReturnFocus?.isConnected&&!modalReturnFocus.closest('[hidden],[inert]')?modalReturnFocus:previous==='profile'?profileButton:menuButton;
+      const target=modalReturnFocus?.isConnected&&!modalReturnFocus.closest('[hidden],[inert]')?modalReturnFocus:previous==='profile'?profileButton:previous==='summary'?summaryButton:menuButton;
       target.focus({preventScroll:true});modalReturnFocus=null;
     }
   }
@@ -291,7 +295,7 @@
   modalLayer.addEventListener('click',event=>{event.stopPropagation();if(event.target===modalLayer)closeModal();});
   modalLayer.addEventListener('pointerdown',event=>event.stopPropagation());
   for(const type of ['wheel','touchmove'])modalLayer.addEventListener(type,event=>{event.stopPropagation();if(event.target===modalLayer)event.preventDefault();},{passive:false});
-  shadow.addEventListener('focusin',()=>{const dialog=activeModal==='profile'?profileSlot:tools;if(activeModal&&!dialog.contains(shadow.activeElement))modalFocusTargets()[0]?.focus({preventScroll:true});});
+  shadow.addEventListener('focusin',()=>{const dialog=activeModal==='profile'?profileSlot:activeModal==='summary'?summaryPanel:tools;if(activeModal&&!dialog.contains(shadow.activeElement))modalFocusTargets()[0]?.focus({preventScroll:true});});
   document.addEventListener('focusin',event=>{if(activeModal&&event.target!==host){const target=modalFocusTargets()[0];target?.focus({preventScroll:true});}},true);
   profilePanel=GyeoteProfilePanel.create(profileSlot,()=>{inputAssist?.invalidate();if(profileUsageState?.enabled)cancel();},()=>{if(profileSlot.querySelector('.profile-error')?.textContent)profileOpen=true;updateProfileView();});
   const profileControls=document.createElement('details');profileControls.className='profile-controls';const managementSummary=document.createElement('summary');managementSummary.textContent='저장·확장 관리';profileControls.append(managementSummary);profileSlot.append(profileControls);
@@ -358,7 +362,7 @@
     .body{position:relative;overflow:auto;overscroll-behavior:contain}
     .modal-layer{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:#14213d66;pointer-events:auto;overscroll-behavior:contain}
     .modal-layer .modal-dialog{position:relative;inset:auto;width:min(640px,100%);max-height:calc(100dvh - 32px);min-height:0;overflow:auto;overscroll-behavior:contain;margin:0;padding:18px;background:#fff;color:var(--gyeote-ink);border:1px solid #b9c8e0;border-radius:24px;box-shadow:0 20px 72px #14213d55;scrollbar-width:thin;font-size:16px;line-height:1.6;overflow-wrap:anywhere}
-    .profile-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;border-bottom:1px solid #d9e1ef}.profile-heading strong{font-size:18px}.profile-dismiss,.menu-dismiss{flex:0 0 44px;width:44px;height:44px;padding:0;border-radius:12px;font-size:22px}
+    .profile-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;border-bottom:1px solid #d9e1ef}.profile-heading strong{font-size:18px}.profile-dismiss,.menu-dismiss,.summary-dismiss{flex:0 0 44px;width:44px;height:44px;padding:0;border-radius:12px;font-size:22px}
     .profile-panel h2{font-size:18px;margin:12px 0 6px}.profile-panel form{display:grid;gap:10px}.profile-panel label{display:grid;gap:4px}.profile-panel input,.profile-panel select{width:100%;min-height:40px}.profile-panel .profile-error:empty{display:none}
     .profile-usage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;max-height:150px;overflow:auto;padding:6px 8px;border:1px solid #b9c8e0;border-radius:10px;background:var(--gyeote-soft);font-size:13px}.profile-usage label{display:flex;align-items:center;gap:5px;font-weight:bold}.profile-usage input{width:18px;height:18px;flex-shrink:0}.profile-usage details{margin:0}.profile-usage details[open]{grid-column:1/-1}.profile-usage summary{min-height:28px}.profile-usage p{margin:2px 0}.profile-usage-status{grid-column:1/-1;max-height:3.2em;overflow:auto}
     .profile-usage .profile-usage-toggle{appearance:none;position:relative;width:36px;height:22px;margin:0;border:1px solid #7f8ea8;border-radius:14px;background:#d7dfec}.profile-usage-toggle::before{content:'';position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#fff}.profile-usage .profile-usage-toggle:checked{background:var(--gyeote-accent);border-color:var(--gyeote-accent)}.profile-usage-toggle:checked::before{transform:translateX(14px)}.profile-usage-toggle:disabled{opacity:.6}.profile-usage-value{flex-shrink:0;min-width:2em;font-weight:bold}.profile-usage-status:focus-visible{outline:2px solid var(--gyeote-accent);outline-offset:2px}
@@ -433,7 +437,7 @@
   function showDocumentAccess(state){
     if(configurationReady&&(state?.origin!==GyeoteProtocol.documentOrigin()))throw new Error('document_access_changed');
     const changed=accessKey(state)!==accessKey(currentAccess);
-    currentAccess=state;
+    currentAccess=state;if(state?.mode!=='anonymous')showSavedSummary(null);
     if(changed)void refreshProfileUsage();else renderProfileUsage();
     if(changed)void refreshPublicNotice();
     retentionNotice.hidden=mode!=='document'||state?.mode!=='anonymous';
@@ -450,7 +454,6 @@
   }
   function updateMode(){
     const documentMode=mode==='document',input=$('#gyeote-question');
-    if(documentMode)summaryClosedKey=null;
     if(!documentMode)profileOpen=false;
     (documentMode?profileControls:$('.screen-controls')).append($('.reset'));
     retentionNotice.hidden=!documentMode||currentAccess?.mode==='admin';
@@ -483,7 +486,7 @@
     const saved=savedPanel.state,conversation=saved?.conversations.find(c=>c.id===saved.lastActiveConversationId);
     const anonymous=currentAccess?.mode==='anonymous';
     return {mode,key:[mode,serial,accessKey(currentAccess),profilePanel.state?.revision,saved?.generation,saved?.revision,saved?.lastActiveConversationId].join('|'),
-      available:host.isConnected&&!panel.hidden&&!collapsed&&!activeModal&&!document.hidden&&!questionForm.hidden,
+      available:host.isConnected&&!panel.hidden&&!collapsed&&(!activeModal||activeModal==='summary')&&!document.hidden&&!questionForm.hidden,
       blocked:!configurationReady||busy||requestPending||summaryBusy||mode==='document'&&(!currentAccess||anonymous&&(!savedPanel.ready||savedPanel.hasUnsaved)||!anonymous&&currentAccess.status!=='ready'),
       profile:profilePanel.state?.profile,hasHistory:anonymous?!!conversation?.messages.some(m=>m.role==='assistant'):documentHistory.some(m=>m.role==='assistant'),limit:$('#gyeote-question').maxLength};
   }});
@@ -698,7 +701,7 @@
   function showUi(){
     panel.style.setProperty('--gyeote-width',ui.width+'px');panel.style.setProperty('--gyeote-height',ui.height+'px');
     // 패널과 별도 창의 루트에만 적용해 말풍선·글자까지 한 번에 합성한다.
-    for(const floatingWindow of [panel,profileSlot,tools,$('.open')])floatingWindow.style.opacity=String(ui.backgroundOpacity/100);
+    for(const floatingWindow of [panel,profileSlot,tools,summaryPanel,$('.open')])floatingWindow.style.opacity=String(ui.backgroundOpacity/100);
     opacitySelect.value=String(ui.backgroundOpacity);uiStatus.textContent=uiInvalid?'저장된 화면 설정을 읽지 못해 기본값으로 보여 줍니다. 아래 기본값 버튼을 누르면 정리됩니다.':'';
   }
   function applyUi(state){

@@ -93,9 +93,8 @@
       }
       if(operation==='summary'){
         if(state.lastActiveConversationId!==message.conversationId)throw new Error('conversation_conflict');
-        const conversation=state.conversations[0],last=Date.parse(conversation?.contextBoundary.lastUserSubmittedAt),timestamp=now();
-        const active=Number.isFinite(last)&&last<=timestamp&&timestamp-last<GyeoteConversations.limits.contextAge;
-        return {ok:true,state,input:active?GyeoteConversations.summaryInput(conversation):{messages:[],partial:false},...await savedSummary(state)};
+        const conversation=state.conversations[0];
+        return {ok:true,state,input:GyeoteConversations.summaryInput(conversation),...await savedSummary(state)};
       }
       if(operation==='resume'){
         const conversation=state.conversations[0];

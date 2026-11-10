@@ -7,7 +7,9 @@ function worker(data={},failure={}){
  const chrome={runtime:{id:'x',getURL:n=>'chrome-extension://x/'+n,onMessage:{addListener(fn){listener=fn;}},sendMessage:async m=>runtimeMessages.push(m)},
   storage:{session:{},local:{async setAccessLevel(value){calls.level.push(value);if(failure.level)throw Error('private level error');},async get(name){calls.get++;assert.equal(name,key);if(failure.get)throw Error('private read error');return {[key]:data[key]};},async set(value){calls.set++;if(failure.set)throw Error('private write error');const previous=data[key];Object.assign(data,plain(value));changed?.({[key]:{oldValue:previous,newValue:data[key]}},'local');}},onChanged:{addListener(fn){changed=fn;}}},
   tabs:{query:async()=>[{id:1}],sendMessage:async(_id,message)=>tabMessages.push(message)},action:{onClicked:{addListener(){}}}};
- vm.runInNewContext(source,{chrome,GyeoteProtocol:protocol,importScripts(){},URL,crypto:require('node:crypto').webcrypto});
+ const context=vm.createContext({chrome,GyeoteProtocol:protocol,URL,crypto:require('node:crypto').webcrypto});
+ context.importScripts=(...names)=>{for(const name of names)vm.runInContext(fs.readFileSync(path.join(__dirname,'..',name),'utf8'),context);};
+ vm.runInContext(source,context);
  const sender={id:'x',frameId:0,url:'https://www.bokjiro.go.kr/',tab:{id:1,url:'https://www.bokjiro.go.kr/'}};
  const send=(message,from=sender)=>new Promise(resolve=>{if(!listener(message,from,value=>resolve(plain(value))))resolve(undefined);});
  return {data,calls,send,sender,tabMessages,runtimeMessages};

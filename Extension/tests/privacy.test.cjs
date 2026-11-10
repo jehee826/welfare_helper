@@ -53,7 +53,7 @@ test('문서 답변·근거 표시와 다음 이력은 정제하며 공공 연�
     }]});
     const shown=f.root.querySelector('.conversation').textContent;
     assert.ok(!shown.includes('991399-1234567')&&!shown.includes('321-00-000001'));
-    assert.match(shown,/원문 그대로의 인용이 아닙니다/);assert.match(shown,/129\/1355/);assert.ok(!shown.includes('010-0000-0000'));
+    assert.doesNotMatch(shown,/원문 그대로의 인용이 아닙니다/);assert.match(shown,/129\/1355/);assert.ok(!shown.includes('010-0000-0000'));
     await f.send('후속 질문');assert.equal(f.packets.length,2);
     assert.ok(!JSON.stringify(f.packets[1].payload.history).includes('010-0000-0000'));
     await f.answer({kind:'answer',text:'후속 답변',evidence:[]});

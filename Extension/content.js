@@ -19,10 +19,10 @@
   // 키보드 포커스도 같은 색을 유지하되 이중 테두리로 별도 구분한다.
   style.dataset.gyeoteStyle='';style.textContent=palette.map((p,i)=>`.${classes[i]}{outline:4px solid ${p.color}!important;outline-offset:4px!important}.${classes[i]}:focus-visible{outline-style:double!important;outline-width:6px!important}`).join('\n');document.documentElement.append(style);
   let selected=[],snapshot=null,serial=0,frame=0,collapsed=false,ownMutation=false,observer,requestPort=null,busy=false,activeReply=null,history=[],historyUrl='',requestTimer;
-  let mode='document',documentHistory=[],documentHistoryAccess=null,currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
+  let mode='document',currentAccess=null,savedPanel=null,inputAssist=null,requestPending=false;
   let configurationReady=false,pendingQuestion=null,pendingReply=null,accessVersion=0;
   let summaryBusy=false,summaryPort=null,summaryVersion=0,summaryTimer,lastSummary=null;
-  let profileUsageState=null,profileUsageSupported=null,profileUsageValid=false,profileUsageBusy=false,profileUsageLoading=false,profileUsageDeferred=false,profileUsageVersion=0,profileUsageError='';
+  let profileUsageState=null,profileUsageValid=false,profileUsageBusy=false,profileUsageLoading=false,profileUsageDeferred=false,profileUsageVersion=0,profileUsageError='';
   let publicNoticeVersion=0;
   try{GyeoteProtocol.documentOrigin();configurationReady=true;}catch{}
   const conversations={screen:[],document:[]};
@@ -299,53 +299,48 @@
   questionForm.querySelector('.compose-row').before(profileUsageSection);
   const profileUsageToggle=profileUsageSection.querySelector('input'),profileUsageStatus=profileUsageSection.querySelector('.profile-usage-status');
   const profileUsageRetry=document.createElement('button');profileUsageRetry.type='button';profileUsageRetry.className='profile-usage-retry';profileUsageRetry.textContent='다시 확인';profileUsageRetry.hidden=true;profileUsageSection.append(profileUsageRetry);
-  profileUsageRetry.addEventListener('click',()=>{void refreshProfileUsage();void refreshPublicNotice();});
+  profileUsageRetry.addEventListener('click',()=>{void refreshProfileUsage();});
   function renderProfileUsage(){
-    const anonymous=currentAccess?.mode==='anonymous',missing=!!profilePanel.state&&!profilePanel.state.profile,enabled=anonymous&&!!profilePanel.state?.profile&&profileUsageState?.enabled===true;
+    const missing=!!profilePanel.state&&!profilePanel.state.profile,enabled=!!profilePanel.state?.profile&&profileUsageState?.enabled===true;
     profileUsageSection.hidden=mode!=='document';
     profileUsageToggle.checked=enabled;profileUsageToggle.setAttribute('aria-checked',String(enabled));
     profileUsageSection.querySelector('.profile-usage-value').textContent=enabled?'ON':'OFF';
-    profileUsageToggle.disabled=!anonymous||profileOverlayVisible||profileUsageBusy||profileUsageLoading||profilePanel.loading||!profilePanel.state?.profile||!profileUsageState||!profileUsageState.enabled&&(profileUsageSupported===false||!!profileUsageError||!profilePanel.allowed);
-    profileUsageRetry.hidden=!anonymous||!profileUsageError&&profileUsageSupported!==false;profileUsageRetry.disabled=profileUsageLoading||profileUsageBusy;
+    profileUsageToggle.disabled=profileUsageBusy||!profilePanel.state?.profile;
+    profileUsageRetry.hidden=!profileUsageError;profileUsageRetry.disabled=profileUsageLoading||profileUsageBusy;
     let message;
-    if(missing)message='저장된 내 정보가 없습니다. 내 정보에서 먼저 등록해 주세요.'+(profileUsageError?' 사용 선택 설정은 확인하지 못했습니다. 다시 확인할 수 있습니다.':'');
-    else if(!currentAccess)message='문서 접근 상태를 확인 중입니다. 확인 전에는 저장 정보를 보내지 않습니다.';
-    else if(!anonymous)message='관리자 상담에서는 내 정보를 보내지 않습니다. 공개 상담에서 사용할 수 있습니다.';
-    else if(profilePanel.loading)message='저장된 내 정보를 확인 중입니다. 확인 전에는 저장 정보를 제공하지 않습니다.';
+    if(missing)message='저장된 내 정보가 없습니다. 내 정보에서 먼저 등록해 주세요.';
     else if(!profilePanel.state)message='내 정보를 확인하지 못해 사용할 수 없습니다. 내 정보에서 다시 불러오세요.';
-    else if(profileUsageLoading)message='정보 사용 설정을 확인 중입니다. 확인 전에는 저장 정보를 제공하지 않습니다.';
-    else if(profileUsageError)message=profileUsageError;
-    else if(!profileUsageState)message='정보 사용 설정을 확인 중입니다. 확인 전에는 저장 정보를 제공하지 않습니다.';
     else if(profileUsageBusy)message='정보 사용 선택을 저장하고 있습니다.';
-    else if(profileUsageSupported===null)message='서버 지원 여부를 확인 중입니다. 저장된 사용 선택은 유지합니다.';
-    else if(!profileUsageSupported)message='서버가 내 정보 사용을 지원하지 않거나 지원 여부를 확인하지 못했습니다. 저장 정보는 보내지 않습니다.'+(enabled?' ON 선택을 끌 수 있습니다.':'');
+    else if(profileUsageError)message=profileUsageError;
+    else if(profileUsageLoading||!profileUsageState)message='정보 사용 설정을 확인 중입니다. 토글을 눌러 사용 여부를 선택할 수 있습니다.';
     else if(enabled)message=profileUsageValid?'저장 정보를 답변 생성에 사용합니다. 질문에서 다른 상담 대상을 말하면 그 대상의 조건을 우선합니다.':'ON 선택이지만 제공 동의와 현재 저장 정보를 다시 확인해야 합니다. 현재 질문에는 저장 정보를 보내지 않습니다.';
-    else if(!profilePanel.allowed)message='내 정보 저장 또는 수정 취소를 마친 뒤 사용할 수 있습니다. 지금은 저장 정보를 보내지 않습니다.';
     else message='저장 정보를 보내지 않습니다. 켜면 저장한 5가지 조건을 서버에 보내 답변 생성에만 사용합니다.';
     profileUsageStatus.textContent=message;
   }
   async function refreshProfileUsage(){
     if(profileUsageBusy){profileUsageDeferred=true;return;}
-    if(currentAccess?.mode!=='anonymous'){profileUsageVersion++;profileUsageLoading=false;renderProfileUsage();return;}
     const version=++profileUsageVersion;
     let timer;profileUsageLoading=true;renderProfileUsage();
     try{
       const response=await Promise.race([chrome.runtime.sendMessage({type:'gyeote:profile-usage-get'}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('profile_usage_read_timeout')),5000);})]);if(version!==profileUsageVersion)return;
       if(!response?.ok)throw new Error(response?.error||'profile_usage_storage_failed');
       profileUsageState=GyeoteProtocol.profileUsageRecord(response.state);profileUsageValid=response.valid===true;profileUsageError='';
-    }catch(error){if(version===profileUsageVersion){profileUsageValid=false;profileUsageError=error?.message==='profile_usage_read_timeout'?'5초 안에 정보 사용 설정 응답을 받지 못했습니다. 현재 질문에는 저장 정보를 보내지 않습니다. 원본 선택은 유지했습니다.':'정보 사용 설정을 읽지 못해 저장 정보를 제공하지 않습니다. 원본 설정은 유지했습니다.';}}
+    }catch(error){if(version===profileUsageVersion){profileUsageValid=false;profileUsageError=error?.message==='profile_usage_read_timeout'?'5초 안에 정보 사용 설정 응답을 받지 못했습니다. 현재 질문에는 저장 정보를 보내지 않습니다. 토글을 눌러 다시 변경할 수 있습니다.':'정보 사용 설정을 읽지 못해 저장 정보를 제공하지 않습니다. 토글을 눌러 다시 변경할 수 있습니다.';}}
     finally{clearTimeout(timer);}
     if(version===profileUsageVersion){profileUsageLoading=false;renderProfileUsage();}
   }
   profileUsageToggle.addEventListener('change',async()=>{
-    if(profileUsageToggle.disabled||profileUsageBusy||!profileUsageState){renderProfileUsage();return;}
-    const enabled=profileUsageToggle.checked;cancel();profileUsageVersion++;profileUsageBusy=true;profileUsageError='';renderProfileUsage();let conflict=false;
+    if(profileUsageBusy||!profilePanel.state?.profile){renderProfileUsage();return;}
+    const enabled=profileUsageToggle.checked,profileRevision=profilePanel.state.revision;cancel();profileUsageVersion++;profileUsageLoading=false;profileUsageBusy=true;profileUsageError='';renderProfileUsage();let conflict=false,timer;
     try{
-      const response=await chrome.runtime.sendMessage({type:'gyeote:profile-usage-set',expectedRevision:profileUsageState.revision,enabled,profileRevision:enabled?profilePanel.state?.revision:null});
+      const current=await Promise.race([chrome.runtime.sendMessage({type:'gyeote:profile-usage-get'}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('profile_usage_read_timeout')),5000);})]);clearTimeout(timer);
+      if(!current?.ok)throw new Error();
+      profileUsageState=GyeoteProtocol.profileUsageRecord(current.state);profileUsageValid=current.valid===true;
+      const response=await chrome.runtime.sendMessage({type:'gyeote:profile-usage-set',expectedRevision:profileUsageState.revision,enabled,profileRevision:enabled?profileRevision:null});
       if(!response?.ok){conflict=response?.error==='profile_usage_conflict';throw new Error();}
-      profileUsageState=GyeoteProtocol.profileUsageRecord(response.state);if(enabled)profileUsageSupported=response.supported===true;profileUsageValid=response.valid===true;
+      profileUsageState=GyeoteProtocol.profileUsageRecord(response.state);profileUsageValid=response.valid===true;
     }catch{profileUsageError='정보 사용 선택을 저장하지 못했습니다. 이전 선택을 유지했으니 확인 후 다시 바꿔 주세요.';}
-    finally{profileUsageBusy=false;renderProfileUsage();if(profileUsageDeferred||conflict){profileUsageDeferred=false;void refreshProfileUsage();}}
+    finally{clearTimeout(timer);profileUsageBusy=false;renderProfileUsage();if(profileUsageDeferred||conflict){profileUsageDeferred=false;void refreshProfileUsage();}}
   });
   profileControls.append(modeLabel,modeNotice,accessNotice,$('.mode-intro'),$('.scope-notice'),$('.reset'));
   const uiSettings=document.createElement('section');uiSettings.className='ui-settings';uiSettings.setAttribute('aria-label','화면 설정');
@@ -396,18 +391,18 @@
   async function refreshPublicNotice(){
     if(mode!=='document'||currentAccess?.mode!=='anonymous')return;
     const version=++publicNoticeVersion,access=accessKey(currentAccess);
-    profileUsageSupported=null;renderProfileUsage();referralNotice.hidden=false;referralNotice.textContent='수집 여부 확인 중입니다. 수집 활성화 시 '+referralNoticeText;
+    referralNotice.hidden=false;referralNotice.textContent='수집 여부 확인 중입니다. 수집 활성화 시 '+referralNoticeText;
     try{
       const response=await chrome.runtime.sendMessage({type:'gyeote:public-capabilities'});
       if(version!==publicNoticeVersion||mode!=='document'||access!==accessKey(currentAccess)||!host.isConnected)return;
       if(!response?.ok)throw new Error();
-      profileUsageSupported=response.profileContextSupported===true;renderProfileUsage();referralNotice.hidden=response.referralRecordsEnabled!==true;referralNotice.textContent=referralNoticeText;
-    }catch{if(version===publicNoticeVersion&&mode==='document'&&access===accessKey(currentAccess)){profileUsageSupported=false;renderProfileUsage();referralNotice.textContent='수집 설정을 확인하지 못했습니다. 전송 전에 다시 확인하며 실패하면 질문을 보내지 않습니다. 수집 활성화 시 '+referralNoticeText;}}
+      referralNotice.hidden=response.referralRecordsEnabled!==true;referralNotice.textContent=referralNoticeText;
+    }catch{if(version===publicNoticeVersion&&mode==='document'&&access===accessKey(currentAccess)){referralNotice.textContent='수집 설정을 확인하지 못했습니다. 전송 전에 다시 확인하며 실패하면 질문을 보내지 않습니다. 수집 활성화 시 '+referralNoticeText;}}
   }
   const savedSlot=document.createElement('div');savedSlot.className='saved-slot';modeNotice.after(savedSlot);
   const conversationAlerts=document.createElement('div');conversationAlerts.className='conversation-alerts';transcript.append(conversationAlerts);
   savedPanel=GyeoteConversationPanel.create(savedSlot,{
-    invalidate:()=>{inputAssist?.invalidate();if(mode==='document'){cancel();documentHistory=[];}},
+    invalidate:()=>{inputAssist?.invalidate();if(mode==='document')cancel();},
     alerts:conversationAlerts,
     onError:()=>{profileOpen=true;updateProfileView();profileControls.open=true;showMenu(false);transcript.scrollTop=0;},
     onStateChange:()=>{inputAssist?.update();updateSummaryControls();},
@@ -428,30 +423,30 @@
     }
   });
   const accessKey=state=>[state?.mode||'anonymous',state?.status||'anonymous',state?.accessId||'initial'].join(':');
-  function resetDocumentHistory(){documentHistory=[];documentHistoryAccess=null;conversations.document=[];if(mode==='document')$('.conversation').replaceChildren();inputAssist?.invalidate();}
+  function resetDocumentView(){conversations.document=[];if(mode==='document')$('.conversation').replaceChildren();inputAssist?.invalidate();}
   function showDocumentAccess(state){
-    if(configurationReady&&(state?.origin!==GyeoteProtocol.documentOrigin()))throw new Error('document_access_changed');
-    const changed=accessKey(state)!==accessKey(currentAccess);
-    currentAccess=state;if(state?.mode!=='anonymous')showSavedSummary(null);
+    if(state?.mode!=='anonymous'||configurationReady&&state.origin!==GyeoteProtocol.documentOrigin())throw new Error('document_access_changed');
+    const changed=!currentAccess||accessKey(state)!==accessKey(currentAccess);
+    currentAccess=state;
     if(changed)void refreshProfileUsage();else renderProfileUsage();
     if(changed)void refreshPublicNotice();
     retentionNotice.hidden=mode!=='document'||state?.mode!=='anonymous';
     if(mode!=='document'||state?.mode!=='anonymous')referralNotice.hidden=true;
     conversationAlerts.hidden=mode!=='document'||state?.mode!=='anonymous';
-    accessNotice.textContent=state?.mode==='admin'?(state.status==='ready'?'문서 접근: 관리자 연결됨':'문서 접근: 관리자 세션 만료 · Chrome 확장 옵션에서 다시 로그인하세요.'):'문서 접근: 공개 문서 (익명)';
+    accessNotice.textContent='공개 문서 상담';
     $('.reset').hidden=mode==='document'&&state?.mode==='anonymous';$('.reset').textContent=mode==='document'?'임시 대화 지우기':'안내 대화 지우기';
     const result=savedPanel.setAccess(state,mode==='document');inputAssist?.update();return result;
   }
   async function refreshDocumentAccess(){
     const version=++accessVersion;
-    try{const state=await chrome.runtime.sendMessage({type:'gyeote:document-access'});if(version===accessVersion&&mode==='document'&&host.isConnected){if(!['admin','anonymous'].includes(state?.mode))throw new Error();if(documentHistoryAccess&&documentHistoryAccess!==accessKey(state))resetDocumentHistory();showDocumentAccess(state);}}
-    catch{if(version===accessVersion&&mode==='document'&&host.isConnected){accessNotice.textContent='문서 접근 상태 확인 필요 · Chrome 확장 옵션을 확인하세요.';setStatus('문서 연결 상태를 확인하지 못했습니다. Chrome 확장 관리 화면에서 곁에의 옵션을 확인하세요.');}}
+    try{const state=await chrome.runtime.sendMessage({type:'gyeote:document-access'});if(version===accessVersion&&mode==='document'&&host.isConnected){if(state?.mode!=='anonymous')throw new Error();if(currentAccess&&accessKey(currentAccess)!==accessKey(state))resetDocumentView();showDocumentAccess(state);}}
+    catch{if(version===accessVersion&&mode==='document'&&host.isConnected){accessNotice.textContent='공개 상담 연결 확인 필요';setStatus('상담 연결을 확인하지 못했습니다. 확장 연결을 확인한 뒤 다시 시도해 주세요.');}}
   }
   function updateMode(){
     const documentMode=mode==='document',input=$('#gyeote-question');
     if(!documentMode)profileOpen=false;
     (documentMode?profileControls:$('.screen-controls')).append($('.reset'));
-    retentionNotice.hidden=!documentMode||currentAccess?.mode==='admin';
+    retentionNotice.hidden=!documentMode;
     if(!documentMode||currentAccess?.mode!=='anonymous')referralNotice.hidden=true;
     else void refreshPublicNotice();
     $('.reset').hidden=documentMode&&currentAccess?.mode==='anonymous';$('.reset').textContent=documentMode?'임시 대화 지우기':'안내 대화 지우기';
@@ -460,7 +455,7 @@
     $('.screen-controls').hidden=documentMode;
     input.maxLength=documentMode?300:240;input.value='';
     questionForm.querySelector('label').textContent=documentMode?'복지 상담':'화면 안내';
-    modeNotice.textContent=documentMode?'입력한 질문과 직접 말한 조건으로 문서를 검색합니다. 저장 정보는 사용을 켠 경우에만 답변 생성에 제공합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요. 비공개 자료는 Chrome 확장 옵션에서 관리자 로그인 후 질문하세요.':'질문을 보낼 때 공개 화면의 요소 이름·주변 문구를 연결 서버로 전송합니다. 이미지·입력값·내 정보는 보내지 않습니다. 클릭은 직접 해 주세요.';
+    modeNotice.textContent=documentMode?'입력한 질문과 직접 말한 조건으로 문서를 검색합니다. 저장 정보는 사용을 켠 경우에만 답변 생성에 제공합니다. 화면·이미지는 수집하지 않습니다. 개인정보는 입력하지 마세요.':'질문을 보낼 때 공개 화면의 요소 이름·주변 문구를 연결 서버로 전송합니다. 이미지·입력값·내 정보는 보내지 않습니다. 클릭은 직접 해 주세요.';
     accessNotice.hidden=!documentMode;if(documentMode){accessNotice.textContent='문서 접근 상태 확인 중';void refreshDocumentAccess();}
     $('.mode-intro').textContent=documentMode?'등록된 문서의 원문 근거로 답변합니다.':'현재 공개 복지로 화면을 함께 봅니다. 클릭은 직접 해 주세요.';
     $('.scope-notice').textContent=documentMode?'복지 정보는 등록 문서를 기준으로 안내합니다. 개인정보는 입력하지 마세요.':'다른 사이트·로그인·개인정보 화면은 지원하지 않습니다.';
@@ -479,11 +474,10 @@
   });
   inputAssist=GyeoteInputAssist.create(questionForm,{overlay:listeningOverlay,onListening:showListening,state:()=>{
     const saved=savedPanel.state,conversation=saved?.conversations.find(c=>c.id===saved.lastActiveConversationId);
-    const anonymous=currentAccess?.mode==='anonymous';
     return {mode,key:[mode,serial,accessKey(currentAccess),profilePanel.state?.revision,saved?.generation,saved?.revision,saved?.lastActiveConversationId].join('|'),
       available:host.isConnected&&!panel.hidden&&!collapsed&&(!activeModal||activeModal==='summary')&&!document.hidden&&!questionForm.hidden,
-      blocked:!configurationReady||busy||requestPending||summaryBusy||mode==='document'&&(!currentAccess||anonymous&&(!savedPanel.ready||savedPanel.hasUnsaved)||!anonymous&&currentAccess.status!=='ready'),
-      profile:profilePanel.state?.profile,hasHistory:anonymous?!!conversation?.messages.some(m=>m.role==='assistant'):documentHistory.some(m=>m.role==='assistant'),limit:$('#gyeote-question').maxLength};
+      blocked:!configurationReady||busy||requestPending||summaryBusy||mode==='document'&&(!currentAccess||!savedPanel.ready||savedPanel.hasUnsaved),
+      profile:profilePanel.state?.profile,hasHistory:!!conversation?.messages.some(m=>m.role==='assistant'),limit:$('#gyeote-question').maxLength};
   }});
   updateMode();
   function atConversationEnd(){return transcript.scrollHeight-transcript.clientHeight-transcript.scrollTop<48;}
@@ -562,7 +556,7 @@
   async function ask(question){
     cancel();const version=serial,documentMode=mode==='document';
     if(!configurationReady){setStatus('설치 패키지의 서버 설정을 확인하지 못했습니다. 올바른 패키지로 다시 설치해 주세요.');return;}
-    let conversationContext,requestAccess,requestInput,publicRequest=false,profileContextOmitted=false;
+    let conversationContext,requestAccess,requestInput,profileContextOmitted=false;
     const requestId=GyeoteDOM.id();
     const startedAt=Date.now();let budgetSeconds;
     const stoppedText=()=>budgetSeconds?`요청이 취소되거나 설정된 ${budgetSeconds}초를 넘었습니다. 서버 확인 후 직접 다시 질문하세요.`:errors.request_stopped;
@@ -573,16 +567,14 @@
       if(documentMode){
         GyeoteProtocol.documentRequest({query:question});
         const access=await chrome.runtime.sendMessage({type:'gyeote:document-access'});if(version!==serial)return;
-        if(!['anonymous','admin'].includes(access?.mode))throw new Error('connection_failed');
-        if(currentAccess&&accessKey(currentAccess)!==accessKey(access))resetDocumentHistory();
-        await showDocumentAccess(access);if(version!==serial)return;requestAccess=accessKey(access);publicRequest=access.mode==='anonymous';
+        if(access?.mode!=='anonymous')throw new Error('connection_failed');
+        if(currentAccess&&accessKey(currentAccess)!==accessKey(access))resetDocumentView();
+        await showDocumentAccess(access);if(version!==serial)return;requestAccess=accessKey(access);
         if(!pendingQuestion?.isConnected){pendingQuestion=appendMessage('user',GyeoteProtocol.privacy.maskText(question,true)).article;showPending();}
-        if(publicRequest){
-          conversationContext=savedPanel.context();requestInput=await savedPanel.begin(conversationContext,requestId,conversationContext.profileRevision);if(version!==serial)return;
-          if(profileUsageLoading||profileUsageError||!profileUsageState||profilePanel.loading||!profilePanel.state?.profile)delete requestInput.profile_context;
-          profileContextOmitted=profileUsageState?.enabled===true&&!requestInput.profile_context;
-        }
-        payload=GyeoteProtocol.documentRequest({query:question,...(publicRequest?requestInput:{history:documentHistory})});
+        conversationContext=savedPanel.context();requestInput=await savedPanel.begin(conversationContext,requestId,conversationContext.profileRevision);if(version!==serial)return;
+        if(profileUsageLoading||profileUsageError||!profileUsageState||profilePanel.loading||!profilePanel.state?.profile)delete requestInput.profile_context;
+        profileContextOmitted=profileUsageState?.enabled===true&&!requestInput.profile_context;
+        payload=GyeoteProtocol.documentRequest({query:question,...requestInput});
       }
       else{
         snapshot=GyeoteDOM.collect(question);source=snapshot;
@@ -597,11 +589,8 @@
       if(documentMode){
         const access=accessKey(prepared.documentAccess);
         if(access!==requestAccess)throw new Error('document_access_changed');
-        referralNotice.hidden=!publicRequest||prepared.referralRecordsEnabled!==true;
+        referralNotice.hidden=prepared.referralRecordsEnabled!==true;
         referralNotice.textContent=referralNoticeText;
-        // 알림이 늦어져도 이전 관리자 이력을 다른 접근 상태의 요청에 싣지 않는다.
-        if(documentHistoryAccess&&documentHistoryAccess!==access){resetDocumentHistory();payload.history=[];pendingQuestion=appendMessage('user',GyeoteProtocol.privacy.maskText(question,true)).article;showPending();}
-        documentHistoryAccess=access;
         if(prepared.documentAccess)showDocumentAccess(prepared.documentAccess);
       }
       budgetSeconds=GyeoteProtocol.validateDocumentTimeout(prepared.timeoutSeconds);
@@ -622,14 +611,9 @@
           }
           if(documentMode){
             const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);removePending();pendingQuestion=null;setStatus('');appendDocumentAnswer(answer);
-            if(publicRequest){
-              clearTimeout(requestTimer);
-              const saved=await savedPanel.save(conversationContext,requestId,question,answer,conversationContext.profileRevision,()=>version===serial&&requestPort===port&&mode==='document');
-              if(version===serial&&requestPort===port)setStatus(saved?[(profileContextOmitted?'저장 정보 제공을 확인하지 못해 이번 답변에는 사용하지 않았습니다.':''),(answer.context_update?.status==='failed'?'이전 대화 일부만 참고해 답변했습니다.':''),(answer.context_update?.status!=='failed'&&(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted)?'일부 대화 맥락은 제외됐습니다.':'')].filter(Boolean).join(' '):'답변과 대화 맥락의 저장을 확인하지 못했습니다. 저장 상태와 재시도를 확인하세요.');
-              return;
-            }
-            // 기존 /chat은 이력을 수용하지만 현재 문서 검색·생성에는 마지막 질문만 사용한다.
-            if(answer.text.length<=6000){documentHistory.push({role:'user',content:question},{role:'assistant',content:GyeoteProtocol.privacy.maskText(answer.text,true)});while(documentHistory.length>12||documentHistory.reduce((n,m)=>n+m.content.length,0)>6000)documentHistory.splice(0,2);}
+            clearTimeout(requestTimer);
+            const saved=await savedPanel.save(conversationContext,requestId,question,answer,conversationContext.profileRevision,()=>version===serial&&requestPort===port&&mode==='document');
+            if(version===serial&&requestPort===port)setStatus(saved?[(profileContextOmitted?'저장 정보 제공을 확인하지 못해 이번 답변에는 사용하지 않았습니다.':''),(answer.context_update?.status==='failed'?'이전 대화 일부만 참고해 답변했습니다.':''),(answer.context_update?.status!=='failed'&&(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted)?'일부 대화 맥락은 제외됐습니다.':'')].filter(Boolean).join(' '):'답변과 대화 맥락의 저장을 확인하지 못했습니다. 저장 상태와 재시도를 확인하세요.');
             return;
           }
           const answer=GyeoteProtocol.reply(packet.body,payload);
@@ -639,18 +623,18 @@
           if(answer.targets.length&&!selected.length)throw new Error('invalid_reply');
           pendingQuestion=null;setStatus('');activeReply=appendMessage('assistant',display);activeReply.answer=answer.answer;const spokenReply=activeReply;addSpeech(spokenReply,()=>spokenReply.text.textContent);
           history.push({role:'user',text:question},{role:'assistant',text:answer.answer});while(history.length>4||history.reduce((n,m)=>n+m.text.length,0)>1000)history.shift();
-        }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentHistory();void refreshDocumentAccess();}const message=error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply;finishQuestion(message);clear(message);}
+        }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentView();void refreshDocumentAccess();}const message=error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply;finishQuestion(message);clear(message);}
         finally{if(version===serial&&requestPort===port){removePending();clearTimeout(requestTimer);busy=false;requestPort=null;updateRequestControl();inputAssist.update();}port.disconnect();}
       });
-      port.postMessage({requestId,mode,payload,...(documentMode?{documentAccess:documentHistoryAccess}:{}),...(conversationContext?{conversationContext:{revision:conversationContext.expectedRevision,generation:conversationContext.generation}}:{}),deadlineAt:startedAt+budgetSeconds*1000});
+      port.postMessage({requestId,mode,payload,...(documentMode?{documentAccess:requestAccess}:{}),...(conversationContext?{conversationContext:{revision:conversationContext.expectedRevision,generation:conversationContext.generation}}:{}),deadlineAt:startedAt+budgetSeconds*1000});
     }catch(error){
       if(version!==serial)return;
       cancel(error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||'현재 공개 화면을 확인하지 못했습니다. 개인정보 없는 화면에서 다시 질문하세요.');
-      if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentHistory();void refreshDocumentAccess();}
+      if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentView();void refreshDocumentAccess();}
     }
     finally{if(version===serial){requestPending=false;updateRequestControl();inputAssist.update();}}
   }
-  function documentError(code){if(code==='public_settings_unavailable')return '연락처 기록 수집 설정을 확인하지 못해 질문을 보내지 않았습니다. 잠시 후 다시 시도해 주세요.';if(code.startsWith('summary_'))return ({summary_input_budget:'요약할 완전한 문답이 입력 한도를 넘었습니다. 더 짧은 상담에서 다시 시도해 주세요.',summary_public_only:'요약은 공개 상담에서만 사용할 수 있습니다.',summary_unavailable:'서버에서 상담 요약을 아직 지원하지 않습니다.',summary_storage_failed:'요약을 저장하지 못했습니다. 이전에 저장한 요약은 유지했습니다.',summary_generation_failed:'상담 요약에 실패했습니다. 원래 대화는 그대로 보관됩니다.'})[code]||'상담 요약을 처리하지 못했습니다.';if(code==='conversation_storage_failed')return '대화 맥락 경계를 저장하지 못해 질문을 보내지 않았습니다. 저장 공간을 확인한 뒤 다시 질문해 주세요.';return ({chat_rate_limited:'질문 요청이 많습니다. 잠시 기다린 뒤 직접 다시 질문해 주세요.',invalid_profile:'내 정보의 입력값을 확인한 뒤 다시 질문해 주세요.',profile_changed:'내 정보가 바뀌어 이전 답변을 표시하지 않았습니다. 확인한 뒤 다시 질문해 주세요.',profile_storage_failed:'내 정보를 확인하지 못해 질문을 보내거나 답변을 표시하지 않았습니다. 내 정보에서 다시 불러오세요.',profile_data_invalid:'저장된 내 정보를 확인하지 못했습니다. 내 정보에서 재설정을 확인해 주세요.',sensitive_input:'개인정보가 포함된 질문은 보낼 수 없습니다. 개인정보를 제외하고 다시 질문해 주세요.',document_auth_required:'관리자 세션이 없거나 만료됐습니다. Chrome 확장 옵션에서 다시 로그인하거나 익명으로 전환하세요.',document_access_changed:'문서 접근 상태가 바뀌어 이전 대화를 지웠습니다. 현재 접근 상태에서 직접 다시 질문하세요.',generation_failed:'문서 검색이나 답변 처리에 실패했습니다. 잠시 후 다시 질문해 주세요.',connection_failed:'서버에 연결하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.',request_timeout:'요청 처리 시간을 넘었습니다. 잠시 후 다시 질문해 주세요.',request_cancelled:'요청이 취소되었습니다. 다시 질문할 수 있습니다.',input_budget:'문서 질문은 300자, 대화 이력은 전체 6000자 이내여야 합니다.',invalid_reply:'문서 응답 형식을 확인하지 못해 표시하지 않았습니다.'})[code]||errors[code]||'문서 요청을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.';}
+  function documentError(code){if(code==='public_settings_unavailable')return '연락처 기록 수집 설정을 확인하지 못해 질문을 보내지 않았습니다. 잠시 후 다시 시도해 주세요.';if(code.startsWith('summary_'))return ({summary_input_budget:'요약할 완전한 문답이 입력 한도를 넘었습니다. 더 짧은 상담에서 다시 시도해 주세요.',summary_public_only:'요약은 공개 상담에서만 사용할 수 있습니다.',summary_unavailable:'서버에서 상담 요약을 아직 지원하지 않습니다.',summary_storage_failed:'요약을 저장하지 못했습니다. 이전에 저장한 요약은 유지했습니다.',summary_generation_failed:'상담 요약에 실패했습니다. 원래 대화는 그대로 보관됩니다.'})[code]||'상담 요약을 처리하지 못했습니다.';if(code==='conversation_storage_failed')return '대화 맥락 경계를 저장하지 못해 질문을 보내지 않았습니다. 저장 공간을 확인한 뒤 다시 질문해 주세요.';return ({chat_rate_limited:'질문 요청이 많습니다. 잠시 기다린 뒤 직접 다시 질문해 주세요.',invalid_profile:'내 정보의 입력값을 확인한 뒤 다시 질문해 주세요.',profile_changed:'내 정보가 바뀌어 이전 답변을 표시하지 않았습니다. 확인한 뒤 다시 질문해 주세요.',profile_storage_failed:'내 정보를 확인하지 못해 질문을 보내거나 답변을 표시하지 않았습니다. 내 정보에서 다시 불러오세요.',profile_data_invalid:'저장된 내 정보를 확인하지 못했습니다. 내 정보에서 재설정을 확인해 주세요.',sensitive_input:'개인정보가 포함된 질문은 보낼 수 없습니다. 개인정보를 제외하고 다시 질문해 주세요.',document_auth_required:'공개 상담 요청이 거절됐습니다. 서버 연결을 확인한 뒤 다시 질문해 주세요.',document_access_changed:'상담 연결 상태가 바뀌어 요청을 중지했습니다. 직접 다시 질문하세요.',generation_failed:'문서 검색이나 답변 처리에 실패했습니다. 잠시 후 다시 질문해 주세요.',connection_failed:'서버에 연결하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.',request_timeout:'요청 처리 시간을 넘었습니다. 잠시 후 다시 질문해 주세요.',request_cancelled:'요청이 취소되었습니다. 다시 질문할 수 있습니다.',input_budget:'문서 질문은 300자, 대화 이력은 전체 6000자 이내여야 합니다.',invalid_reply:'문서 응답 형식을 확인하지 못해 표시하지 않았습니다.'})[code]||errors[code]||'문서 요청을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.';}
   questionForm.addEventListener('submit',event=>{event.preventDefault();if(summaryBusy)return;inputAssist.cancel();if(busy||requestPending){cancel();return;}if(mode==='document'&&currentAccess?.mode==='anonymous'&&!savedPanel.ready){setStatus('대화 저장 상태를 확인한 뒤 다시 질문해 주세요. 대화 저장 관리에서 다시 불러올 수 있습니다.');return;}if(mode==='document'&&currentAccess?.mode==='anonymous'&&savedPanel.hasUnsaved){setStatus('미저장 답변을 보관하거나 명시적으로 버린 뒤 다음 질문을 보내세요.');return;}const input=$('#gyeote-question'),question=input.value.trim();if(question.length>input.maxLength){setStatus(`질문을 ${input.maxLength}자 이내로 수정한 뒤 전송해 주세요.`);input.focus();return;}input.value='';void ask(question);});
   const managerButton=$('.documents');
   managerButton.addEventListener('click',async()=>{
@@ -663,7 +647,7 @@
     catch{setStatus('문서 관리 페이지를 열지 못했습니다. 잠시 후 다시 눌러 주세요.');}
     finally{managerButton.disabled=false;}
   });
-  $('.reset').addEventListener('click',()=>{if(mode==='document'&&currentAccess?.mode==='anonymous')return;cancel();if(mode==='document')resetDocumentHistory();else{history=[];historyUrl='';}conversations[mode]=[];$('.conversation').replaceChildren();snapshot=null;});
+  $('.reset').addEventListener('click',()=>{if(mode==='document')return;cancel();history=[];historyUrl='';conversations[mode]=[];$('.conversation').replaceChildren();snapshot=null;});
   let drag=null,preferred=null;
   const head=$('.head');
   function clampPanel(left,top){
@@ -825,7 +809,7 @@
     if(message?.type==='gyeote:document-access-changed'){
       if(_sender.id!==chrome.runtime.id||_sender.tab)return;
       accessVersion++;
-      resetDocumentHistory();
+      resetDocumentView();
       if(mode==='document'){cancel();snapshot=null;}
       showDocumentAccess(message.state);
       sendResponse({ok:true});return;

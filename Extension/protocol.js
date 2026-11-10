@@ -220,8 +220,6 @@
     }
     return redactDocument({kind:body.kind,text:body.text,evidence,...(Object.hasOwn(body,'contacts')?{contacts:documentContacts(body.contacts)}:{}),...(update?{context_update:update}:{}),...(Object.hasOwn(body,'context_usage')?{context_usage:contextUsage(body.context_usage)}:{})});
   }
-  const adminSession=(value)=>!!value&&typeof value.token==='string'&&/^[A-Za-z0-9_-]{32,256}$/.test(value.token)&&Number.isInteger(value.expiresAt)&&value.expiresAt>Date.now()/1000;
-  const documentSession=value=>adminSession(value)&&Object.keys(value).every(key=>['token','expiresAt','origin'].includes(key))&&value.origin===documentOrigin();
-  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,summaryRequest,summaryReply,documentReply,documentContacts,adminSession,documentSession,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,profileUsageRecord,profileContext,uiDefaults,uiLimits,uiPreferences,uiPreferenceRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
+  const api={id,text,official,request,remoteScreenRequest,reply,screenTimeoutSeconds,documentTimeoutSeconds,documentRequest,summaryRequest,summaryReply,documentReply,documentContacts,documentOrigin,validateDocumentOrigin,validateDocumentTimeout,privacy,profile,profileRecord,profileUsageRecord,profileContext,uiDefaults,uiLimits,uiPreferences,uiPreferenceRecord,regions,conversationContext,contextUpdate,contextUsage};globalThis.GyeoteProtocol=Object.freeze(api);
   if(typeof module!=='undefined')module.exports=api;
 })();

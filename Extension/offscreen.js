@@ -22,7 +22,7 @@ chrome.runtime.onConnect.addListener(port=>{
     if(!GyeoteProtocol.id(requestId))return port.disconnect();
     if(active){send({type:'error',requestId,error:'busy'});return;}
     controller=new AbortController();active={controller,documentMode:false};
-    let payload,adminSession,sessionExpired=false,timer=setTimeout(()=>controller.abort(),10000);
+    let payload,timer=setTimeout(()=>controller.abort(),10000);
     try{
       if(Object.keys(packet).some(key=>!['requestId','mode','payload','documentAccess','profileRevision','conversationContext','deadlineAt'].includes(key)))throw new Error('invalid_reply');
       const mode=packet.mode??'screen';
@@ -37,18 +37,15 @@ chrome.runtime.onConnect.addListener(port=>{
       active.profileContext=payload.profile_context??null;
       if(documentMode){
         const auth=await chrome.runtime.sendMessage({type:'gyeote:document-auth'});
-        if(!auth||!['admin','anonymous'].includes(auth.mode))throw new Error('connection_failed');
+        if(auth?.mode!=='anonymous')throw new Error('connection_failed');
         if(auth.origin!==origin)throw new Error('document_access_changed');
-        if(summaryMode&&auth.mode!=='anonymous')throw new Error('summary_public_only');
-        if(auth?.mode==='admin'){if(!GyeoteProtocol.documentSession(auth.session))throw new Error('document_auth_required');adminSession=auth.session;}
-        const access=[auth.mode,auth.mode==='admin'?'ready':'anonymous',auth.accessId||'initial'].join(':');
+        const access=['anonymous','anonymous',auth.accessId||'initial'].join(':');
         if(packet.documentAccess!==access)throw new Error('document_access_changed');
         if(payload.profile_context){
-          if(auth.mode!=='anonymous')throw new Error('invalid_profile');
           const latest=await chrome.runtime.sendMessage({type:'gyeote:profile-context'});
           if(!latest?.ok||JSON.stringify(latest.context)!==JSON.stringify(payload.profile_context))throw new Error('profile_changed');
         }
-        if(auth.mode==='anonymous'&&packet.conversationContext!==undefined){
+        if(packet.conversationContext!==undefined){
           const context=packet.conversationContext;
           if(!context||!Number.isSafeInteger(context.revision)||context.revision<0||typeof context.generation!=='string')throw new Error('invalid_reply');
           active.conversationContext=context;
@@ -58,16 +55,12 @@ chrome.runtime.onConnect.addListener(port=>{
       if(packet.deadlineAt!==undefined&&(!Number.isFinite(packet.deadlineAt)||packet.deadlineAt<=0))throw new Error('invalid_reply');
       const remaining=Math.min(budget,(packet.deadlineAt??Date.now()+budget)-Date.now());
       if(remaining<=0)throw new Error('request_stopped');
-      const sessionRemaining=adminSession?Math.max(0,adminSession.expiresAt*1000-Date.now()):Infinity;
-      clearTimeout(timer);timer=setTimeout(()=>{sessionExpired=sessionRemaining<=remaining;controller.abort();},Math.min(remaining,sessionRemaining));
+      clearTimeout(timer);timer=setTimeout(()=>controller.abort(),remaining);
       payload.timeout_seconds=Math.min(payload.timeout_seconds??1800,Math.max(1,Math.ceil(remaining/1000)));
       if(controller.signal.aborted)throw new Error('request_stopped');
-      if(adminSession&&!GyeoteProtocol.documentSession(adminSession))throw new Error('document_auth_required');
       const headers={'Content-Type':'application/json'};
-      if(adminSession)headers.Authorization='Bearer '+adminSession.token;
       const response=await fetch(origin+(summaryMode?'/api/v1/conversation/summary':documentMode?'/api/v1/chat':'/api/v1/screen/guide'),{method:'POST',headers,body:JSON.stringify(payload),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
       if(!response.ok){
-        if(documentMode&&adminSession&&[401,403].includes(response.status))await chrome.runtime.sendMessage({type:'gyeote:admin-invalid',token:adminSession.token});
         const code=await response.json().then(r=>r.detail).catch(()=>null);
         if(summaryMode&&['summary_input_budget','summary_public_only','summary_unavailable','summary_generation_failed'].includes(code))throw new Error(code);
         if(!documentMode&&response.status===413)throw new Error('screen_body_size_limit');
@@ -79,23 +72,19 @@ chrome.runtime.onConnect.addListener(port=>{
       finally{await reader.cancel().catch(()=>{});}
       const body=JSON.parse(await new Blob(chunks,{type:'application/json'}).text());
       if(controller.signal.aborted)throw new Error('request_stopped');
-      if(adminSession&&!GyeoteProtocol.documentSession(adminSession))throw new Error('document_auth_required');
       if(documentMode){
         const latest=await chrome.runtime.sendMessage({type:'gyeote:document-auth'});
-        if(!latest||!['admin','anonymous'].includes(latest.mode))throw new Error('connection_failed');
+        if(latest?.mode!=='anonymous')throw new Error('connection_failed');
         if(latest.origin!==origin)throw new Error('document_access_changed');
-        if(latest.mode==='admin'&&!GyeoteProtocol.documentSession(latest.session))throw new Error('document_auth_required');
-        if([latest.mode,latest.mode==='admin'?'ready':'anonymous',latest.accessId||'initial'].join(':')!==packet.documentAccess)throw new Error('document_access_changed');
+        if(['anonymous','anonymous',latest.accessId||'initial'].join(':')!==packet.documentAccess)throw new Error('document_access_changed');
         if(payload.profile_context){const current=await chrome.runtime.sendMessage({type:'gyeote:profile-context'});if(!current?.ok||JSON.stringify(current.context)!==JSON.stringify(payload.profile_context))throw new Error('profile_changed');}
       }
       if(summaryMode)GyeoteProtocol.summaryReply(body,payload);else if(documentMode)GyeoteProtocol.documentReply(body,payload.conversation_context??null);else GyeoteProtocol.reply(body,payload);
       if(controller.signal.aborted)throw new Error('request_stopped');
       send({type:'result',requestId,body:summaryMode?GyeoteProtocol.summaryReply(body,payload):documentMode?GyeoteProtocol.privacy.redactDocument(body):body});
     }catch(error){
-      const expired=adminSession&&(sessionExpired||adminSession.expiresAt<=Date.now()/1000);
-      if(expired)await chrome.runtime.sendMessage({type:'gyeote:admin-invalid',token:adminSession.token}).catch(()=>{});
-      send({type:'error',requestId,error:expired?'document_auth_required':controller.signal.aborted?'request_stopped':['connection_configuration_invalid','sensitive_input','invalid_profile','profile_changed','invalid_context','invalid_context_update','document_auth_required','document_access_changed','feature_disabled','input_budget','screen_body_size_limit','invalid_screen_request','screen_context_budget_exceeded','screen_request_rejected','busy','chat_rate_limited','generation_failed','invalid_reply','request_stopped','request_timeout','request_cancelled','summary_input_budget','summary_public_only','summary_unavailable','summary_generation_failed'].includes(error.message)?error.message:'connection_failed'});
+      send({type:'error',requestId,error:controller.signal.aborted?'request_stopped':['connection_configuration_invalid','sensitive_input','invalid_profile','profile_changed','invalid_context','invalid_context_update','document_auth_required','document_access_changed','feature_disabled','input_budget','screen_body_size_limit','invalid_screen_request','screen_context_budget_exceeded','screen_request_rejected','busy','chat_rate_limited','generation_failed','invalid_reply','request_stopped','request_timeout','request_cancelled','summary_input_budget','summary_public_only','summary_unavailable','summary_generation_failed'].includes(error.message)?error.message:'connection_failed'});
     }
-    finally{clearTimeout(timer);if(active?.controller===controller)active=null;payload=null;packet=null;adminSession=null;}
+    finally{clearTimeout(timer);if(active?.controller===controller)active=null;payload=null;packet=null;}
   });
 });

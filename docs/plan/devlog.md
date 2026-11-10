@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:56 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 16:03 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -977,3 +977,13 @@
 - 실패1은 conversation_layout.test.cjs:7의 이전 문서 연결 오류 기대값이다. 현행 공개 상담 오류 문구로 정정하고 닫힌 메뉴 밖 .status 표시 단언을 유지했다. 실패2는 profile_usage.test.cjs:186의 재조회 중 확인 문구 기대값이다. 현행 코드는 성공 전까지 기존 오류를 보여 주므로 error 동일 단언으로 정정하고 retry 비활성·저장 profile 존재 시 toggle 활성 단언을 함께 유지했다.
 - 개발이 검사2파일만 각1행 교체했고 설계가 diff를 검토했다. 제품 코드는 변경하지 않았다. 5초 기한·현재 질문 profile_context 미첨부·늦은 응답 무시·저장 ON 보존·성공 ON 복구 단언은 그대로다. 새 자동 CI 성공은 아직 확인 전이며 후속 push 뒤 결과를 확인한다.
 - 팀원 기존 PR의146개/tsc/build 및 대역 화면 통과는 팀원 이전 보고이며 이번 통합 검증과 구분한다. 실제 Chrome·운영 API 종단·마이크·기기 음성은 미확인이다.
+
+<a id="log-20261110-1603-pr19-complete"></a>
+## 2026-11-10 16:03 KST · PR #19 병합·자동 CI 성공·최종 main 운영 배포
+
+- 확장 검사2파일과 기록3파일을76f9c51fb683799ab61b37ee5911582938546b00으로 커밋하고 같은 원격 Claude 브랜치에 정상 push했다. 자동 CI run42772081069의 web-extension·python(dev/backend/worker)4job은모두success다. 수동 검사나 CI 재실행 요청 없이 자동 결과만 조회했다. 앞선 run42771311022의2건 실패 이력은 위 절에 보존한다.
+- 76f9c51 Preview dpl_Gjdp3F7ZheoiMURmkc3Gbhn8A56j는 READY다. PR #19의 head76f9c51·base9a5ffce·mergeable=true를 확인하고 expected_head_sha를 고정해 merge 방식으로 병합했다. GitHub merged=true·merged_at2026-11-10T07:01:37Z와 main3c18f4f35012a2f4816105150dc66d0052a674e9를 API 및 ls-remote로 재확인했다.
+- 최종 PR은 main대비24파일이며 웹/관리자19파일·기존 확장검사2파일·기록3파일이다. PR 본문은 최종 동작·수정·자동 CI·미실측을 반영했다. 새 중복 PR·main직접push·이력 재작성·브랜치 삭제는 하지 않았다.
+- welfare7 프로젝트의 production dpl_DoCjmFZiDCtdS19C66tAX4RFcvbh를 get_deployment로 조회해 READY·main3c18f4f·aliasError=null 및 welfare-helper-iota.vercel.app 연결을 확인했다. 운영 URL https://welfare-helper-iota.vercel.app/webchat 에 같은 배포의 웹 화면이 제공되는 설정이다. 실제 사용자 화면·API 질의·음성 동작을 실행한 것은 아니다.
+- 로컬 claude/FrontEnd-webchat은 origin/main으로 ff-only 반영했다. 원격 Claude는76f9c51, 로컬 기존 codex/fix-merge는2c292d1로 보존한다. 병합 후 완료 기록3파일은 로컬 후속 문서로 누적하며 이번 PR에 소급 포함됐다고 적지 않는다.
+- 이번 범위의 push·PR·main 병합·Vercel 확인은 완료했다. EC2 접속·pull·서비스 재생성·DB·환경·실행 이미지 변경은 하지 않았다. 후속은 B11과 런타임을 보존한 최종 main의 EC2·노트북 동기화와 사용자 실제 확인이며 RAG 정확도·별도 CSV는 계속 보류한다.

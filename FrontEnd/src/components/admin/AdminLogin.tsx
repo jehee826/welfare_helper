@@ -20,8 +20,10 @@ export function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return <section className="card admin-login" aria-labelledby="admin-login-title">
-    <p className="eyebrow">복지관 직원 전용</p>
-    <h1 id="admin-login-title" className="admin-login__title">관리자 로그인</h1>
+    <div>
+      <h1 id="admin-login-title" className="admin-login__title">관리자 로그인</h1>
+      <p className="muted">복지관 직원 전용</p>
+    </div>
     <form onSubmit={handleSubmit} className="stack">
       <label className="field"><span className="field__label">비밀번호</span>
         <input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" aria-invalid={!!error} required disabled={busy} />

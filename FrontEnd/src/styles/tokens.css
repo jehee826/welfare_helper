@@ -6,6 +6,7 @@
   --surface-input: #f8faff;
   --line: #d9e1ef;
   --control-line: #7f8ea8;
+  --line-strong: #c9c9c9;
   --accent: #3e61d7;
   --accent-strong: #304aa2;
   --success-bg: #edf7f2;
@@ -13,6 +14,7 @@
   --accent-warn-bg: #fff6e0;
   --accent-warn-ink: #6b4a00;
   --danger: #b3261e;
+  --danger-bg: #fcebea;
   --focus: #3e61d7;
   --radius-pill: 9999px;
   --radius-card: 24px;

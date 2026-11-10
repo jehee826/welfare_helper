@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:01 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 15:56 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -931,3 +931,49 @@
 - SSH 일시 시간초과로 로컬 순차 작성권 인계를 준비했으나 로컬 쓰기 전에 연결이 복구됐다. EC2에서 앞선 쓰기 미반영을 확인하고 EC2 한 곳에서만 작성했다. 로컬 파일 중복 수정은 없었다. EC2 커밋 뒤 index는 비었고 기존 B11만 남았다.
 - 설계는 EC2 커밋을 SSH fetch해 로컬 계획7582a2d를 보존하며 기능 브랜치에 충돌 없이 통합했다. 변경 제품은 options.html 정책뿐이며 Backend·FrontEnd·환경·DB·서비스·모델은 건드리지 않았다. 테스트·node --check·컴파일·빌드·패키저·HTTP·LLM·Chrome·CI·배포는 실행하지 않았다.
 - 첫 PR 본문을 현행 결과로 갱신했다. 원격은 a44aa0f이며 새 로컬 커밋은 push 전이다. PR 생성·병합은 사용자가 진행하고, 첫 병합·팀원 종료·최종 push·작성권 인계 전에는 Claude 브랜치를 수정하지 않는다. 두 번째 PR에서 업로드 준비 조건과 팀원 배치, 공통 스타일/추가 변수를 함께 보존한다.
+<a id="log-20261110-1513-pr20"></a>
+## 2026-11-10 15:13 KST · 첫 PR #20 생성·병합 완료
+
+- 앞선 3커밋7582a2d·ec3e880·69ffb1b push와 EC2 ff-only 동기화를 완료했다. 개발 담당은 EC2 HEAD=origin/codex/fix-merge=69ffb1b, 빈 index, 기존 B11 diff와 전체 status의 전후 동일을 확인했다. 서비스·이미지·DB는 변경하지 않았다.
+- 이번 첫 PR에 한해 생성·병합을 수행했다. GitHub PR #20(https://github.com/jehee826/welfare_helper/pull/20), head69ffb1b→base main eb760b6을 생성하고 충돌 없음과 head 일치를 확인한 뒤 expected_head_sha를 고정해 merge 방식으로 병합했다.
+- GitHub merged=true·merged_at 2026-11-10T06:13:04Z와 원격 main=9a5ffcea0d35949778d92ab5d4c0c9c375981694를 재확인했다. 로컬 codex/fix-merge는 origin/main으로 ff-only 반영했다. EC2와 원격 기능 브랜치는69ffb1b를 유지한다.
+- Vercel 상태는 failure이며 PR 봇이 GitHub jehee826 계정의 jehee 팀 접근 권한 부재로 Preview 배포가 차단됐다고 알렸다. 배포 준비 성공으로 판단하지 않았고 계정 연결·멤버십·요금제·저장소 공개 범위는 바꾸지 않았다. main 운영 배포 성공은 확인하지 않았다.
+- 코드 충돌/PR 상태 조회만 했으며 테스트·구문검사·빌드·패키저·HTTP·모델·Chrome은 실행하지 않았다. gh는 설치되지 않아 PR 조회에 사용할 수 없었고 GitHub 연결 도구로 상태를 확인했다. 자동 CI의 성공을 주장하지 않는다.
+- 다음 조건은 팀원의 작업 종료·최종 push·작성권 인계 확인이다. Claude 브랜치 수정·두 번째 PR 생성/병합·최종 main의 EC2 배포는 아직 수행하지 않았다. 두 번째 PR은 기존 사용자 생성·병합 절차를 따른다. 이번 병합 결과 문서는 로컬 후속 기록으로 남긴다.
+<a id="log-20261110-1522-vercel-target"></a>
+## 2026-11-10 15:22 KST · Vercel 운영 대상 오판 정정·중복 연결 확인
+
+- 앞선 PR 봇 실패를 운영 프로젝트 전체 문제로 해석한 판단을 정정한다. 연결된 두 Vercel 계정에서 같은 저장소 jehee826/welfare_helper를 각각 welfare-helper 프로젝트로 추적하고 있다.
+- 실제 운영은 캡스톤 계정 welfare7(team_Y83ugQ7TeDDhDe1glxymKsiu), 프로젝트 prj_HkwhPJ62wroO3duFqX1qGAujtW0L이다. get_deployment에서 main9a5ffce의 production dpl_7GrpaDTh8cn95wUTUYZc9AhTuvLp가 READY이고 기존 welfare-helper-iota.vercel.app alias 및 aliasError=null을 확인했다. fix-merge69ffb1b의 dpl_GaKCAYFbbHu5F6FKDcF9ishVfLdg도 READY다.
+- 실패 알림의 대상은 본계정 jehee(team_7QIj2iv2a4O4AYbjP7Xkey8Q), 프로젝트 prj_DnJIpAfxJL3xyuHcANX2e9esEtBZ다. 같은 main9a5ffce와 fix-merge69ffb1b를 포함한 최근 배포가 BLOCKED이며 PR 봇의 Git 작성자 팀 접근 오류는 이 프로젝트에 해당한다.
+- 두 팀 모두 Hobby이고 동일 Git 저장소 연결을 API로 확인했다. 실제 운영 프로젝트를 재배포하거나 코드·Git 작성자·계정·멤버십·요금제·환경·보호 정책을 바꿀 이유는 확인되지 않았다. 본계정 프로젝트 사용 여부와 Git 연결만 해제할 의사를 확인 중이다. 연결 도구에는 Git 연결 해제 기능이 노출되지 않았다.
+- 별개로 팀원 claude/FrontEnd-webchat14b8bf8은 운영 welfare7에서도 dpl_CeRTfzyuacCz1Ns9ddaJW2HD7N8a가 BLOCKED이며 team-configuration 오류 문서로 연결된다. 첫 PR의 정상 배포와 구분하고 두 번째 통합의 Preview 준비에서 별도로 다룬다.
+- 계정별 배포 메타데이터·Git 연결만 읽었다. 실제 관리자 UI/API 동작 시험, 새 빌드·재배포·서비스/DB 변경은 하지 않았다. 기존 실패 기록은 보존하고 현재 인계·계획의 운영 상태만 정정했다.
+<a id="log-20261110-1534-vercel-disconnected"></a>
+## 2026-11-10 15:34 KST · 본계정 중복 Git 연결 해제 확인
+
+- 사용자가 본계정 jehee/welfare-helper의 Git 연결을 직접 해제했다. 두 계정의 get_git_deployment_context를 읽어 본계정 연결 목록에서 welfare-helper가 빠지고, 캡스톤 welfare7의 jehee826/welfare_helper 연결은 유지됐음을 확인했다.
+- 캡스톤 get_project에서 기존 welfare-helper-iota.vercel.app 도메인과 production dpl_7GrpaDTh8cn95wUTUYZc9AhTuvLp의 READY를 재확인했다. 신규 배포나 사용자 화면 시험을 수행한 것은 아니다.
+- 프로젝트 삭제·GitHub 앱 전체 제거·멤버십/요금제 변경은 수행하지 않았다. 앞선 Chrome 접근은 도구 승인 거절로 변경 전에 종료했고 다른 UI 경로로 우회하지 않았다.
+- 첫 PR 병합 후 다음 단계는 팀원 작업 종료·최종 push·작성권 인계 확인이다. 팀원 브랜치의 별도 Preview 차단은 중복 프로젝트 해제만으로 해결됐다고 판단하지 않는다.
+
+<a id="log-20261110-1549-webchat-integration"></a>
+## 2026-11-10 15:49 KST · 팀원 웹 통합·충돌 해결·서버 오류 계약 정정
+
+- 팀원 작업 인계 뒤 원격 main9a5ffcea0d35949778d92ab5d4c0c9c375981694와 Claude14b8bf8de66892d1a77bc3d00699720d25dd74f9를 fetch로 확인했다. 로컬 기존 codex/fix-merge2c292d1의 clean 상태와 문서3커밋을 보존하고 claude/FrontEnd-webchat 추적 브랜치로 전환해 main을 merge했다. worktree·이력 재작성은 사용하지 않았다.
+- 로컬 루트 C:/Users/jehee/vscode-workspace/welfare_helper의 지정 4파일만 개발 세션에 순차 작성 위임했다. 설계는 작성권 반환 전 읽기만 수행했고 개발은 Git/index·문서·EC2를 변경하지 않았다. 충돌은 FrontEnd/src/pages/DocumentsPage.tsx, pages/documents.css, styles/app.css, styles/tokens.css 네 개였다.
+- DocumentsPage는 main의 prepared boolean|null·programsLoaded·canUpload·abort 경계·오류/빈목록 구분과 팀원의 document-hint·grid-2·inputMode를 함께 보존했다. 스타일은 main의 색상·control-line·상태 테두리·반응형과 팀원의 line-strong·danger-bg·관리자 배치/입력·모달 줄바꿈을 결합했다. 전체 ours/theirs 선택 없이 양쪽 diff를 읽었고 b527320으로 로컬 병합했다.
+- 독립 읽기 검토가 확인한 결함은 웹의 민감정보 422 처리 한 건이다. BackEnd/main.py는 detail 문자열 sensitive_input을 반환하나 웹은 배열형만 인식해 형식/300자 안내로 표시했다. 개발이 chatApi.ts의 문자열 분기1줄과 WebChatPage.test.tsx 기존 오류 표의 실제 응답 사례1줄만 추가했고 설계가 읽어55a791d로 커밋했다. 배열형 호환은 유지했다.
+- 공개 /webchat와 관리자 /admin/*의 인증 분리, credentials omit·Authorization 미포함, 질문300자·600초 요청, answer/fallback·contacts 계약을 main과 대조했다. 이 범위에서 추가 확정 결함은 없었다. 대화 이력·연속 상담 부재는 의도된 단발성 설계이므로 변경하지 않았다.
+- 검증은 코드·diff·충돌 표식 텍스트·Git 상태 읽기뿐이다. 테스트·node·타입/구문검사·빌드·HTTP·Chrome·모델·CI 실행은 하지 않았으며 실제 동작 통과를 주장하지 않는다. EC2 B11·환경설정·DB·실행 서비스는 이번 작업에서 접근하거나 변경하지 않았다.
+- 첫 PR/Vercel 결과를 담은 로컬 후속 문서 c09bf61·706aec3·2c292d1을 정상 merge로 통합하고 현재 계획·인계·두 번째 PR 본문을 갱신한다. 다음 범위는 원격 push·두 번째 PR 생성/병합·배포 메타데이터 확인이다. 기존14b8bf8 Preview 차단은 새 HEAD에서 별도 확인하며 성공을 미리 가정하지 않는다.
+
+<a id="log-20261110-1556-webchat-ci"></a>
+## 2026-11-10 15:56 KST · 기존 PR #19 갱신·Preview 성공·자동 CI 기대값 정정
+
+- 기존 팀원 PR #19(head14b8bf8→main)을 발견해 중복 생성하지 않고 재사용했다. 문서 이력 병합ff3d47426dc34afe8fa12cb110deb30adddd0d90까지 원격 Claude ref에 정상 push하고 제목·본문을 통합 결과로 갱신했다. main9a5ffce·headff3d474·mergeable=true·11커밋/22파일을 확인했다.
+- 실제 welfare7 프로젝트의 ff3d474 Preview dpl_Dyx6qZrtxiWER6PbvGVLLjoLd2jq가 READY이며 GitHub Vercel 상태도success다. 기존14b8bf8의 팀 접근 BLOCKED는 새 커밋에서 재현되지 않았다. Git 작성자·계정·멤버십·환경설정·배포보호는 변경하지 않았다.
+- push로 시작된 자동 CI run42771311022의 Python worker/backend/dev3job은success다. web-extension은 웹 test:ci와 build:ci 성공 후 확장507건 중505통과/2실패했다. 해당 실패 로그만 읽었으며 수동 검사·재실행 요청은 하지 않았다.
+- 실패1은 conversation_layout.test.cjs:7의 이전 문서 연결 오류 기대값이다. 현행 공개 상담 오류 문구로 정정하고 닫힌 메뉴 밖 .status 표시 단언을 유지했다. 실패2는 profile_usage.test.cjs:186의 재조회 중 확인 문구 기대값이다. 현행 코드는 성공 전까지 기존 오류를 보여 주므로 error 동일 단언으로 정정하고 retry 비활성·저장 profile 존재 시 toggle 활성 단언을 함께 유지했다.
+- 개발이 검사2파일만 각1행 교체했고 설계가 diff를 검토했다. 제품 코드는 변경하지 않았다. 5초 기한·현재 질문 profile_context 미첨부·늦은 응답 무시·저장 ON 보존·성공 ON 복구 단언은 그대로다. 새 자동 CI 성공은 아직 확인 전이며 후속 push 뒤 결과를 확인한다.
+- 팀원 기존 PR의146개/tsc/build 및 대역 화면 통과는 팀원 이전 보고이며 이번 통합 검증과 구분한다. 실제 Chrome·운영 API 종단·마이크·기기 음성은 미확인이다.

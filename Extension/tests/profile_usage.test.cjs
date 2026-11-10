@@ -183,7 +183,7 @@ test('유실된 정보 사용 응답은5초 실패·재확인으로 회복하고
     await panel.question('정보 없이 보낼 합성 질문');assert.equal(Object.hasOwn(panel.ports.at(-1).packet.payload,'profile_context'),false);
     expire();await settle();assert.doesNotMatch(status.textContent,/확인 중/);assert.match(status.textContent,/시간|응답/);
     const error=status.textContent;release({ok:true,state:record,supported:true,valid:true});await settle();assert.equal(status.textContent,error);assert.deepEqual(f.data[usageKey],record);
-    await panel.click('다시 확인');assert.match(status.textContent,/확인 중/);assert.equal(section.querySelector('.profile-usage-retry').disabled,true);
+    await panel.click('다시 확인');assert.equal(status.textContent,error);assert.equal(section.querySelector('.profile-usage-retry').disabled,true);assert.equal(section.querySelector('input').disabled,false);
     release({ok:true,state:record,supported:true,valid:true});await settle();assert.equal(section.querySelector('.profile-usage-retry').hidden,true);assert.equal(section.querySelector('input').checked,true);assert.deepEqual(f.data[usageKey],record);
   }finally{panel.close();}
 });

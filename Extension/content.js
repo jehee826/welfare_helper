@@ -116,14 +116,9 @@
   summaryClose.type=summaryRun.type=summaryCancel.type='button';summaryClose.className='summary-dismiss';summaryClose.textContent='×';summaryClose.setAttribute('aria-label','요약 창 닫기');summaryRun.className='summary-run';summaryRun.textContent='요약하기';summaryCancel.textContent='요약 취소';summaryCancel.hidden=true;
   summaryTop.append(summaryHeading,summaryClose);summaryActions.append(summaryRun,summaryCancel);summaryPanel.append(summaryTop,summaryBody,summaryActions);
   function updateSummaryControls(){
-    const reason=mode!=='document'?'복지 상담 모드에서 요약할 수 있습니다.':
-      !currentAccess?'문서 접근 상태를 확인 중입니다.':
-      currentAccess.mode!=='anonymous'?'공개 상담에서만 요약할 수 있습니다.':
+    const reason=currentAccess?.mode!=='anonymous'?'공개 상담에서만 요약할 수 있습니다.':
       summaryBusy?'현재 상담을 요약하고 있습니다.':
-      busy||requestPending?'진행 중인 질문을 마친 뒤 요약할 수 있습니다.':
-      !savedPanel?.ready?'대화 저장 상태를 확인한 뒤 요약할 수 있습니다.':
-      savedPanel.hasUnsaved?'미저장 답변을 처리한 뒤 요약할 수 있습니다.':
-      !savedPanel.state.conversations[0]?.messages.length?'요약할 상담이 없습니다.':'';
+      !savedPanel?.state?.conversations[0]?.messages.length?'요약할 저장 대화가 없습니다.':'';
     summaryButton.disabled=false;summaryButton.title='상담 요약 열기';summaryRun.disabled=!!reason;summaryRun.title=reason||'보관된 대화를 요약합니다. 길면 최근 일부만 사용합니다.';summaryCancel.hidden=!summaryBusy;
   }
   function stopSummary(){
@@ -142,7 +137,7 @@
   summaryButton.addEventListener('click',()=>{profileOpen=false;setModal('summary');updateProfileView();showSavedSummary(lastSummary);void savedPanel?.refreshSummary();});
   summaryRun.addEventListener('click',()=>void summarizeConversation());
   async function summarizeConversation(){
-    if(summaryRun.disabled||activeModal!=='summary'||mode!=='document'||currentAccess?.mode!=='anonymous')return;
+    if(summaryRun.disabled||activeModal!=='summary'||currentAccess?.mode!=='anonymous')return;
     stopSummary();stopSpeech();inputAssist?.cancel();summaryBusy=true;updateRequestControl();inputAssist?.update();
     const version=summaryVersion,requestId=GyeoteDOM.id(),startedAt=Date.now();let submitted;
     const finish=error=>{
@@ -171,8 +166,8 @@
         try{
           if(packet.type!=='result')throw new Error(packet.error||'invalid_reply');
           if(Date.now()>=startedAt+seconds*1000)throw new Error('request_timeout');
-          const current=savedPanel.context();
-          if(current.expectedRevision!==selected.context.expectedRevision||current.generation!==selected.context.generation||current.conversationId!==selected.context.conversationId||current.accessId!==selected.context.accessId)throw new Error('conversation_conflict');
+          const current=savedPanel.state;
+          if(current?.revision!==selected.context.expectedRevision||current.generation!==selected.context.generation||current.lastActiveConversationId!==selected.context.conversationId||currentAccess?.accessId!==selected.context.accessId)throw new Error('conversation_conflict');
           const result=GyeoteProtocol.summaryReply(packet.body,submitted);
           clearTimeout(summaryTimer);summaryPort=null;port.disconnect();
           let stored;

@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 11:03 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 11:29 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -811,3 +811,18 @@
 - 설계 착수 로컬은 codex/fix-merge·c9fd24b, 원격 추적69bda0c이며 index는 비어 있고 README/현행 확장 설계 초안2개가 남아 있다. 문서통합ef2067c·재로딩c9fd24b와 재개 기록을 먼저 공유한 뒤 개발의 EC2 ff-only 동기화·제품 수정을 직렬화한다.
 - 범위는 로컬 내 정보 즉시 표시/조작·마지막 성공 요약의 확장 로컬 저장/F5 복원·자체 메타 안내 제거다. 기존 round3-proposed의 필요한 후속 수정과 관련 검사, baseline 기반 Backend UI 단언1줄 선별 검토·제품 커밋/push·로컬 동기화까지 진행한다. 단계별157성공과 최종 일괄/EC2 적용 검사를 구분하며 Python 연동1건은 기존 중단 원인부터 필요한 범위에서 확인한다.
 - 설계가 세 문서를 작성하고 개발은 결과를 전달한다. 새 문서·새 환경/이미지·가상 장애/부하·운영 재시작·모델/DB 변경을 추가하지 않는다. RAG/B안 채택·CSV/W14와 별도 사용자 웹 구현은 이번 재개 범위에 포함하지 않는다.
+- 11:05 개발의 SSH 읽기 재접속이 정상 복구됐다. 지정 root/gitdir·codex/fix-merge·HEAD b6afc8a·빈 index와 초기 확장9/B안11의 총20파일 미커밋을 확인했다. B안 원본11 raw백업과 candidate.diff(36028바이트)는 기존과 같고 작업파일 나머지10개는 원본해시가 같다. 겹침 diagnostics 한 파일의 기존 UI 단언 차이는 별도 대조 중이며 전체 B안 채택이 아니다. origin/main 관측은20b8b3f였고 이번 기능 작업에 자동 통합하지 않는다.
+- 설계가 문서통합ef2067c·재로딩c9fd24b·재개fa849c9를 지정 기능 브랜치에 push했고 개발에 완료 신호를 전달했다. EC2 제품/index 쓰기는 원본 보존 ff-only pull 뒤 개발 담당 한 명이 진행한다. 설계는 로컬 문서만 수정하며 다음 제품 커밋까지 별도 문서 커밋으로 순서를 끼워 넣지 않는다. Python 중단 원인은 기존 Terra 담당이 먼저 읽기로 좁히며 새 시험 성공을 아직 주장하지 않는다.
+- 개발이 EC2를fa849c9로ff-only동기화했고초기dirty20파일의rawSHA전후동일·빈index·B안11원본백업/patch보존을확인한뒤검증한후속5파일을적용했다. 실제Extension과B안제외committedBackend+UI단언projection170파일은검증사본과모두일치했다. 런타임5개node구문확인과기존8파일단계별157성공을재사용했으며전체재실행으로표현하지않았다.
+- 설계가실제EC2staged런타임5개·기존검사5개와Backend최소hunk를읽었다. diagnostics index는HEAD baseline의자료대조일assert.match를assert.doesNotMatch로바꾼한줄뿐이었다. 추가읽기에서CI에포함된mode.test.cjs:28의옛안내/출처anchor/details양성단언3개가남은것을찾아최소수정을요청했다. 개발이검사이름과그3단언만고쳤고본문·HTML정제·모드전환·DOM수집0·후속history길이단언은유지했다. Terra의실제적용round4-mode-test.log는10/10성공이고설계도원로그/최종hunk를읽었다. 기존157과별도10을합친관련9파일의단계별고유167성공이며최종9파일일괄재실행이아니다.
+- Python연동1건의1회진단은수집1건후test_api.py:48 TestClient진입의Windows asyncio socket._fallback_socketpair accept대기로좁혀졌다. 검사본문과Node/DTO bridge에는도달하지않았으며미통과다. 개발이8409바이트진단로그와시험Python/Node종료를확인했고환경/방화벽/제품코드우회·재설치·재실행은하지않았다. Linux자연CI에서해당기존검사를확인한다.
+- 개발이EC2에서staged-only제품커밋 `ada12d3835f22930a2814012398ce4cdd6595296`을만들었다. 범위는런타임5·기존확장검사6·Backend UI단언1줄의12파일(221+/82-)이며B안제품변경은혼입하지않았다. 설계가EC2기능ref를SSHfetch해정확한SHA/12파일을확인하고로컬fa849c9→ada12d3 ff-only·origin/codex/fix-merge명시push했다. 로컬문서초안5개는보존했다.
+- 개발이push뒤EC2 origin pull --ff-only로HEAD와원격ref의ada12d3일치·빈index를확인했다. 잔여unstaged는B안11뿐,원본11raw백업/patch보존·나머지10작업SHA원본동일·겹침1작업파일은원본B+UI단언1줄만의차이이며최종170projection도round4-applied와일치했다. 비민감원결과는기존EC2 task폴더 final-product-preservation.json에보존했다. 서비스/모델/DB변경·추론은없었다.
+- 제품자연CI [42741486168](https://github.com/jehee826/welfare_helper/actions/runs/42741486168)를설계가읽기감시중이다. 현재제품Git동기화는완료했고최종CI·README/현행설계확정과세문서동기화·실제Chrome확인이남았다. 제품반영과운영backend이미지교체를혼동하지않는다.
+- 11:20 제품CI42741486168은 python backend/worker/dev3job성공, dev666passed/13skipped/2subtests(18.68초), 프런트120·타입/빌드성공이지만 web-extension506중499성공/7실패로끝났다. 이전집중167성공으로이번최종자연CI실패를덮지않는다.
+- 설계와개발이실제job129583342372로그를읽었다. privacy.test.cjs:48의삭제한인용면책안내양성단언1건과profile_worker.test.cjs의저장/경합/재설정6건실패다. 실제worker는importScripts로store를로드하지만profile단위fixture는이를빈함수로생략해storage.set통지가새summaryKey참조에서예외나는것을확인했다. 개발은runtime을바꾸지않고fixture의실제importScripts로더3줄과privacy의해당단언1줄만수정해실패2파일집중검사중이다. 민감값가림·원문비노출·공공번호·후속history단언은유지한다.
+- 후속실패2파일의Terra집중검사는round5-ci-followup-test.log에서44/44·fail/skip0이며설계도원로그를읽었다. 실제EC2의staged2파일(privacy단언1줄·profile_worker실제로더3줄),170projection/검증사본일치·runtime0변경을읽기수용했다. 개발이staged-only후속커밋 `f36306481ba924d2229ba26ae95111fb4295f958`(2파일4+/2-)을만들고빈index/잔여B11·원본11백업/나머지10동일/겹침1UI최소변경을재확인했다.
+- 설계가f363064를EC2SSHfetch해정확한SHA/2파일을읽고로컬ada12d3→f363064 ff-only·origin/codex/fix-merge명시push했다. 기존설계문서5개수정은보존했다. 개발에EC2 origin동기화/원본보존확인을배정했고설계가후속자연CI를확인한다. 첫CI의7실패는그대로보존하고후속CI성공전완료로표시하지않는다.
+- 기존README와현행확장설계를실제ada12d3런타임계약에맞춰확정중이다. 이전버전의메모리요약을자동복구하는것이아니라갱신후새성공요약부터저장하므로실제확장확인은같은설치/프로필/폴더를유지해다시로드→복지로새로고침→새요약성공1회→F5복원순서다. 삭제/재설치·전체기록초기화를요청하지않는다.
+- 후속자연CI [42742565935](https://github.com/jehee826/welfare_helper/actions/runs/42742565935)는정확한f363064에서completed/success다. python backend/worker/dev와web-extension의4job이통과했다. 설계가실제로그를읽어확장506/506·skip/fail0,프런트13파일120성공·타입/빌드성공,백엔드666passed/13skipped/2subtests(18.44초)를확인했다. Windows개별검사의초기화미통과기록을지우지않으며Linux CI검사성공과구분한다. 첫CI의7실패는위이력으로보존한다.
+- 개발의후속EC2 origin ff-only동기화보고에서HEAD/origin f363064일치·빈index·잔여B11·원본11백업/나머지10동일/겹침UI1줄·최종170projection일치를재확인했다. 실제제품runtime은ada12d3과동일하고이후변경은검사뿐이다. README/현행확장설계를실제계약으로확정하고활성세문서에는완료/남은Chrome확인과일지링크를반영했다. 설계가이문서5개만선별공유한뒤개발이EC2문서ff-only동기화와원본보존을마지막으로확인한다. 새기능/추론/운영변경은추가하지않는다.

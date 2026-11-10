@@ -1,27 +1,27 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 11:54 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 12:06 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- F1~F3는사용자반영확인까지완료했다. F4 확장옵션메뉴/F5 음성안내토글삭제는구현·읽기리뷰·관련87검사와EC2/로컬제품커밋까지완료했고 **원격공유승인대기**다. F6 추천로직은읽기검토완료이며코드는바꾸지않았다. [현재 완료·검토·잔여](devlog.md#log-20261110-1147-menu-review) / [이전 반영·검사](devlog.md#log-20261110-1103-resume)
+- F1~F3는사용자반영확인까지완료했다. F4/F5 메뉴삭제는 **코드·동기화·자동CI완료, 실제확장확인대기**다. F6는추천로직검토/보고완료이며실제개선구현은미착수다. [현재 완료·검토·잔여](devlog.md#log-20261110-1147-menu-review) / [이전 반영·검사](devlog.md#log-20261110-1103-resume)
 - 활성 계획/진행/인계는 이 세 파일만 사용하며 설계가 단일 작성자다. 개발에는 새 지침 재로딩과 고정 문서 역할을 다시 전달했다. [문서 통합·재로딩 기록](devlog.md#log-20261110-1046-f8b909)
 
 ## 구현·배포 기준과 보존할 변경
 
-- 로컬 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, EC2 `/home/ubuntu/welfare_helper`, 담당브랜치 `codex/fix-merge`의새제품기준은 `331c3a8979e36b523524b4b80c1932af700af980`이다. 원격은직전 `da5bb3b`이며새코드는미push다. 로컬문서/Git은설계단독이고EC2에는B11만unstaged로보존됐다.
+- 로컬 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, EC2 `/home/ubuntu/welfare_helper`, 담당브랜치 `codex/fix-merge`의제품기준은 `331c3a8`,구현/검증기준은 `7be37209d9b57500b727cbe5491b84cc1845a8b2`이다. 로컬/GitHub/EC2동기화·빈index·EC2 B11보존을확인했다. 이후종료기록은기존세문서만갱신한다.
 - backend/worker 운영 이미지 기준은 `c500ae5` 그대로다. backend `7fe269f305911a8e69004ef333ffa6e82c0cf600d6879b9ad83553a3250a7c63`, worker `5ae7df5b290797e2249ac5489cae09299a9fb95aed4ddbb6359eb2ce5ae9e820`. Ollama/edge·기존 모델·공개364문서/921벡터를 유지했다. 이번 확장/검사 변경으로 서버 이미지를 교체하거나 재시작하지 않았다.
-- 확장은 기존 `Extension/`, MV3/0.1.0, API `https://15.164.190.21`이다. 로컬 실제 소스도 최신 제품으로 동기화했다. [제품CI](https://github.com/jehee826/welfare_helper/actions/runs/42742565935)는 확장506/506·프런트120·백엔드666/13skip/2subtests와 타입/빌드 성공이다. 실제 설치 Chrome 재로드/동작은 아직 미확인이다.
+- 확장은기존 `Extension/`, MV3/0.1.0,API `https://15.164.190.21`이다. [현재제품CI](https://github.com/jehee826/welfare_helper/actions/runs/42746898662)는4job·확장506/506·프런트120·백엔드666/13skip/2subtests·타입/빌드성공이다. F1~F3는사용자반영확인을받았고새F4/F5의실제Chrome확인은아직대기다.
 - 기존 `Extension/README.md`·`docs/design/extension.md`를 실제 반영 계약으로 확정해 이 기록과 함께 공유한다. 모든 상세 검사·실패·수정과 원자료 위치는 일지를 따른다.
 - EC2 실패 B안11파일과 원자료는 보존 상태다. Backend UI 검사1줄만 baseline 기준으로 커밋했고 B안 제품코드는 포함하지 않았다. 원본11 백업·나머지10 작업해시 동일·겹침1의 의도된 UI 단언 차이를 유지한다.
 - 관리자 최신 UI는 fix-merge preview, production 관리자 도메인은 main 기존본이다. 현재 비밀번호 유지 영속 인증은 활성이고 W14 수집은 OFF다. production 비밀번호를 회전하거나 실자료를 재적재하지 않는다.
 
 ## 바로 다음에 할 일
 
-1. 설계가추천검토결과와제품/문서의구체커밋범위를보고하고원격push승인을확인한다. 승인뒤EC2원본보존ff-only동기화와자연CI를확인한다.
-2. 새반영본은기존설치에서다시로드해메뉴제거와마이크/관리자접근을확인한다. 추천개선은검토보고후별도구현지시를받는다.
+1. 기존설치에서확장다시로드→복지로F5후메뉴2개제거와마이크/⋯관리자접근유지를확인한다.
+2. 추천개선은기존일지의검토결과를기준으로별도구현지시를받는다. 현재는추가개발을시작하지않는다.
 3. 최종main PR과별도사용자웹·RAG/CSV/W14는자동착수하지않는다.
 
 ## 계속 대기할 범위

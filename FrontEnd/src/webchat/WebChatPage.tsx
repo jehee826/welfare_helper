@@ -213,13 +213,17 @@ export function WebChatPage({ baseUrl = apiBase() }: { baseUrl?: string | null }
   return (
     <div className="wc-root">
     <div className="wc-page">
-      <header className="wc-top">
-        <p className="wc-brand">곁에</p>
-        <h1>복지 안내 질문하기</h1>
-        <p className="wc-lead">질문 하나를 보내면 공식 문서를 바탕으로 답변과 문의처를 알려 드립니다.</p>
+      <header className="wc-header">
+        <p className="wc-brand">
+          곁에<span className="wc-brand-sub">복지 안내</span>
+        </p>
       </header>
 
       <main>
+        <div className="wc-intro">
+          <h1>복지 안내 질문하기</h1>
+          <p className="wc-lead">질문 하나를 보내면 공식 문서를 바탕으로 답변과 문의처를 알려 드립니다.</p>
+        </div>
         {!baseUrl ? (
           <p className="wc-banner wc-banner-error" role="alert">
             {ERROR_MESSAGES.config}

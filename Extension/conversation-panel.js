@@ -138,9 +138,9 @@
       ownedPair=null;
     }
     async function summaryRequest(){
-      const value=context();
+      const value={expectedRevision:state?.revision,generation:state?.generation,conversationId:state?.lastActiveConversationId,accessId:access?.accessId};
       const response=await send('summary',{expectedRevision:value.expectedRevision,generation:value.generation,conversationId:value.conversationId});
-      if(!matches(value)||pending)throw new Error('conversation_conflict');
+      if(!matches(value))throw new Error('conversation_conflict');
       if(!Number.isSafeInteger(response.displaySummaryRevision))throw new Error('conversation_summary_invalid');
       return {context:value,summaryRevision:response.displaySummaryRevision,...response.input};
     }

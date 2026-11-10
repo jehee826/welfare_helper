@@ -1,29 +1,30 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 13:19 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 13:53 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- F7 단순화를 EC2·로컬에 반영했다. 저장 대화 읽기→기존 요약 API→결과 저장은 유지하고 화면 모드·다른 질문 진행·미저장 답변에 따른 차단을 제거했다. 변경 JS 2파일의 구문만 각 1회 확인했으며 동작 시험은 사용자가 직접 한다. [진행 범위](devlog.md#log-20261110-1315-summary-simple)
+- 전체 질문 주제를 한 문장으로 요약하는 프롬프트의 원격·EC2 운영 반영을 완료했다. 실행 컨테이너의 프롬프트 일치·healthy·HTTPS 200을 확인했고 모델 출력 시험은 하지 않았다. [배포 결과](devlog.md#log-20261110-1332-summary-deploy)
+- W14 기록 테이블 연결과 backend/worker 수집 ON을 완료했다. 인증된 관리자 조회 200·비로그인 401을 확인했다. 실제 상담의 첫 연락처 기록과 Chrome 화면은 사용자 확인이 남는다. [활성화 결과](devlog.md#log-20261110-1338-referrals-on)
 - 활성 계획/진행/인계는 이 세 파일만 사용하며 설계가 단일 작성자다. 개발에는 새 지침 재로딩과 고정 문서 역할을 다시 전달했다. [문서 통합·재로딩 기록](devlog.md#log-20261110-1046-f8b909)
 
 ## 구현·배포 기준과 보존할 변경
 
-- 로컬루트 `C:/Users/jehee/vscode-workspace/welfare_helper`,EC2 `/home/ubuntu/welfare_helper`,브랜치 `codex/fix-merge`다. 새 EC2 제품은 `f7264e7`, 로컬은 기존 문서를 함께 보존한 기능 통합 `abd059b`이며 제품 소스가 반영됐다. 원격은이전534783f로아직미push다. B11은보존하고로컬/EC2 Git조작을직렬화한다.
-- backend/worker 운영 이미지 기준은 `c500ae5` 그대로다. backend `7fe269f305911a8e69004ef333ffa6e82c0cf600d6879b9ad83553a3250a7c63`, worker `5ae7df5b290797e2249ac5489cae09299a9fb95aed4ddbb6359eb2ce5ae9e820`. Ollama/edge·기존 모델·공개364문서/921벡터를 유지했다. 이번 확장/검사 변경으로 서버 이미지를 교체하거나 재시작하지 않았다.
-- 확장은기존 `Extension/`, MV3/0.1.0,API `https://15.164.190.21`이다. [현재제품CI](https://github.com/jehee826/welfare_helper/actions/runs/42746898662)는4job·확장506/506·프런트120·백엔드666/13skip/2subtests·타입/빌드성공이다. F1~F3는사용자반영확인을받았고새F4/F5의실제Chrome확인은아직대기다.
+- 로컬루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, EC2 `/home/ubuntu/welfare_helper`, 브랜치 `codex/fix-merge`다. 로컬·원격·EC2 제품 기준은 `f11e8af`다. B11은 보존하고 로컬/EC2 Git 조작을 직렬화한다.
+- backend는 f11e8af 커밋 소스 기반 `595f3713aa4f2a2ddc2af61d479b6a8bcb9a88647ef4f88cf9d6497501e6546c`, worker 이미지는 기존 `5ae7df5b290797e2249ac5489cae09299a9fb95aed4ddbb6359eb2ce5ae9e820`다. 두 서비스는 기록 설정 true로 재생성했고 healthy다. backend 부팅 이미지 pin과 Docker 영속 설정을 반영했다. Ollama/edge·기존 모델·문서/벡터·볼륨은 유지했고 재부팅 시험은 하지 않았다.
+- 확장은 기존 `Extension/`, MV3/0.1.0, API `https://15.164.190.21`이다. [이전 메뉴 변경 CI](https://github.com/jehee826/welfare_helper/actions/runs/42746898662)는 4job 성공이며 이번 요약/운영 변경의 시험 결과를 대신하지 않는다. 최신 모델·Chrome·CI 시험은 하지 않았다.
 - 기존 `Extension/README.md`·`docs/design/extension.md`를 실제 반영 계약으로 확정해 이 기록과 함께 공유한다. 모든 상세 검사·실패·수정과 원자료 위치는 일지를 따른다.
 - EC2 실패 B안11파일과 원자료는 보존 상태다. Backend UI 검사1줄만 baseline 기준으로 커밋했고 B안 제품코드는 포함하지 않았다. 원본11 백업·나머지10 작업해시 동일·겹침1의 의도된 UI 단언 차이를 유지한다.
-- 관리자 최신 UI는 fix-merge preview, production 관리자 도메인은 main 기존본이다. 현재 비밀번호 유지 영속 인증은 활성이고 W14 수집은 OFF다. production 비밀번호를 회전하거나 실자료를 재적재하지 않는다.
+- 관리자 최신 UI는 fix-merge preview, production 관리자 도메인은 main 기존본이다. 기존 비밀번호와 영속 인증은 유지했고 W14 수집은 ON이다. backend 재생성으로 기존 관리자 세션이 만료됐을 수 있으므로 다시 로그인한다. 비밀번호 회전·실자료 재적재는 하지 않았다.
 
 ## 바로 다음에 할 일
 
 1. 사용자가 기존 확장을 다시 로드하고 복지로 F5 뒤 요약 창의 요약하기를 직접 시험한다.
-2. 원격공유는구체범위승인뒤진행한다. 에이전트의추가테스트/HTTP/모델/Chrome/CI실행은하지않는다.
-3. 최종main PR과별도사용자웹·RAG/CSV/W14는자동착수하지않는다.
+2. 연락처가 안내되는 새 상담 이후 관리자 연락처 안내 기록에서 조회한다. 수집 ON 이전의 대화는 소급 기록하지 않는다. 별도 CSV는 보류한다.
+3. 최종 main PR과 별도 사용자 웹·RAG/CSV는 자동 착수하지 않는다. 추가 모델/Chrome/CI 시험은 하지 않는다.
 
 ## 계속 대기할 범위
 
-RAG 정확도/B안 채택, 별도 연락처 CSV/W03 매핑·W14 활성화는 보류다. 실제 관리자 긍정 UI/production 비밀번호 회전·실재부팅 등 미실측은 계획에 남기되 가상의 장애/DB복구·부하 시험을 새 필수로 추가하지 않는다. 상세 완료/미검증 근거는 계획의 일지 링크를 따른다.
+RAG 정확도/B안 채택과 별도 연락처 CSV/W03 매핑은 보류다. W14 기존 운영 기록 기능은 활성화 완료이며 실제 상담 1건의 저장·Chrome 화면은 미실측이다. production 비밀번호 회전·실재부팅 등 기존 미실측은 별개로 유지한다. 상세 근거는 계획의 일지 링크를 따른다.

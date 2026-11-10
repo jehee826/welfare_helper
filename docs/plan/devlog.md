@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 13:19 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-10 13:53 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -877,3 +877,23 @@
 
 - 13:19 EC2 제품 커밋 `f7264e72f37906eb9c91f8907dce4a895db48ee3`의 content.js·conversation-panel.js 2파일(7줄 추가/12줄 삭제)을 읽기 검토했다. 화면 모드·다른 질문 진행·저장 준비/미저장 상태에 따른 선제 차단을 제거하고, 저장 대화 존재·중복 요약·공개 접근 확인과 기존 저장 충돌 방지는 유지했다. 길이 처리·API·저장 형식·백엔드는 바꾸지 않았다.
 - 개발이 변경 JS의 node --check만 각 1회 통과했다고 보고했다. 자동 테스트·HTTP·LLM·Chrome·CI는 실행하지 않았다. B11은 보존했고, 설계는 SSH fetch 후 기존 문서 이력을 보존하는 기능 통합 `abd059b`로 로컬 확장에 반영했다. 원격 push·서비스 반영은 없으며 동작 시험은 사용자가 직접 한다.
+
+<a id="log-20261110-1332-summary-deploy"></a>
+## 2026-11-10 13:32 KST · 한 문장 요약 프롬프트와 운영 반영
+
+- 요약이 마지막 답변의 긴 재설명으로 나오는 피드백에 따라 `BackEnd/conversation_summary.py`의 `SUMMARY_SYSTEM`만 변경했다. 전체 사용자 질문 주제를 빠짐없이 짧은 한국어 한 문장으로 정리하고 인사·챗봇 답변·혜택 설명을 제외한다. JSON text 계약과 데이터 전달·길이 처리·저장 로직은 그대로다. 실제 요청 입력을 수집하지 않았으므로 이전 주제 누락의 실행 시점 원인은 확정하지 않았다.
+- 제품 커밋 `7ec2307db420eaa2e642c5230889571d894d27f5`는 한 파일의 프롬프트 6줄 추가/7줄 삭제뿐이다. 설계가 diff를 읽고 기존 로컬 이력을 보존한 `f11e8af`로 통합했다. 이 단계에는 테스트·모델 호출·배포가 없었다.
+- 원격·EC2 적용 지시에 따라 `origin/codex/fix-merge`를 534783f→f11e8af로 push했다. 미반영 요약 변경과 기록의 10커밋·12파일이 포함된다. 기존 개발 담당이 EC2 ff-only pull과 커밋 소스 기반 backend만 갱신한다. B11 미커밋 후보·worker/ollama/edge·기존 모델/설정/데이터는 보존한다. 모델 시험 없이 런타임 프롬프트 및 배포 준비상태만 최소 확인한다.
+- 첫 후보 f393936 이미지에는 새 OCI revision 라벨이 추가돼 기존 설정 보존 검사에서 labels_changed로 중단됐다. 기존 backend를 멈추기 전이었으며 rollback_errors=0이다. 새 라벨만 빌드 산출물에서 제거하고 동일 커밋 소스로 다시 빌드했으며 설정 보존 검사는 완화하지 않았다.
+- 최종 backend 이미지 `595f3713aa4f2a2ddc2af61d479b6a8bcb9a88647ef4f88cf9d6497501e6546c`로 적용 완료했다. 실행 컨테이너의 SUMMARY_SYSTEM 일치·running/healthy·HTTPS health 200과 backend 부팅 이미지 pin 갱신을 확인했다. 의존성 설치·모델 호출은 없었고 기존 컨테이너/이미지를 복구용으로 보존했다. 원자료는 `.local/co-op/checks-runtime/summary-prompt-deploy-f11e8af-20261110/rollout-result.json` 및 `final-result.json`에 있다.
+
+<a id="log-20261110-1338-referrals-on"></a>
+## 2026-11-10 13:38 KST · 연락처 기록 DB·수집·관리자 조회 활성화 착수
+
+- 요약 배포를 마친 뒤 기존 W14 기록 기능을 활성화한다. 별도 CSV/W03 적재는 계속 보류하고 이미 공개 문서에서 안내되는 연락처를 기록한다. 제품 코드나 새 관리자 화면을 추가하지 않는다.
+- 설계의 Supabase 읽기에서 welfare_helper(prnnxajhbtvrxuaejihy)가 ACTIVE_HEALTHY이며 departments/rag_documents는 RLS가 켜져 있고 contact_referrals는 존재하지 않았다. 기존 0006_contact_referrals.sql과 관리자 GET·ReferralsPage가 준비되어 있다. 설정 ON에 앞서 기존 마이그레이션의 기록 테이블만 필요하다.
+- 운영·DB 쓰기 담당은 기존 개발 채팅 하나로 지정했다. 실제 런타임 DB와 대상 일치 확인→기존 0006 적용→backend/worker REFERRAL_RECORDS_ENABLED=true 영속 적용→최소 기록/관리자 조회 확인 순서다. 기존 .env·문서·관리자·B11·모델·edge·볼륨을 보존하며 새 모델 호출/Chrome/전체 검사는 하지 않는다. 시험 기록을 쓰는 경우 비민감 공개 연락처 1건과 해당 시험 키만 정리한다.
+- 13:53 완료 보고와 실제 배포 출력을 검토했다. backend/worker가 동일 Supabase 프로젝트의 postgres DB를 쓰는 것을 각 연결로 확인한 뒤 기존 0006만 MCP apply_migration(contact_referrals)으로 적용했다. RLS ON, anon/authenticated 접근 false, service_role SELECT/INSERT/DELETE true이며 다른 테이블은 변경하지 않았다.
+- backend/worker는 기존 각 이미지 595f3713/5ae7df5b를 그대로 사용하고 REFERRAL_RECORDS_ENABLED=true만 바꿔 재생성했다. 두 서비스 healthy, 나머지 환경·볼륨·네트워크·권한·GPU·restart 설정과 Ollama/edge의 ID/image/StartedAt은 유지했다. 기존 이름 기반 부팅 스크립트는 환경을 덮어쓰지 않고 컨테이너를 시작하므로 Docker 영속 설정과 재시작 정책에서 ON을 유지한다. 실제 재부팅은 하지 않았다.
+- 공개 capabilities 200·referral_records_enabled=true, 비로그인 관리자 GET 401, 정상 credentials의 메모리 사용으로 login 200→관리자 referrals GET 200→logout 204를 확인했다. 토큰·비밀 출력, .env 읽기/편집, 관리자 재발급·인증 우회는 없었다. 재기동으로 기존 관리자 세션은 재로그인이 필요할 수 있다.
+- 실제 상담·합성 기록 행은 만들지 않았다. 수집 1건 쓰기·실제 Chrome 화면·모델 출력·재부팅은 미실측이며 API 준비상태와 구분한다. B11 전후 동일·빈 index를 확인했고 추가 제품 코드·CSV/문서 적재·모델/자동테스트/CI 실행은 없었다. W14 원자료는 같은 배포 폴더의 `w14-activation/result.json`과 `readiness.json`이다.

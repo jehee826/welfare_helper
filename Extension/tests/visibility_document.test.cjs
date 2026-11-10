@@ -29,7 +29,7 @@ for(const ending of ['cancel','deadline','pagehide','mode','profile','access','c
   if(ending==='pagehide')f.w.dispatchEvent(new f.w.Event('pagehide'));
   if(ending==='mode')await f.mode('screen');
   if(ending==='profile')await server.send({type:'gyeote:profile-save',expectedRevision:1,profile:{age:60}});
-  if(ending==='access')await server.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:require('../protocol.js').documentOrigin()}},{id:'x',url:'chrome-extension://x/options.html'});
+  if(ending==='access'){server.session.documentAccessId='changed';server.notify({documentAccessId:{newValue:'changed'}},'session');}
   if(ending==='conversation'){await f.click('전체 대화 삭제');await f.click('삭제 확인');}
   await settle();
   if(ending==='profile'){

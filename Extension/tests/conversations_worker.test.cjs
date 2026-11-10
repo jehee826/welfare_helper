@@ -168,9 +168,9 @@ test('복수 탭 쓰기는 하나만 성공하며 같은 선택의 오래된 rev
   const f=worker();const replies=await Promise.all([append(f,(await f.action('get')).state,'A'.repeat(20),'첫 탭',answer,1),append(f,(await f.action('get')).state,'B'.repeat(20),'둘째 탭',answer,2)]);
   assert.equal(replies.filter(value=>value.ok).length,1);assert.equal(replies.find(value=>!value.ok).error,'conversation_conflict');assert.equal(f.data[key].conversations.length,1);
 });
-test('실제 관리자 권한과 accessId·profileRevision·취소 소유권을 검사한다',async()=>{
+test('옛 관리자 선택은 무시하고 accessId·profileRevision·취소 소유권은 검사한다',async()=>{
   const f=worker(),state=(await f.action('get')).state;
-  f.session.documentAccess='admin';assert.equal((await f.action('get')).error,'conversation_access_changed');assert.equal(f.data[key],undefined);
+  f.session.documentAccess='admin';assert.equal((await f.action('get')).ok,true);assert.equal(f.data[key],undefined);
   f.session.documentAccess='anonymous';assert.equal((await f.action('get',{accessId:'stale'})).error,'conversation_access_changed');
   assert.equal((await f.action('begin',{...expected(state),pairId:'A'.repeat(20),profileRevision:-1})).ok,false);
   await f.action('begin',{...expected(state),pairId:'A'.repeat(20),profileRevision:1});await f.send({type:'gyeote:conversation-cancel',pairId:'A'.repeat(20)});
@@ -181,15 +181,15 @@ test('프로필 변경과 append 경쟁에서도 기존 소유권의 답변을 �
   await f.send({type:'gyeote:profile-save',expectedRevision:1,profile:null});
   assert.equal((await f.action('append',{...fields,question:'질문',answer})).ok,true);assert.equal(f.data[key].conversations[0].messages.length,2);
 });
-test('대기 중 append도 취소 소유권을 다시 확인하고 권한 전환은 쓰기와 직렬화된다',async()=>{
+test('대기 중 append도 취소 소유권을 다시 확인하고 삭제한 관리자 메시지는 무시한다',async()=>{
   const f=worker(),state=(await f.action('get')).state,fields={...expected(state),pairId:'A'.repeat(20),profileRevision:1};await beginRequest(f,fields);
   let entered,release;const atProfile=new Promise(resolve=>entered=resolve),gate=new Promise(resolve=>release=resolve);
   f.failure.beforeGet=async name=>{if(name===key){entered();await gate;}};
   const committing=f.action('append',{...fields,question:'합성 공개 질문',answer});await atProfile;
-  const switching=f.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:globalThis.GyeoteProtocol.documentOrigin()}},{id:'x',url:'chrome-extension://x/options.html'});
+  const switching=f.send({type:'gyeote:admin-connect',session:{token:'a'.repeat(40),expiresAt:Math.floor(Date.now()/1000)+600,origin:require('../protocol.js').documentOrigin()}},{id:'x',url:'chrome-extension://x/options.html'});
   await f.send({type:'gyeote:conversation-cancel',pairId:fields.pairId});release();
-  assert.equal((await committing).error,'conversation_request_stopped');assert.equal((await switching).mode,'admin');assert.deepEqual(f.data[key].conversations[0].messages,[]);
-  assert.equal((await f.action('get')).error,'conversation_access_changed');
+  assert.equal((await committing).error,'conversation_request_stopped');assert.equal(await switching,undefined);assert.deepEqual(f.data[key].conversations[0].messages,[]);
+  assert.equal((await f.action('get')).ok,true);
 });
 test('quota 실패는 자료를 보존하고 추론 없이 같은 pair를 재저장한다',async()=>{
   const f=worker(),state=(await f.action('get')).state;f.failure.quota=true;

@@ -188,11 +188,11 @@ test('프로필 변경은 기존 대화 태그와 요약을 바꾸지 않는다'
   await f.send({type:'gyeote:profile-save',expectedRevision:1,profile:{household:'single'}});
   const next=await begin(f,saved.state,pairId(101),1);assert.ok(next.input.history.length);assert.equal(next.input.conversation_context.text,f.data[key].conversations[0].summary.text);assert.equal(next.input.conversation_context.profileRevision,1);
 });
-test('요약 응답도 삭제·권한·소유권 변화 뒤 옛 대화를 되살리지 않는다',async()=>{
+test('요약 응답도 삭제·접근 ID·소유권 변화 뒤 옛 대화를 되살리지 않는다',async()=>{
   for(const operation of ['clear','auth','cancel']){
     const f=worker(seed()),state=(await f.action('get')).state,plan=await begin(f,state);
     if(operation==='clear')await f.action(operation,{expectedRevision:state.revision,generation:state.generation});
-    else if(operation==='auth'){f.session.documentAccess='admin';f.session.documentAccessId='changed';}
+    else if(operation==='auth')f.session.documentAccessId='changed';
     else await f.send({type:'gyeote:conversation-cancel',pairId:pairId(100)});
     const before=JSON.stringify(f.data[key]);
     const result=await f.action('append',{...expected(state),pairId:pairId(100),profileRevision:1,question:'늦은 질문',answer:{...answer,context_update:update(plan.input.conversation_context)}});

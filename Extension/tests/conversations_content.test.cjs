@@ -6,14 +6,14 @@ test('빈 발췌 참고자료는 저장과 재열기 뒤 다음 요청의 문서
  try{
   await f.ready();await f.question('첫 질문');await f.answer({kind:'answer',text:'합성 답변',evidence:[ref]});
   assert.equal(server.data[key].conversations[0].messages.at(-1).evidence[0].quote,'');
-  assert.match(f.root.querySelector('.conversation').textContent,/참고자료/);
+  assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/참고자료/);
   assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/원문 블록/);
   assert.deepEqual(server.data[key].conversations[0].messages.at(-1).evidence[0].source_blocks,['block']);
-  assert.match(f.root.querySelector('.conversation').textContent,/쪽: 1/);assert.equal(f.root.querySelector('.conversation a').href,'https://example.invalid/');
+  assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/쪽: 1/);assert.equal(f.root.querySelector('.conversation a'),null);assert.equal(server.data[key].conversations[0].messages.at(-1).evidence[0].source_url,'https://example.invalid');
   assert.equal(f.root.querySelector('.conversation b'),null);
  }finally{f.close();}
  const restored=ui(server);try{
-  await restored.ready();assert.match(restored.root.querySelector('.conversation').textContent,/참고자료/);
+  await restored.ready();assert.doesNotMatch(restored.root.querySelector('.conversation').textContent,/참고자료/);
   await restored.question('후속 질문');assert.deepEqual(Array.from(restored.ports.at(-1).packet.payload.conversation_context.documentIds),['doc']);
  }finally{restored.close();}
 });
@@ -23,14 +23,14 @@ test('근거 없는 안내의 공식 일반 연락처는 표시하고 새 패널
   try{
     await f.ready();await f.question('합성 질문');await f.answer({kind:'fallback',reason:'no_evidence',text:'자료에서 확인하지 못했습니다.',evidence:[],contacts:[contact]});
     const conversation=f.root.querySelector('.conversation'),link=conversation.querySelector('a[href="tel:129"]');
-    assert.ok(link);assert.match(conversation.textContent,/보건복지상담센터/);assert.match(conversation.textContent,/2026-11-03/);assert.match(conversation.textContent,/09:00/);
+    assert.ok(link);assert.match(conversation.textContent,/보건복지상담센터/);assert.doesNotMatch(conversation.textContent,/2026-11-03/);assert.match(conversation.textContent,/09:00/);
     assert.equal(server.data[key].conversations[0].messages.at(-1).contacts[0].phone,'129');
   }finally{f.close();}
   const restored=ui(server);try{await restored.ready();assert.ok(restored.root.querySelector('.conversation a[href="tel:129"]'));}finally{restored.close();}
 });
-test('서비스 연락처는 공식 안내 검토일이 아닌 자료 대조일로 표시한다',async()=>{
+test('기관·전화는 유지하고 연락처의 날짜·출처 보조 UI는 표시하지 않는다',async()=>{
   const f=ui(worker());try{await f.ready();await f.question('합성 질문');await f.answer({kind:'fallback',reason:'no_evidence',text:'자료에서 확인하지 못했습니다.',evidence:[],contacts:[{label:'합성 기관',phone:'02-123-4567',kind:'service',source_url:'https://www.example.go.kr/help',checked_at:'2026-11-03'}]});
-    const conversation=f.root.querySelector('.conversation');assert.ok(conversation.querySelector('a[href="tel:021234567"]'));assert.match(conversation.textContent,/자료 대조일/);assert.doesNotMatch(conversation.textContent,/공식 안내 검토일/);
+    const conversation=f.root.querySelector('.conversation');assert.ok(conversation.querySelector('a[href="tel:021234567"]'));assert.doesNotMatch(conversation.textContent,/자료 대조일|문의처 출처/);assert.equal(conversation.querySelectorAll('.document-contacts a').length,1);assert.doesNotMatch(conversation.textContent,/공식 안내 검토일/);
   }finally{f.close();}
 });
 
@@ -152,7 +152,7 @@ test('성공 대화를 새 패널에서 복원하고 제한 이력을 계속 전
     await f.question('필요 서류는?');assert.deepEqual(f.ports.at(-1).packet.payload.history,[{role:'user',content:'신청 방법은?'},{role:'assistant',content:answer.text}]);
     f.root.querySelector('button[type=submit]').click();
   }finally{f.close();}
-  const g=ui(server);try{await g.ready();assert.match(g.root.querySelector('.conversation').textContent,/신청 방법은/);assert.match(g.root.querySelector('.conversation').textContent,/현재 유효성은 다시 확인하지 않았습니다/);assert.equal(server.data[key].conversations[0].messages.length,2);}finally{g.close();}
+  const g=ui(server);try{await g.ready();assert.match(g.root.querySelector('.conversation').textContent,/신청 방법은/);assert.doesNotMatch(g.root.querySelector('.conversation').textContent,/현재 유효성은 다시 확인하지 않았습니다/);assert.equal(server.data[key].conversations[0].messages.length,2);}finally{g.close();}
 });
 test('전체 대화 삭제는 확인 후 실행하고 프로필을 보존한다',async()=>{
   const server=worker(),f=ui(server);try{
@@ -249,6 +249,15 @@ test('손상 저장소의 명시 초기화는 프로필을 보존하고 HTML 없
   const server=worker({[profileKey]:profile,[key]:'broken'}),f=ui(server);try{
     await f.ready();assert.match(f.root.querySelector('.conversation-settings').textContent,/형식을 확인하지 못했습니다/);await f.click('대화 저장소 재설정');assert.equal(server.data[key],'broken');await f.click('삭제 확인');assert.equal(server.data[key].conversations.length,0);assert.deepEqual(server.data[profileKey],profile);
     await f.question('안내 질문');await f.answer({kind:'answer',text:'합성 답변',evidence:[{document_id:'doc',chunk_id:'chunk',quote:'<script>합성</script>',context:'별도 전체 원문',pages:[1],source_blocks:['block'],source_url:'javascript:alert(1)'}]});
-    assert.equal(f.root.querySelector('.conversation script'),null);assert.equal(f.root.querySelector('.conversation a'),null);assert.match(f.root.querySelector('.conversation').textContent,/일부 인용·참조만 저장/);assert.ok(!JSON.stringify(server.data[key]).includes('별도 전체 원문'));
+    assert.equal(f.root.querySelector('.conversation script'),null);assert.equal(f.root.querySelector('.conversation a'),null);assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/일부 인용·참조만 저장/);assert.ok(!JSON.stringify(server.data[key]).includes('별도 전체 원문'));
   }finally{f.close();}
+});
+
+test('답변 원문에 포함된 안내와 기관·전화·운영시간은 보조 UI 제거 뒤에도 보존한다',async()=>{
+ const server=worker(),f=ui(server),text='문서 자체 안내: 출처 열기와 자료 대조일을 확인하세요.';
+ try{
+  await f.ready();await f.question('합성 안내');await f.answer({kind:'answer',text,evidence:[{document_id:'doc',chunk_id:'chunk',quote:'원문',context:'안내',source_url:'https://example.invalid',pages:[1],source_blocks:['block']}],contacts:[{label:'합성 기관',phone:'02-123-4567',hours:'평일 9시부터 18시',kind:'service',source_url:'https://www.example.go.kr/help',checked_at:'2026-11-03'}]});
+  const conversation=f.root.querySelector('.conversation');assert.ok(conversation.textContent.includes(text));assert.match(conversation.textContent,/합성 기관/);assert.match(conversation.textContent,/평일 9시부터 18시/);
+  assert.equal(conversation.querySelector('details'),null);assert.equal(conversation.querySelector('a[target=_blank]'),null);assert.equal(server.data[key].conversations[0].messages[1].evidence.length,1);
+ }finally{f.close();}
 });

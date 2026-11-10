@@ -79,7 +79,8 @@ async function profileUsageAction(message){
   const state=await storedProfileUsage();
   if(message.type==='gyeote:profile-usage-get'){
     if(Object.keys(message).join(',')!=='type')throw new Error('profile_usage_invalid');
-    return {ok:true,state,supported:await profileSupported(),valid:!!await currentProfileContext()};
+    const stored=await storedProfile();
+    return {ok:true,state,valid:state.enabled&&!stored.invalid&&!!stored.state.profile&&stored.state.revision===state.profileRevision};
   }
   if(Object.keys(message).sort().join(',')!=='enabled,expectedRevision,profileRevision,type'||typeof message.enabled!=='boolean'||!Number.isSafeInteger(message.expectedRevision)||message.expectedRevision!==state.revision)throw new Error('profile_usage_conflict');
   if(state.revision===Number.MAX_SAFE_INTEGER)throw new Error('profile_usage_invalid');
@@ -185,6 +186,9 @@ chrome.storage.onChanged?.addListener((changes,area)=>{
       await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,message,{frameId:0})));
     })().catch(()=>{});return;
   }
+  if(area==='local'&&GyeoteConversationStore.summaryKey in changes){
+    (async()=>{const message={type:'gyeote:display-summary-changed'};const tabs=await chrome.tabs.query({});await Promise.allSettled(tabs.map(tab=>chrome.tabs.sendMessage(tab.id,message,{frameId:0})));})().catch(()=>{});return;
+  }
   if(area==='local'&&profileKey in changes){
     let revision=null;try{revision=GyeoteProtocol.profileRecord(changes[profileKey].newValue).revision;}catch{}
     (async()=>{
@@ -231,7 +235,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   const content=sender.frameId===0&&official(sender.url)&&official(sender.tab?.url);
   if(message?.type==='gyeote:public-capabilities'){
     if(!content||sender.url!==sender.tab.url||Object.keys(message).join(',')!=='type')return;
-    (async()=>{if((await documentAuth()).mode!=='anonymous')throw new Error();return {ok:true,referralRecordsEnabled:(await publicCapabilities()).referral_records_enabled};})()
+    (async()=>{if((await documentAuth()).mode!=='anonymous')throw new Error();const capability=await publicCapabilities();return {ok:true,referralRecordsEnabled:capability.referral_records_enabled,profileContextSupported:capability.profile_context_supported};})()
       .then(sendResponse).catch(()=>sendResponse({ok:false,error:'public_settings_unavailable'}));return true;
   }
   if(['gyeote:profile-usage-get','gyeote:profile-usage-set'].includes(message?.type)){
@@ -293,7 +297,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
         if(context)result.profileContext=context;
       }
       return result;
-    })).then(sendResponse).catch(error=>sendResponse({ok:false,error:/^conversation_(invalid_request|data_invalid|conflict|context_conflict|access_changed|profile_changed|request_stopped|count_limit|messages_limit|bytes_limit|revision_limit)$/.test(error.message)?error.message:'conversation_storage_failed'}));
+    })).then(sendResponse).catch(error=>sendResponse({ok:false,error:/^conversation_(invalid_request|data_invalid|conflict|context_conflict|summary_conflict|summary_invalid|access_changed|profile_changed|request_stopped|count_limit|messages_limit|bytes_limit|revision_limit)$/.test(error.message)?error.message:'conversation_storage_failed'}));
     return true;
   }
   if(['gyeote:profile-get','gyeote:profile-save','gyeote:profile-clear','gyeote:profile-reset'].includes(message?.type)){

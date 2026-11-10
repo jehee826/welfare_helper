@@ -1,6 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm');
 const {worker,ui,key,profileKey,profile,answer,activeBoundary,source,settle}=require('./conversation_fixture.cjs');
 const protocol=require('../protocol.js'),policy=require('../conversations.js');
+const displayKey='gyeote.displaySummary';
 const id=value=>value.toString(16).toUpperCase().padStart(20,'0');
 function seed(count=2){
   const date=new Date().toISOString(),messages=[];
@@ -26,7 +27,7 @@ test('서버 지원 확인 뒤 공개 상담에만 요약을 제공하고 이전
   const f=fixture({[profileKey]:profile});try{await f.ready();assert.equal(button(f).disabled,true);button(f).click();await settle();assert.equal(f.ports.length,0);}finally{f.close();}
 });
 
-test('현재 주제·시간 경계 뒤 완전 문답만 보내며 요약은 상담 저장·다음 RAG에 넣지 않는다',async()=>{
+test('현재 주제·시간 경계 뒤 완전 문답만 보내며 표시 요약을 RAG에 넣지 않는다',async()=>{
   const data=seed(3),conversation=data[key].conversations[0];conversation.messages[3].topicStart=true;conversation.contextBoundary.startAfterPairId=id(2);
   const f=fixture(data);
   try{
@@ -87,9 +88,74 @@ for(const ending of ['profile','mode','delete','pagehide'])test(`요약 생성 �
   }finally{f.close();}
 });
 
-test('요약 결과는 F5 뒤 사라지고 원래 문답은 복원한다',async()=>{
-  const f=fixture();try{await f.ready();button(f).click();await settle();await f.answer(reply(f.ports.at(-1)));assert.equal(result(f).hidden,false);}finally{f.close();}
-  const restored=ui(f.server);try{await restored.ready();assert.equal(result(restored).hidden,true);assert.match(restored.root.querySelector('.conversation').textContent,/질문 1/);}finally{restored.close();}
+test('마지막 성공 요약은 F5와 worker 재생성 뒤 서버 응답과 무관하게 복원한다',async()=>{
+  const f=fixture();let saved;
+  try{await f.ready();button(f).click();await settle();await f.answer(reply(f.ports.at(-1)));assert.equal(result(f).hidden,false);saved=JSON.parse(JSON.stringify(f.server.data[displayKey]));}
+  finally{f.close();}
+  let release;const pending=new Promise(resolve=>{release=resolve;});
+  const server=worker(f.server.data,{},undefined,async()=>{await pending;return new Response('{}',{status:404});}),restored=ui(server);
+  try{
+    await restored.ready();assert.equal(result(restored).hidden,false);assert.match(result(restored).textContent,/남은 확인사항/);
+    assert.match(restored.root.querySelector('.conversation').textContent,/질문 1/);assert.deepEqual(server.data[displayKey],saved);
+    assert.deepEqual(Object.keys(saved).sort(),['conversationId','generation','partial','revision','schemaVersion','text']);
+  }finally{release();restored.close();}
+});
+
+test('요약 닫기는 저장본을 유지하고 새 성공만 마지막 요약을 교체한다',async()=>{
+  const f=fixture();
+  try{
+    await f.ready();button(f).click();await settle();await f.answer({...reply(f.ports.at(-1)),text:'첫 성공 요약'});
+    const saved=JSON.stringify(f.server.data[displayKey]);await f.click('요약 닫기');assert.equal(result(f).hidden,true);assert.equal(JSON.stringify(f.server.data[displayKey]),saved);
+    f.notify({type:'gyeote:display-summary-changed'});await settle();assert.equal(result(f).hidden,true);
+    button(f).click();await settle();await f.answer({...reply(f.ports.at(-1)),text:'다음 성공 요약'});
+    assert.equal(f.server.data[displayKey].text,'다음 성공 요약');assert.equal(f.server.data[displayKey].revision,2);
+    await f.mode('screen');await f.mode('document');assert.equal(result(f).hidden,false);assert.match(result(f).textContent,/다음 성공/);
+  }finally{f.close();}
+});
+
+test('요약 취소·모델 오류·저장 실패는 이전 성공본을 덮지 않는다',async()=>{
+  const f=fixture();
+  try{
+    await f.ready();button(f).click();await settle();await f.answer({...reply(f.ports.at(-1)),text:'유지할 성공 요약'});
+    const saved=JSON.stringify(f.server.data[displayKey]);
+    button(f).click();await settle();const old=f.ports.at(-1);await f.click('요약 취소');await f.answer(reply(old),old);assert.equal(JSON.stringify(f.server.data[displayKey]),saved);
+    button(f).click();await settle();await f.answer({},f.ports.at(-1),'error');assert.equal(JSON.stringify(f.server.data[displayKey]),saved);
+    button(f).click();await settle();f.server.failure.set=true;await f.answer({...reply(f.ports.at(-1)),text:'저장 실패한 새 요약'});
+    assert.equal(JSON.stringify(f.server.data[displayKey]),saved);assert.match(f.root.querySelector('.status').textContent,/요약을 저장하지 못/);
+  }finally{f.server.failure.set=false;f.close();}
+});
+
+test('두 탭의 늦은 요약은 먼저 저장된 새 성공본을 덮지 않는다',async()=>{
+  const f=fixture(),other=ui(f.server,2);
+  try{
+    await f.ready();await other.ready();button(f).click();button(other).click();await settle();
+    const old=f.ports.at(-1),latest=other.ports.at(-1);
+    await other.answer({...reply(latest),text:'다른 탭에서 저장한 요약'},latest);
+    await f.answer({...reply(old),text:'늦게 도착한 이전 요약'},old);
+    assert.equal(f.server.data[displayKey].text,'다른 탭에서 저장한 요약');assert.equal(f.server.data[displayKey].revision,1);
+  }finally{f.close();other.close();}
+});
+
+test('대화 삭제는 표시 요약을 함께 지우고 이전 세대의 늦은 요약을 저장하지 않는다',async()=>{
+  const f=fixture();
+  try{
+    await f.ready();button(f).click();await settle();await f.answer(reply(f.ports.at(-1)));
+    button(f).click();await settle();const old=f.ports.at(-1);
+    await f.click('전체 대화 삭제');await f.click('삭제 확인');await f.answer(reply(old),old);
+    assert.equal(f.server.data[displayKey],null);assert.equal(result(f).hidden,true);
+    const restored=ui(f.server,2);try{await restored.ready();assert.equal(result(restored).hidden,true);}finally{restored.close();}
+  }finally{f.close();}
+});
+
+test('저장 요약은 다른 대화·세대와 관리자 접근에 노출하지 않는다',async()=>{
+  const f=fixture();
+  try{
+    await f.ready();button(f).click();await settle();await f.answer(reply(f.ports.at(-1)));
+    const saved=JSON.stringify(f.server.data[displayKey]);f.server.data[displayKey].generation='another-generation';
+    const other=ui(f.server,2);try{await other.ready();assert.equal(result(other).hidden,true);}finally{other.close();}
+    f.server.data[displayKey]=JSON.parse(saved);f.server.session.documentAccess='admin';f.server.session.documentAccessId='admin';
+    const admin=ui(f.server,3);try{await admin.ready();assert.equal(result(admin).hidden,true);assert.equal(admin.ports.length,0);}finally{admin.close();}
+  }finally{f.close();}
 });
 
 test('준비 응답이 10초 기한 뒤 도착해도 요약 포트를 열거나 초안을 지우지 않는다',async()=>{

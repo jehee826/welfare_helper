@@ -231,11 +231,11 @@ test('프로토콜은 summary 임의 필드·불완전 batch·화면 모드·응
   assert.throws(()=>protocol.documentReply({...answer,context_usage:{omitted:'true'}}));
   assert.throws(()=>protocol.documentReply({...answer,context_usage:{omitted:true,rawHistory:'no'}}));
 });
-test('요약 갱신 성공과 서버 맥락 제외를 함께 저장하고 새 패널에도 표시한다',async()=>{
+test('자동 요약과 맥락 제외는 내부 저장하되 복원 화면에 기술 안내를 덧붙이지 않는다',async()=>{
   const server=worker(seed()),f=ui(server);try{
     await f.ready();await f.question('그 서비스는?');const input=f.ports.at(-1).packet.payload.conversation_context;assert.equal(input.omitted,false);
     await f.answer({...answer,context_update:update(input),context_usage:{omitted:true}});
     assert.ok(server.data[key].conversations[0].summary);assert.equal(server.data[key].conversations[0].messages.at(-1).contextUsage.omitted,true);assert.match(f.root.querySelector('.status').textContent,/일부 대화 맥락/);
   }finally{f.close();}
-  const g=ui(server);try{await g.ready();assert.match(g.root.querySelector('.conversation').textContent,/입력 예산에 따라 일부 대화 맥락/);assert.match(g.root.querySelector('.conversation-warning').textContent,/일부 대화 맥락/);}finally{g.close();}
+  const g=ui(server);try{await g.ready();assert.doesNotMatch(g.root.querySelector('.conversation').textContent,/입력 예산에 따라 일부 대화 맥락/);assert.equal(g.root.querySelector('.conversation-warning').textContent,'');assert.equal(server.data[key].conversations[0].messages.at(-1).contextUsage.omitted,true);}finally{g.close();}
 });

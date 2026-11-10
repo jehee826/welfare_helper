@@ -219,7 +219,7 @@ const assert=require('node:assert/strict');
 const {worker,ui}=require('./Extension/tests/conversation_fixture.cjs');
 let text='';process.stdin.setEncoding('utf8');process.stdin.on('data',x=>text+=x);process.stdin.on('end',async()=>{
   const body=JSON.parse(text),server=worker(),f=ui(server);
-  try{await f.ready();await f.question('합성 질문');await f.answer(body);assert.ok(f.root.querySelector('.conversation a[href="tel:1355"]'));assert.match(f.root.querySelector('.conversation').textContent,/자료 대조일/);}finally{f.close();}
+  try{await f.ready();await f.question('합성 질문');await f.answer(body);assert.ok(f.root.querySelector('.conversation a[href="tel:1355"]'));assert.doesNotMatch(f.root.querySelector('.conversation').textContent,/자료 대조일/);}finally{f.close();}
   const restored=ui(server);try{await restored.ready();assert.ok(restored.root.querySelector('.conversation a[href="tel:1355"]'));}finally{restored.close();}
   process.stdout.write('API_DTO_RENDER_RESTORE_OK');
 });

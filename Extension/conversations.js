@@ -221,7 +221,13 @@
       conversation.summary={text:checked.text,coveredThroughMessageId:checked.coveredThroughMessageId,profileRevision};
     }else if(checked.text!==submitted.text||checked.coveredThroughMessageId!==submitted.coveredThroughMessageId)throw new Error('conversation_context_conflict');
   }
+  // 화면용 마지막 성공 요약은 RAG 자동 맥락과 별도로 보존한다.
+  function displaySummaryRecord(raw){
+    if(!object(raw)||Object.keys(raw).sort().join(',')!=='conversationId,generation,partial,revision,schemaVersion,text'||raw.schemaVersion!==1||!revision(raw.revision)||!identifier(raw.generation)||!identifier(raw.conversationId)||typeof raw.text!=='string'||!raw.text.trim()||raw.text.length>1200||typeof raw.partial!=='boolean')fail();
+    const text=cleanText(raw.text);if(!text.trim()||text.length>1200)fail();
+    return {schemaVersion:1,revision:raw.revision,generation:raw.generation,conversationId:raw.conversationId,text,partial:raw.partial};
+  }
   const history=(conversation,profileRevision)=>requestContext(conversation,profileRevision).history;
-  const api=Object.freeze({limits,empty,record,migrate,retain,retainedPair,pair,history,requestContext,summaryInput,applyUpdate,bytes,sourceUrl});
+  const api=Object.freeze({limits,empty,record,migrate,retain,retainedPair,pair,history,requestContext,summaryInput,applyUpdate,bytes,sourceUrl,displaySummaryRecord});
   globalThis.GyeoteConversations=api;if(typeof module!=='undefined')module.exports=api;
 })();

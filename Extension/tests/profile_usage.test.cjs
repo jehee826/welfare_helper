@@ -128,11 +128,11 @@ for(const capability of ['unsupported','404','offline'])test(`질문 모드의 �
   }finally{panel.close();}
 });
 
-test('질문 모드의 사용 선택은 지원 응답 지연 동안 보이고 확인 뒤에만 켤 수 있다',async()=>{
+test('로컬 사용 스위치는 지원 확인 대기 중 조작할 수 있고 ON 저장은 지원 확인을 거친다',async()=>{
   let release;const pending=new Promise(resolve=>{release=resolve;}),f=worker({[profileKey]:savedProfile},{},undefined,async()=>{await pending;return new Response(JSON.stringify({profile_context_supported:true}));}),panel=ui(f);
   try{
     await panel.ready();const section=panel.root.querySelector('.profile-usage'),toggle=section.querySelector('input');
-    assert.equal(section.hidden,false);assert.equal(toggle.disabled,true);assert.match(section.textContent,/확인 중/);
+    assert.equal(section.hidden,false);assert.equal(toggle.disabled,false);assert.match(section.textContent,/확인 중/);assert.equal(f.data[usageKey],undefined);
     release();await settle();assert.equal(section.hidden,false);assert.equal(toggle.disabled,false);assert.equal(toggle.getAttribute('role'),'switch');
     toggle.click();await settle();assert.equal(toggle.checked,true);assert.equal(toggle.getAttribute('aria-checked'),'true');assert.equal(section.querySelector('.profile-usage-value').textContent,'ON');
     assert.equal(f.data[usageKey].enabled,true);
@@ -247,4 +247,17 @@ test('offscreen은 전송 전과 표시 전 동의를 다시 확인하고 변경
     if(stage==='valid'){assert.equal(sent[0].type,'result');assert.deepEqual(JSON.parse(calls[0].options.body).profile_context,context);}
     else{assert.equal(sent[0].error,'profile_changed');assert.equal(calls.length,stage==='before'?0:1);}
   }
+});
+
+test('저장된 ON·OFF는 capabilities가 미응답이어도 즉시 표시하며 새 동의를 만들지 않는다',async()=>{
+ for(const enabled of [false,true]){
+  let release,calls=0;const pending=new Promise(resolve=>{release=resolve;});
+  const usage={schemaVersion:1,revision:2,enabled,profileRevision:enabled?1:null},data={[profileKey]:savedProfile,[usageKey]:usage};
+  const f=worker(data,{},undefined,async url=>{if(url.endsWith('/api/v1/chat/capabilities')){calls++;await pending;}return new Response(JSON.stringify({profile_context_supported:true,available:true,version:1}));}),panel=ui(f);
+  try{
+   await panel.ready();const toggle=panel.root.querySelector('.profile-usage-toggle');assert.equal(toggle.checked,enabled);assert.equal(toggle.disabled,false);assert.equal(panel.root.querySelector('.profile-usage-value').textContent,enabled?'ON':'OFF');
+   assert.deepEqual(data[usageKey],usage);assert.equal((await get(f)).valid,enabled);const before=calls;
+   await get(f);await get(f);assert.equal(calls,before);assert.equal(f.calls.set.some(value=>usageKey in value),false);
+  }finally{release();panel.close();}
+ }
 });

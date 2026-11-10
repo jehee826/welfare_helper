@@ -214,7 +214,7 @@ h2:focus-visible {
 .note-warning {
   color: var(--ink);
   background: var(--warning-soft);
-  border-left: 4px solid var(--warning-line);
+  border: 1px solid var(--warning-line);
   padding: 8px 12px;
   border-radius: 6px;
 }

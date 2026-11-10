@@ -45,7 +45,7 @@ Python 3.12·Node.js 22 기준으로 기존 Docker 격리 검사를 사용했다
 - 기준 main: `eb760b651a58d40b3d15cdd5e45150bd6735664c`, PR #13 → #18 병합본. 정책 PR #12는 `3710724`로 이미 병합됐다. 삭제된 `docs/Co-op` 브랜치를 복원하거나 checkout하지 않는다.
 - 이후 이 문서를 공유하는 문서 커밋이나 진행 중 태스크의 후속 커밋은 있을 수 있다. `02317bb`로 reset하거나 고정 덮어쓰지 않는다.
 
-읽는 순서는 `AGENTS.md`와 해당 프로젝트 스킬 → [현재 실행 계획](merge_plan.md)의 1·3·5절 및 6절 최신 기록 → [확정 사항](merge_decisions.md) → [원본 계획](collaboration-plan.md)의 해당 W절·5절 계약 → [Claude 리뷰](collaboration-plan-review.md) 4·5절 → 관련 `docs/design/`과 실제 코드다. 리뷰 1~3절의 과거 제안은 새 요구가 아니다. 오래된 상태 문구가 최신 실행 결과와 충돌하면 날짜·SHA·최신 직접 사용자 결정을 대조한다.
+읽는 순서는 `AGENTS.md`와 해당 프로젝트 스킬 → [현재 실행 계획](../plan/merge_plan.md)의 1·3·5절 및 6절 최신 기록 → [확정 사항](merge_decisions.md) → [원본 계획](collaboration-plan.md)의 해당 W절·5절 계약 → [Claude 리뷰](collaboration-plan-review.md) 4·5절 → 관련 `docs/design/`과 실제 코드다. 리뷰 1~3절의 과거 제안은 새 요구가 아니다. 오래된 상태 문구가 최신 실행 결과와 충돌하면 날짜·SHA·최신 직접 사용자 결정을 대조한다.
 
 `docs/design/architecture.md` 등은 과거 기준 소스를 명시한 구조 문서이므로 프로필 미전송·모델 병렬3 등 오래된 설명이 남을 수 있다. 최신 W13의 명시 ON/최종 생성 예외와 Ollama1 설정은 이 인계·merge_decisions·현재 코드로 대조한다. 새 인계 세션이 과거 동작을 복원할 근거로 쓰지 않는다.
 

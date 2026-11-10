@@ -90,19 +90,19 @@ postgres_data/
 /docs/design/database/*
 !/docs/design/database/복지챗봇.erd
 
-# 협업 계획·검토와 병합 후 실행 계획만 공유, 개인 계획은 로컬 보관
+# 활성 계획·진행·인계는 세 문서만 공유
 /docs/plan/*
-!/docs/plan/collaboration-plan.md
-!/docs/plan/collaboration-plan-review.md
 !/docs/plan/merge_plan.md
-!/docs/plan/merge_decisions.md
-!/docs/plan/laptop_handoff.md
 !/docs/plan/handoff.md
 !/docs/plan/devlog.md
 
 # 과거 문서는 기본 로컬 보관, 기존 공유 문서의 이동본만 추적
 /docs/archive/*
 !/docs/archive/README.md
+!/docs/archive/collaboration-plan.md
+!/docs/archive/collaboration-plan-review.md
+!/docs/archive/merge_decisions.md
+!/docs/archive/laptop_handoff.md
 !/docs/archive/designs/
 /docs/archive/designs/*
 !/docs/archive/designs/rag-accuracy-design.md

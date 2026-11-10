@@ -5,10 +5,10 @@ description: Implement and verify the floating Chrome extension UI, local conver
 
 # 확장 UI·상태·검증
 
-최신 업데이트: 2026-11-08 01:41 KST
+최신 업데이트: 2026-11-10 10:46 KST
 
-1. 협업 계획의 배정된 태스크와 Extension/README·manifest·protocol 및 관련 UI/worker만 읽는다. 자신의 작업 루트·전용 브랜치(`claude/feat-Extension`)·Extension 허용 경로를 확인한다. content.js/worker.js/protocol.js/conversations.js/conversation-panel.js의 작성자는 한 명이며 공유 API 변경은 서버 담당과 먼저 맞춘다. 공통 CI/루트 설정을 직접 고치지 말고 지정 담당에게 전달한다.
-   예정 개발 경로·기능 브랜치·선행 PR은 협업 계획3절, 변경 파일·구현 순서·최소 검사는4절을 따른다. 원래 설치 폴더에 개발 파일을 복사해 덮지 않는다. 실제 설치본 적용은3절의 검토된 main 기준 동기화가 준비된 뒤 수행하며 그전에는 독립 대역 검사를 진행한다.
+1. merge_plan.md의 배정된 태스크와 Extension/README·manifest·protocol 및 관련 UI/worker만 읽는다. 자신의 작업 루트·전용 브랜치(`claude/feat-Extension`)·Extension 허용 경로를 확인한다. content.js/worker.js/protocol.js/conversations.js/conversation-panel.js의 작성자는 한 명이며 공유 API 변경은 서버 담당과 먼저 맞춘다. 공통 CI/루트 설정을 직접 고치지 말고 지정 담당에게 전달한다.
+   현재 작업 루트·브랜치·담당은 handoff.md, 변경 범위·완료 기준은 merge_plan.md와 연결된 devlog.md를 따른다. 원래 설치 폴더에 개발 파일을 복사해 덮지 않는다. 실제 설치본 적용은 해당 태스크의 검토된 버전·적용 경로가 준비된 뒤 수행하며 그전에는 독립 대역 검사를 진행한다.
 2. EC2 HTTPS 전용 연결과 질문/안내 모드 경계를 유지한다. 문서 질문에 화면/이미지를, 공개 DOM 안내에 저장 프로필/상담/관리자 자격 증명을 혼입하지 않는다. 저장 정보는 기본 OFF·구 profile 미전송이며, W13의 현재 프로필 revision과 별도 제공 동의가 유효한 명시 ON에만 허용 5필드(나이·소득·가구·지역·장애 여부)를 최종 생성에 제공하고 검색·준비에는 사용하지 않는다. 직접 발화·최신 정정과 보호 대상 구분을 우선하며 OFF 전환 때 화면 기록은 남기고 파생 요약·조건·문서 참조까지 새 자동 맥락으로 분리한다. DOM 입력값·민감 화면·확장 자체 UI는 수집하지 않는다.
 3. chrome.storage.local은 worker의 검증된 sender·TRUSTED_CONTEXTS·직렬 revision 경로로 쓴다. content에서 임의 키를 쓰거나 기존 상담/프로필을 초기화하지 않는다. 최근30문답·원자 저장·quota/실패·주제 경계를 유지한다.
 4. 요청/저장/음성의 늦은 결과는 request ID·revision·현재 모드/대상으로 구분한다. 취소 후 이력 재삽입, 삭제 후 복구, 모드/권한 변경 뒤 응답 혼입을 막는다. 시간 경계/새 설정/요약 기능은 배정된 태스크에서만 추가한다.

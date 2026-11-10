@@ -5,7 +5,7 @@ description: Manage isolated task branches, selective commits, approved feature 
 
 # 프로젝트 Git 작업
 
-최신 업데이트: 2026-11-09 11:55 KST
+최신 업데이트: 2026-11-10 10:46 KST
 
 사용자 로컬 Git 스킬의 기능별 브랜치·선별 커밋·PR 순서·안전 정리를 이 파일에 반영했다. 다른 개발자는 그 개인 파일 없이 이 프로젝트 스킬만으로 수행한다. 프로젝트는 로컬 기능 커밋 누적을 허용하고, PR 사용자 생성·push 범위별 승인·**main 직접 반영 금지**를 추가 적용한다. 과거 승인3회 예외는 현재 정책이 아니다. 전역 개인 스킬은 자동 수정하지 않는다.
 
@@ -13,7 +13,7 @@ description: Manage isolated task branches, selective commits, approved feature 
 
 1. 협업 개발은 **담당자별 전용 기능 브랜치**로 나눠 진행한다. 2026-11-07 사용자 결정으로 독립 clone은 필수가 아니며 각 담당은 자기 기기의 checkout에서 자기 브랜치만 쓴다. 같은 브랜치 공동 작성·한 checkout에서 두 담당의 동시 작업·worktree 생성/사용은 금지한다. 같은 checkout을 넘기거나 브랜치를 바꾸기 전에 자기 변경을 커밋한다.
 2. 착수 시 작업 루트·Git 디렉터리·원격 저장소·담당 브랜치·기준 origin/main 커밋·허용 변경 경로를 계획과 대조한다. 사용자가 지정한 담당 브랜치(Claude: `claude/feat-Extension`)가 있으면 그것을 쓴다. 브랜치가 준비되지 않은 검토 요청에서 임의로 생성하지 않는다.
-   기능 ref·순서는 docs/plan/collaboration-plan.md 3절을 기준으로 하되, 그 절의 독립 clone·예정 폴더 규정은 이 항목의 브랜치 분리 방식으로 대체한다. origin/main SHA는 착수 때 다시 읽고, 지침/스킬/계획은 동일한 공유 커밋에서 가져와 버전을 대조한다. 같은 기능 이름의 기존 브랜치가 있으면 reset/덮어쓰기 대신 소유자와 차이를 확인한다.
+   기능 범위·현재 상태는 docs/plan/merge_plan.md, 실제 담당·root/branch·기준 버전은 handoff.md, 상세 진행은 devlog.md로 대조한다. origin/main SHA는 착수 때 다시 읽고, 지침/스킬/계획은 동일한 공유 커밋에서 가져와 버전을 대조한다. 같은 기능 이름의 기존 브랜치가 있으면 reset/덮어쓰기 대신 소유자와 차이를 확인한다.
 3. 쓰기·stage·commit·push 직전 현재 루트/브랜치/status를 확인한다. 다른 담당 브랜치, main, detached HEAD이면 해당 쓰기를 멈추고 상태를 보고한다. 출처 불명 staged 변경은 건드리지 않고 경로를 지정한 커밋(`git commit -- <경로>`)으로 자기 변경만 커밋하며, 분리할 수 없으면 멈춘다. 자동 checkout·reset·stash로 다른 변경을 치우지 않는다.
 4. 구현 브랜치는 확인된 main에서 만들고 사용자 지정 이름을 우선한다. 기본 예시는 Codex codex/<type>-<task>, Claude claude/<type>-<task>다. 담당별 브랜치 이름과 원격 ref를 겹치지 않게 정한다. 한 담당 브랜치에서 여러 기능을 진행하면 기능(W번호)마다 별도 커밋으로 나눈다. docs/Co-op에는 문서만 둔다.
 5. 각 담당자의 다음 독립 기능은 자신의 이전 기능 검증·커밋·사용자 PR 검토/병합 확인 후 새 main 기준으로 시작한다. 같은 담당 브랜치를 계속 쓰면 병합된 origin/main을 그 브랜치에 fast-forward 또는 merge로 반영한 뒤 시작하며, 공개 이력을 rebase/reset하지 않는다. 이미 배정된 서로 독립적인 Codex/Claude 기능은 각자의 브랜치에서 병행할 수 있다. 공유 파일/계약 의존 작업은 선행 PR 병합을 기다리고 그동안 계약 리뷰·대역 검사를 한다. 포괄적인 계속 진행 요청으로 이 경계를 해제하지 않는다.

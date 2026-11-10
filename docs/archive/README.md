@@ -1,5 +1,7 @@
 # 과거 문서 보관
 
+최신 업데이트: 2026-11-10 10:46 KST.
+
 정리: 2026-11-04. 아래 문서는 **작성 당시의 계획·설계·실행·실패·수정·검증 전문**이다. 제목·날짜·기록을 보존하고 링크 위치만 갱신했다. 문서 안의 “현재”, “미완료”, “다음 작업”을 지금의 상태나 실행 지시로 해석하지 않는다.
 
 ## 목차
@@ -9,9 +11,17 @@
 - [태스크 전문](#태스크-전문)
 - [보존과 공개 범위](#보존과-공개-범위)
 
-현재 내용은 [프로젝트 설계](../design/architecture.md), [협업 계획](../plan/collaboration-plan.md), [개발일지](../log/development.md)를 따른다.
+현재 상태는 [인계](../plan/handoff.md), 전체 계획/완료/잔여는 [merge_plan](../plan/merge_plan.md), 상세 진행은 [devlog](../plan/devlog.md)를 따른다.
 
 ## 과거 계획
+
+2026-11-10 활성 작업 문서를 세 개로 통합하면서 다음 기존 문서를 이동했다. 원래 작성일·기록을 보존하고 이후 진행 기록은 추가하지 않는다.
+
+- [기존 협업 계획](collaboration-plan.md)
+- [협업 계획 교차검증](collaboration-plan-review.md)
+- [병합 후 이전 결정](merge_decisions.md)
+- [노트북 작업 이관](laptop_handoff.md)
+
 
 - [기존 통합계획](plans/extension-product-delivery-plan.md): RAG 전환·단순화·진단·자료 교체와 7절 결과.
 - [후속 배포·품질 계획](plans/post-verification-delivery-plan.md): P별 선행 관계와 작성 당시 상태.

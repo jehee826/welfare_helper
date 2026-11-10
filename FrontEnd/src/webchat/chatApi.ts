@@ -144,6 +144,7 @@ export async function fetchReferralEnabled(base: string, signal: AbortSignal): P
 function isSensitive(body: unknown): boolean {
   if (!body || typeof body !== "object") return false;
   const detail = (body as Record<string, unknown>).detail;
+  if (detail === "sensitive_input") return true;
   return Array.isArray(detail) && detail.some((item) => !!item && typeof item === "object" && (item as Record<string, unknown>).type === "sensitive_input");
 }
 

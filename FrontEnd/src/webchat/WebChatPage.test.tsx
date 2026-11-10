@@ -188,6 +188,7 @@ describe("취소와 실패", () => {
 
   it.each([
     [422, { detail: [{ type: "string_too_long" }] }, "질문 형식을 확인해 주세요"],
+    [422, { detail: "sensitive_input" }, "개인정보를 빼고"],
     [422, { detail: [{ type: "sensitive_input" }] }, "개인정보를 빼고"],
     [429, { detail: "too many" }, "요청이 많아"],
     [503, { detail: "x" }, "서버에서 답변을 만들지 못했습니다"],

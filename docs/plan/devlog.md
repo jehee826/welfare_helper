@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:09 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:13 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1114,3 +1114,10 @@
 - 기존 검사에 실패5종의 부분진단, parser TypeError 안전실패, 선택 문서 밖 연락처 거절7사례를 추가했고 기존 조건/문의처2사례는 근거 순서까지 비교했다. Terra가 기존 격리 Python3.12.13 진입으로11파일323/323통과·실패/skip0·pytest8.18초·명령11.292초·exit0를 확인했다. 변경2파일 compile 구문도OK이며 실패·재실행은 없다.
 - 집중 대상은 test_document_qa, test_welfare_qa, test_document_rag_diagnostics, test_conversation_context, test_profile_context, test_admin_referrals, test_document_bm25_cache, test_qa_diagnostics, test_request_execution, test_ollama, test_automatic_retrieval 각.py다. 기존 env_file/상속설정 격리·실제DB/httpx 차단·모델offline·플러그인 자동로딩 중지·90초 상한과 승인된 샌드박스 밖 실행을 재사용했다.
 - 원자료는 .local/co-op/checks-runtime/refactor-rag-20261112-focused.log와 refactor-rag-20261112-syntax.log다. 설계가 diff·통과/구문 로그를 읽고 선택 범위/부분진단·실패 공개 필드·자원/캐시 순서를 대조했으며 diff --check도 통과했다. 실제 모델품질·DB·HTTP/UI 종단·EC2/배포는 미실측이다. 이미지 다운로드와 worker·DB 복구 자동시험 보류를 유지한다. 다음은 push·PR·CI·병합이다.
+
+<a id="log-20261112-0213-rag-merge-desktop"></a>
+## 2026-11-12 02:13 KST · 6번 통합과 7번 Desktop 착수
+
+- codex/refactor-rag의 착수46030aa·제품09d4f51·결과5a95ea0를 push해 PR #28을 생성했다. head/5a95ea0370f5adc83817df0c007c6a1533fbc87d의 Actions43065607339에서 web-extension·python backend/worker/dev 4job 성공과 Vercel Preview 상태 success를 확인했다. expected head SHA로 병합했고 실제 merged/main01d3021013949e63b61e826a71d5cd563fcf4074 및 커밋 포함을 확인했다. 로컬main은ff-only 동기화했다. 서버 반영은 없다.
+- main/01d3021에서 codex/refactor-desktop을 만들었다. 개발이7번 배정제품·기존검사, 설계가 문서·리뷰·Git을 맡는다. guideStep의 이미 파싱된step→JSON문자열→재파싱을 객체 직접 검증으로 바꾸고 assistant의 화면 변경 시 취소·강조 제거 순서를 읽기 쉽게 정리한다. 네트워크 JSON 경계와 현재 target·가시성/좌표/포커스·3.5초freshness·revision/늦은overlay 차단은 유지한다.
+- 기존 Electron/Windows 실행 진입점·권한·공개 라벨·모드/주소 계약을 유지하고 이미지 입력·자동클릭/입력/제출·새 로컬 연결 경로를 복원하지 않는다. 우선순위는 기존 Node 대역과 필요한 구문/빌드이며 실제 UIA·Chrome·음성·모델·DB·EC2는 실행하지 않는다. 이미지 다운로드·worker/DB 복구시험 보류도 유지한다. 8번은 대기한다.

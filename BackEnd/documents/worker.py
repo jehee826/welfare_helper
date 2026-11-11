@@ -48,6 +48,26 @@ def failure_diagnostic(exc, job_id, temp_dir):
             "exception_type": type(exc).__name__, "missing_module": missing, "error_code": code}
 
 
+def embed_and_save_batches(records, *, store, llm, model, digest, job_id, token, document_id, stage):
+    texts = {record["chunk"].chunk_id: record["chunk"].embedding_text() for record in records}
+    hashes = {chunk_id: stable_hash(text.encode()) for chunk_id, text in texts.items()}
+    cached = store.reused_vectors(model, digest, list(set(hashes.values())))
+    embedded = 0
+    stage("embedding", chunks=len(records), embedded=0)
+    for start in range(0, len(records), 16):
+        batch = records[start:start + 16]
+        missing = list(dict.fromkeys(texts[record["chunk"].chunk_id] for record in batch
+                                    if hashes[record["chunk"].chunk_id] not in cached))
+        if missing:
+            vectors = llm.embed(missing)
+            cached.update((stable_hash(text.encode()), vector) for text, vector in zip(missing, vectors, strict=True))
+            embedded += len(missing)
+        store.save_vectors(job_id, token, document_id, batch,
+                           {record["chunk"].chunk_id: cached[hashes[record["chunk"].chunk_id]] for record in batch},
+                           model, digest)
+        stage("embedding", chunks=len(records), embedded=embedded, stored=min(start + 16, len(records)))
+
+
 def process_job(job_id, token, temp_dir):
     settings, store = get_settings(), get_document_store()
     job = store.claimed_job(job_id, token)
@@ -122,23 +142,8 @@ def process_job(job_id, token, temp_dir):
     records = document_children(doc, payload, analysis, payload["service_name"], digest, tokenizer.count_tokens, revision)
     if not records or len(records) > settings.documents_max_chunks:
         raise DocumentError("document_chunk_count_limit")
-    texts = {r["chunk"].chunk_id:r["chunk"].embedding_text() for r in records}
-    hashes = {cid:stable_hash(text.encode()) for cid,text in texts.items()}
-    cached = store.reused_vectors(settings.ollama_embed, digest, list(set(hashes.values())))
-    embedded = 0
-    stage("embedding", chunks=len(records), embedded=0)
-    for start in range(0,len(records),16):
-        batch = records[start:start+16]
-        missing = list(dict.fromkeys(texts[r["chunk"].chunk_id] for r in batch
-                                    if hashes[r["chunk"].chunk_id] not in cached))
-        if missing:
-            vectors = llm.embed(missing)
-            cached.update((stable_hash(text.encode()),vector) for text,vector in zip(missing,vectors,strict=True))
-            embedded += len(missing)
-        store.save_vectors(job_id,token,str(doc["document_id"]),batch,
-                           {r["chunk"].chunk_id:cached[hashes[r["chunk"].chunk_id]] for r in batch},
-                           settings.ollama_embed,digest)
-        stage("embedding",chunks=len(records),embedded=embedded,stored=min(start+16,len(records)))
+    embed_and_save_batches(records, store=store, llm=llm, model=settings.ollama_embed, digest=digest,
+                           job_id=job_id, token=token, document_id=str(doc["document_id"]), stage=stage)
     if llm.model_digest() != digest:
         raise DocumentError("embedding_digest_changed")
     stage("publishing")

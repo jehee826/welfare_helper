@@ -1,15 +1,15 @@
 # 개발 계획과 진행 현황
 
-작성: 2026-11-08. 최신 업데이트: 2026-11-12 02:57 KST
+작성: 2026-11-08. 최신 업데이트: 2026-11-12 03:10 KST
 
 이 문서는 계획·현재 상태·남은 조건과 [개발일지](devlog.md)의 진행 위치를 보여 준다. 상세 변경·검사·실패 이력은 일지에만 기록하고 지금 할 일과 환경은 [현재 인계](handoff.md)를 따른다.
 
 ## 1. 현재 완료 범위와 남은 순서
 
-- 최신 main/b82b391 EC2 배포 진행 중. 개발 단일 운영 담당이 B11 검증 백업·분리와 main ff-only 동기화, 필요한 backend/worker 교체를 맡고 설계가 문서·결과를 검토한다. 완료 기준은 B11 복구 수단·새 소스/이미지/기동 pin 일치·backend/worker 준비도·HTTPS 응답·기존 설정/데이터와 다른 서비스 보존이다. 실제 모델·DB 복구·재부팅 시험은 제외한다. [배포 착수](devlog.md#log-20261112-0257-refactor-deploy)
-- 구조 리팩토링 8섹터의 코드/검토 완료. 1~7번 제품은 PR #23~#29로 main/0e54cd4 통합 완료, 각 PR의 CI4job 성공. 8번은 정적 대조 후 코드 유지로 완료했고 최종 기록 PR #30도main/6c59068에 통합했다. 브랜치8개 삭제 범위의 명시 승인을 받아 제품7개를 정리했고 마지막 기록 브랜치는 기록 공유 후 안전 확인·삭제한다. 미완료 제품 구현은 없으며 별도 EC2 반영은 남는다. [전체 검토](devlog.md#log-20261112-0228-runtime-review) / [브랜치 정리](devlog.md#log-20261112-0249-refactor-cleanup)
+- 최신 main/b82b391 EC2 배포 완료. B11 원본·patch 복구와 해시 보존, 대상 소스118파일·실행 이미지·기동 pin 일치, backend/worker healthy·내부 readiness 200·공개 HTTPS health/capabilities 200을 확인했다. 기존 환경·인증·볼륨·모델/GPU·수집 ON을 유지하고 Ollama/edge는 미교체·미재기동이다. 실제 모델·Chrome·DB 복구·재부팅 시험은 미실측/보류를 유지한다. [배포 결과](devlog.md#log-20261112-0310-refactor-deployed)
+- 구조 리팩토링 8섹터의 코드/검토와 EC2 반영 완료. 1~7번 제품은 PR #23~#29로 main/0e54cd4 통합 완료, 각 PR의 CI4job 성공. 8번은 정적 대조 후 코드 유지로 완료했고 최종 기록 PR #30·정리 PR #31은main/b82b391까지 통합했다. 기존8개 브랜치는 로컬·원격 삭제 완료했다. 미완료 제품 구현은 없다. [전체 검토](devlog.md#log-20261112-0228-runtime-review) / [정리·배포 착수](devlog.md#log-20261112-0257-refactor-deploy)
 
-- Vercel 제품main/0e54cd4 production READY/운영alias 연결을 확인했다. EC2 소스는main/364cbb8+B안11파일 보존이며 서버 배포는 미진행이다. B안 겹침 보존·충돌/복구계획·운영이미지 대조 후 서버 반영 범위를 처리해야 한다. 실제Chrome/음성·모델품질·DB/운영종단과 이미지다운로드·worker/DB복구시험은 완료로 표시하지 않는다. [환경과 잔여](devlog.md#log-20261112-0228-runtime-review)
+- Vercel 제품main/0e54cd4 production READY/운영alias 연결을 확인했고 이번 EC2 배포와 구분한다. 실제Chrome/음성·모델품질·DB/운영종단과 이미지다운로드·worker/DB복구시험은 완료로 표시하지 않는다. [기존 환경과 잔여](devlog.md#log-20261112-0228-runtime-review)
 
 - 11/10 기능통합 기록: PR #20 뒤 기존 팀원 PR #19를 병합했고 당시 제품main은3c18f4f였다. 병합 전 head76f9c51의 자동 CI4job 성공과 확장 기대값2건의 실패·정정 이력을 보존한다. [당시 근거](devlog.md#log-20261110-1603-pr19-complete)
 - 11/10 당시 welfare7의 main3c18f4f production READY/운영alias 연결과 본계정 중복 연결 해제를 확인했다. 최신 리팩토링 배포 상태는 위 현재현황을 따른다. 배포 READY는 실제 웹/API 종단·음성 확인을 대신하지 않는다. [당시 배포 근거](devlog.md#log-20261110-1603-pr19-complete)

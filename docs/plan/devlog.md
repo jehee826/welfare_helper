@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:21 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:28 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1130,3 +1130,13 @@
 - 객체 경계의 잘못된step/blocked target, HTTP 잘린JSON/2MiB초과 후reader.cancel1회와 화면 변경/숨김/접기/초기화/종료5경로의 signal취소/늦은응답 폐기를 기존검사에 보강했다. Terra가 node --test의 assistant/tracking/visibility3파일을1회 실행해36/36통과·실패/취소/skip0·3293.4228ms·exit0다. 변경5파일 node --check도 통과했다. Windows 사례는 -TestTracking의 C#컴파일·순수URL/Route만 확인하고 UIA Read/감시 전에 반환한다. 실패·재실행은 없다.
 - 나머지 main/preload/overlay/native watcher·공개라벨/프로세스/ACK/geometry·renderer/자원/빌드·서버화면DTO/선택ID/권한/기한·이미지거절 경계를 읽어 유지했다. 파일이동·renderer/빌드입력·서버DTO 변경이 없어 build/pack/smoke·Python 검사는 실행하지 않았다. 실제 Electron/Chrome/UIA감시·음성·서버/모델·DB·EC2/.env는 미접근이다.
 - 원자료는 .local/co-op/checks-runtime/refactor-desktop-20261112-focused.log와 refactor-desktop-20261112-syntax.log다. 설계가 diff·원로그·구문·상태와 기존 순서를 대조했고 diff --check도 통과했다. 다운로드·worker/DB 복구시험은 보류를 유지한다. 다음은 push·PR·CI·병합이며8번은 대기한다.
+
+<a id="log-20261112-0228-runtime-review"></a>
+## 2026-11-12 02:28 KST · 7번 통합·8번 실행/CI 정적 검토 완료
+
+- codex/refactor-desktop의 착수6877f82·제품4c90966/d9a5d61·결과b2229b8을 push해 PR #29를 생성했다. head/b2229b8958dce3daae02955a64f88a3f8fa64239의 Actions43067579466에서 web-extension·python backend/worker/dev 4job 성공과 Vercel Preview 상태 success를 확인했다. expected head SHA로 병합했고 실제 merged/main0e54cd4e14750abe891569d770a79e8a004be5c3 및 커밋 포함을 확인했다. 로컬main은ff-only 동기화했고 최종 기록용 codex/refactor-runtime-review를 만들었다.
+- 설계가 8번 25파일을 읽기 검토했다. Compose의 backend/worker/Ollama·선택 edge/local DB, Dockerfile 4개와 COPY/CMD, startup의 DB 준비/캐시와 worker/API readiness, Caddy 공개/내부 경로, Python 입력/lock 생성기·CI 격리/환경 3종, 환경 예시/제외 규칙과 기존 검사 3파일의 책임을 대조했다. 작은 실행 진입점은 실제 CLI/컨테이너 소비자가 있고 worker heartbeat와 API 준비도 실패 경계가 달라 유지한다.
+- 앞선 변경은 같은 파일의 함수·export 정리와 단일 TSX 삭제이며 CI 명시 목록/모듈/패키지 경로 수정은 필요하지 않았다. 정적 점검으로 확장/Python 검사·실행 진입점·lock 4개·Desktop 주요 자원 등 77경로가 존재하고 소스/설정의 ProgramManager/parseStep 잔여 호출이 0개임을 확인했다. 제품/설정·Desktop 신규 CI job은 추가하지 않았다. 7번의 로컬 Node 36개/구문 결과와 PR의 웹/확장/Python CI는 구분한다.
+- 8번에서 Docker/Compose·startup/readiness·모델/DB·전체 회귀를 실행하지 않았다. 정적 검토이며 앞선 통과 검사를 반복하지 않았다. 실제 .env·서비스·설정·의존성·이미지/모델·데이터 변경은 없다. 초기 278파일 중 ProgramManager 1파일을 제거했고 나머지 모듈은 검토 후 유지했다.
+- Vercel 운영 alias를 연결 도구로 조회해 production/dpl_7ZRcoSnikU3D1stGZz88gsMWE6oM의 READY·main/0e54cd4와 welfare-helper-iota.vercel.app 연결을 확인했다. 실제 관리자 로그인/UI/API 종단은 미실측이다. EC2는 01:54 main/364cbb8+B안 동일 diff 확인 이후 변경하지 않았으며 신규 main 배포는 남아 있다.
+- 완료 기능 브랜치 7개 일괄 삭제는 자동 승인 심사가 명시적 삭제 승인 부재로 거절했다. 명령은 실행되지 않았고 다른 도구/단건 삭제로 우회하지 않았다. 읽기 재확인에서 로컬/원격 기능 head가 예상값임을 확인했으며 삭제는 보존/승인 대기로 남긴다. 최종 기록 통합 뒤 main 동기화와 최종 SHA는 채팅에 보고한다. EC2 B안 충돌 보존·운영 반영과 기존 실제 시험/이미지 다운로드·worker/DB 복구 시험 보류는 별개 잔여다.

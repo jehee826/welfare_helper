@@ -30,8 +30,8 @@ test("임의 공개문구 추측·입력값·도움말은 경계에서 버리고
  const snap=p.sanitizeSnapshot({...raw,screen_context:[{kind:"text",text:"복지서비스"},{kind:"label",text:"사용자 이름"},{kind:"help",text:"개인 인증 안내"}]});
  assert.deepEqual(snap.screenContext,[{kind:"text",text:"복지서비스"}]);
  const answer={action:"설명",target_id:null,instruction:"현재 화면에서 확인된 기능을 설명합니다.",expect_label:null};
- assert.equal(p.parseStep(JSON.stringify(answer),snap.elements).action,"설명");
- assert.throws(()=>p.parseStep(JSON.stringify({...answer,target_id:id}),snap.elements));
+ assert.equal(p.validateStep(answer,snap.elements).action,"설명");
+ assert.throws(()=>p.validateStep({...answer,target_id:id},snap.elements));
 });
 
 test("패널 강조는 정확 패널 포커스의 새 UIA hit만 허용",()=>{
@@ -44,7 +44,7 @@ test("패널 강조는 정확 패널 포커스의 새 UIA hit만 허용",()=>{
 test("UIA 화면밖 표시가 누락돼도 페이지 영역 밖 대상은 선택하지 않음",()=>{
  const snap=p.sanitizeSnapshot({...raw,elements:[{...raw.elements[0],rect:{...box,y:650},offscreen:false}]});
  assert.equal(snap.elements[0].offscreen,true);
- assert.throws(()=>p.parseStep(JSON.stringify({target_id:id,action:"안내",instruction:"선택하세요.",expect_label:null}),snap.elements));
+ assert.throws(()=>p.validateStep({target_id:id,action:"안내",instruction:"선택하세요.",expect_label:null},snap.elements));
 });
 
 test("모달이 열리면 뒤의 버튼은 요청·안내·강조 대상에서 제외됨",async()=>{
@@ -52,7 +52,7 @@ test("모달이 열리면 뒤의 버튼은 요청·안내·강조 대상에서 �
  const snap=p.sanitizeSnapshot({...raw,modal_open:true,elements:[raw.elements[0],{...raw.elements[0],id:closeId,name:"닫기",in_modal:true}]});
  assert.equal(snap.elements[0].blocked,true);assert.equal(snap.elements[1].blocked,false);
  const step={target_id:id,action:"안내",instruction:"선택하세요.",expect_label:null};
- assert.throws(()=>p.parseStep(JSON.stringify(step),snap.elements));
+ assert.throws(()=>p.validateStep(step,snap.elements));
  assert.equal(p.realHighlight(snap,id,r=>r,[view],null,true).reason,"modal_covered");
  const original=global.fetch;
  global.fetch=async(_url,options)=>{
@@ -66,13 +66,27 @@ test("화면 안내 전송에는 합성 이미지 필드를 포함하지 않는�
  let calls=0;const original=global.fetch;global.fetch=async(_url,options)=>{calls++;const body=JSON.parse(options.body);assert.equal(Object.hasOwn(body,'image'),false);return {ok:true,body:new ReadableStream({start(c){c.enqueue(Buffer.from(JSON.stringify({step:{target_id:null,action:'설명',instruction:'공개 화면입니다.',expect_label:null},model:'test'})));c.close();}})};};
  try{await guideStep('화면 설명',{elements:[],image:'synthetic'},[],new AbortController().signal);assert.equal(calls,1);}finally{global.fetch=original;}
 });
-test("잘린 JSON·가짜 ID·실패형식·비밀 목표는 보류",()=>{
+test("객체 경계에서 가짜 ID·실패형식·비밀 목표는 보류",()=>{
  const elements=p.sanitizeSnapshot(raw).elements;
  const step={target_id:id,action:"안내",instruction:"로그인 버튼의 위치를 확인하세요.",expect_label:"다음"};
- assert.equal(p.parseStep(JSON.stringify(step),elements).target_id,id);
- for(const change of [{offscreen:true},{enabled:false}])assert.throws(()=>p.parseStep(JSON.stringify(step),[{...elements[0],...change}]));
- for(const value of ["{",JSON.stringify({...step,target_id:"unknown"}),JSON.stringify({...step,action:"완료"}),JSON.stringify({...step,expect_label:"개인정보"}),JSON.stringify({...step,extra:1})])assert.throws(()=>p.parseStep(value,elements));
+ assert.equal(p.validateStep(step,elements).target_id,id);
+ for(const change of [{offscreen:true},{enabled:false},{blocked:true}])assert.throws(()=>p.validateStep(step,[{...elements[0],...change}]),{message:"unknown_target"});
+ for(const value of [null,[],"{",{...step,target_id:"unknown"},{...step,action:"완료"},{...step,expect_label:"개인정보"},{...step,extra:1},{...step,instruction:""},{...step,instruction:123}])assert.throws(()=>p.validateStep(value,elements));
  for(const goal of ["인증코드 123456","abc@example.com","주민번호 입력",""])assert.throws(()=>p.safeGoal(goal));
+});
+test("HTTP 경계에서 잘린 JSON·응답 크기 초과를 거절하고 reader를 정리함",async()=>{
+ const original=global.fetch;
+ try{
+  for(const [chunk,error] of [[Buffer.from('{"step":'),SyntaxError],[Buffer.alloc(2*1024*1024+1),{message:"response_limit"}]]){
+   let reads=0,cancelled=0;
+   global.fetch=async()=>({ok:true,body:{getReader:()=>({
+    read:async()=>reads++===0?{done:false,value:chunk}:{done:true},
+    cancel:async()=>{cancelled++;},
+   })}});
+   await assert.rejects(guideStep("복지서비스 찾기",{elements:[]},[],new AbortController().signal),error);
+   assert.equal(cancelled,1);
+  }
+ }finally{global.fetch=original;}
 });
 test("UIA 가림·비활성·화면밖·패널겹침에서 강조하지 않음",()=>{
  const snap=p.sanitizeSnapshot(raw),convert=r=>r;

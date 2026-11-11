@@ -1,4 +1,4 @@
-const {localOrigin,parseStep} = require("./assistant-policy.cjs");
+const {localOrigin,validateStep} = require("./assistant-policy.cjs");
 function configuration() {
   return {rag:localOrigin(process.env.DESKTOP_API_BASE_URL||"http://127.0.0.1:8000",8000)};
 }
@@ -32,7 +32,7 @@ async function guideStep(goal,snapshot,progress,signal,clarifications=[],observa
       });
     }
   }
-  return {...parseStep(JSON.stringify(result.step),snapshot.elements),model:result.model};
+  return {...validateStep(result.step,snapshot.elements),model:result.model};
 }
 
 async function ragAnswer(query,signal) {

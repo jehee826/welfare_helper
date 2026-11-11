@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:33 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:50 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1141,3 +1141,11 @@
 - Vercel 운영 alias를 연결 도구로 조회해 production/dpl_7ZRcoSnikU3D1stGZz88gsMWE6oM의 READY·main/0e54cd4와 welfare-helper-iota.vercel.app 연결을 확인했다. 실제 관리자 로그인/UI/API 종단은 미실측이다. EC2는 01:54 main/364cbb8+B안 동일 diff 확인 이후 변경하지 않았으며 신규 main 배포는 남아 있다.
 - 완료 기능 브랜치 7개 일괄 삭제는 자동 승인 심사가 명시적 삭제 승인 부재로 거절했다. 명령은 실행되지 않았고 다른 도구/단건 삭제로 우회하지 않았다. 읽기 재확인에서 로컬/원격 기능 head가 예상값임을 확인했으며 삭제는 보존/승인 대기로 남긴다. 최종 기록 통합 뒤 main 동기화와 최종 SHA는 채팅에 보고한다. EC2 B안 충돌 보존·운영 반영과 기존 실제 시험/이미지 다운로드·worker/DB 복구 시험 보류는 별개 잔여다.
 - 최종 정적 검토·제품/운영 기준과 잔여를 기존4문서에 맞춰1dbc4c1로 push하고 문서 전용 PR #30을 생성했다. 재개 인계는 제품 기준과 기록 제작 브랜치를 구분하고 원격 main/최종 완료 보고를 읽도록 정리한다. 제품·설정 추가 변경은 없다.
+
+<a id="log-20261112-0249-refactor-cleanup"></a>
+## 2026-11-12 02:49 KST · 승인된 리팩토링 브랜치 정리
+
+- PR #30의 최종head8dee87d에서 Actions43069296325의4job 성공을 확인한 뒤main/6c59068a45e1e645e1183440aae9fbdb4a163651로 병합했고 실제merged·로컬/원격main 일치와 깨끗한 작업 트리를 확인했다.
+- 8개 브랜치 삭제 범위가 명시 승인된 뒤 모든 로컬/원격head의 예상값 일치·main 포함·미커밋 변경 없음·단일checkout/main 사용을 재확인했다. codex/refactor-extension, refactor-webchat, refactor-admin-web, refactor-backend-core, refactor-document-worker, refactor-rag, refactor-desktop의7개를 로컬 branch -d와 원격 --delete로 정리했다. 강제 삭제·이력 재작성은 없다.
+- 승인된 마지막 codex/refactor-runtime-review는main/6c59068로ff-only 맞춰 이 실제 정리 결과와 인계 상태를 공유하는 데만 사용한다. 기록 PR 통합 뒤 main ff-only·최종 커밋 포함/후속 변경/사용 여부를 확인하고 이 브랜치도 로컬·원격에서 삭제한다. 최종8개 삭제/브랜치 목록과 SHA는 완료 보고에서 확인한다.
+- 제품·설정·시험·EC2·DB·서비스·보존B안·이미지는 변경하지 않았다. 실제.env를 읽지 않았고 기존 검사를 재실행하지 않았다. 앞선 자동 승인 거절은 과거 실패로 보존하며 현재 명시 승인으로 해당 정리 범위만 진행한다.

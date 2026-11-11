@@ -27,8 +27,7 @@ function sanitizeSnapshot(raw) {
   const maskRects=Array.isArray(raw.mask_rects)&&raw.mask_rects.length<=40&&raw.mask_rects.every(validRect)?raw.mask_rects:null;
   return {context,signature,elements,pageLabels,screenContext,scrollPercent,formOpen,modalOpen,viewport:raw.viewport,windowRect:validRect(raw.window_rect)?raw.window_rect:null,captureEligible:raw.capture_eligible===true&&maskRects!==null,maskRects,active:!!raw.active,panelFocused:raw.panel_focused===true,verifiedAt:Date.now(),partial:!!raw.partial};
 }
-function parseStep(text,elements) {
-  const step=JSON.parse(text);
+function validateStep(step,elements) {
   if(!step || Object.keys(step).sort().join(",")!=="action,expect_label,instruction,target_id" || !["설명","안내","추가질문","대기","보류"].includes(step.action) || typeof step.instruction!=="string" || !step.instruction.trim() || step.instruction.length>420 || /\d{4,}|@/.test(step.instruction) || !(step.expect_label===null||labels.has(step.expect_label))) throw new Error("invalid_step");
   if(step.action==="안내") { if(!elements.some(e=>e.id===step.target_id && e.enabled && !e.offscreen && !e.blocked)) throw new Error("unknown_target"); }
   else if(step.target_id!==null) throw new Error("unexpected_target");
@@ -50,4 +49,4 @@ function realHighlight(snapshot,id,convert,displays,panelBounds,focused) {
   if(panelBounds && validRect(intersect(rect,panelBounds)))return {rect:null,reason:"panel_covered"};
   return {rect,reason:"visible"};
 }
-module.exports={bokjiroUrl,localOrigin,safeGoal,sanitizeSnapshot,parseStep,realHighlight};
+module.exports={bokjiroUrl,localOrigin,safeGoal,sanitizeSnapshot,validateStep,realHighlight};

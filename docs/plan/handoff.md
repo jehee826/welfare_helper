@@ -1,13 +1,13 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:55 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:09 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 리팩토링 1~5번은 PR #23~#27로 main 통합 완료이며 각 PR의 CI4job이 통과했다. 현재6번 RAG 구조 정리에 로컬 착수한다. EC2 연결과 B안 실제 diff 대조를 마쳤고 기존 실험 변경은 채택하지 않고 보존한다. [5번 결과](devlog.md#log-20261112-0150-document-worker-result) / [5번 통합·EC2 대조·6번 착수](devlog.md#log-20261112-0155-worker-merge-rag)
-- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-rag`, 기준 main/69abfee27481409ed38c8d32e1ca548545552f0e다. 개발이6번 제품·기존 집중 검사, 설계가 문서·리뷰·Git을 맡는다. 첫 변경은 현행 answer_document의 근거/연락처 ID 검증·선택을 같은 모듈에서 읽기 쉽게 정리하는 것이다. 검색/프롬프트/모델/생성 스키마·품질은 변경하지 않는다. 7~8번은 대기한다.
+- 리팩토링 1~5번은 PR #23~#27로 main 통합 완료이며 각 PR의 CI4job이 통과했다. 현재6번은 근거/연락처 선택 구조 정리·배정 책임 검토·집중 검사·설계 리뷰까지 로컬 완료, PR 통합 대기다. [6번 결과](devlog.md#log-20261112-0209-rag-result)
+- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-rag`, 기준 main/69abfee27481409ed38c8d32e1ca548545552f0e, 제품09d4f51다. 개발은 작성권을 반환했고 설계가 문서·리뷰·Git을 맡는다. 기존 정책·B안 보류를 유지하며 push·PR·CI·병합이 다음이다. 7~8번은 대기한다.
 
 ## 구현·배포 기준과 보존할 변경
 

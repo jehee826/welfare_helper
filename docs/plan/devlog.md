@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:55 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:09 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1105,3 +1105,12 @@
 - EC2는01:54 SSH가 복구돼 main/364cbb8과 기존11개 미커밋 경로를 실제 확인했다. 전체diff SHA256 `4ff7518bfb5505c4b0a106eb4217fd6808e7e096e492e5b5717860d8200b3bd4`는 기존 기록과 동일하다. 소스5파일·검사6파일의 실제diff를 읽었고 잘린 검사3파일은 별도 조회해 보완했다. B안은 items/evidence 발췌의 GroundedAnswer·프롬프트와생성스키마 변경·strict_json 및 관련기대값 변경이다. 기존 품질실험 보류를 유지해 이번에 채택/복사하지 않는다. EC2 source/Git/index/서비스/환경/데이터 변경은 없다.
 - main/69abfee에서 codex/refactor-rag를 만들었다. 개발이6번 배정제품·기존검사, 설계가 문서·리뷰·Git을 맡는다. 현행 answer_document의 source/contact ID 검증과 문서버전·근거·연락처 선택을 같은 모듈의 명확한 단위로 정리한다. local main의 WelfareAnswer/text·기존프롬프트/모델·검색/리랭킹/예산·진단/오류·호출횟수/순서·프로필동의와문서권한을 보존한다.
 - EC2와 겹치는 qa/검사도 로컬main 기준으로만 작업하며 서버실험 소스는 그대로 둔다. 이전chat 경로 삭제는 실제 호출/지원범위 확인을 선행하고 불명확하면 유지한다. 실제 모델품질·스트리밍·DB/운영반영은 이 단계에 포함하지 않는다. 7~8번은 대기한다.
+
+<a id="log-20261112-0209-rag-result"></a>
+## 2026-11-12 02:09 KST · 6번 RAG 구조 정리 로컬 완료
+
+- 개발이 작성권을 반환한 뒤 설계가 qa·기존document_qa 검사2파일113추가/37삭제를 리뷰해09d4f51d9103def2f4e6d46f45bfd983bad7df80으로 선별 커밋했다. 기존 해석·source/contact ID 검증·문서버전/근거 범위 선택을 같은 모듈의 _validate_answer_selection으로 옮겼다. 기존trace를 전달해 실패 전의 부분진단도 유지하며 주 함수에는 snapshot/digest 재확인·마지막checkpoint/BM25 게시·최종 연락처/legacy fallback을 남겼다.
+- 현행text 스키마·프롬프트/모델·검색/리랭킹/임계값/예산·정책은 미변경이다. context/profile·provenance·repository/모델/벡터 검증·factory/ChatService와 기존 offline/tests 소비자·reranker lock/cache·BM25/RRF와 원문 span/hash 책임은 검토해 유지했다. B안의 Grounded/items/strict_json은 채택하지 않았다.
+- 기존 검사에 실패5종의 부분진단, parser TypeError 안전실패, 선택 문서 밖 연락처 거절7사례를 추가했고 기존 조건/문의처2사례는 근거 순서까지 비교했다. Terra가 기존 격리 Python3.12.13 진입으로11파일323/323통과·실패/skip0·pytest8.18초·명령11.292초·exit0를 확인했다. 변경2파일 compile 구문도OK이며 실패·재실행은 없다.
+- 집중 대상은 test_document_qa, test_welfare_qa, test_document_rag_diagnostics, test_conversation_context, test_profile_context, test_admin_referrals, test_document_bm25_cache, test_qa_diagnostics, test_request_execution, test_ollama, test_automatic_retrieval 각.py다. 기존 env_file/상속설정 격리·실제DB/httpx 차단·모델offline·플러그인 자동로딩 중지·90초 상한과 승인된 샌드박스 밖 실행을 재사용했다.
+- 원자료는 .local/co-op/checks-runtime/refactor-rag-20261112-focused.log와 refactor-rag-20261112-syntax.log다. 설계가 diff·통과/구문 로그를 읽고 선택 범위/부분진단·실패 공개 필드·자원/캐시 순서를 대조했으며 diff --check도 통과했다. 실제 모델품질·DB·HTTP/UI 종단·EC2/배포는 미실측이다. 이미지 다운로드와 worker·DB 복구 자동시험 보류를 유지한다. 다음은 push·PR·CI·병합이다.

@@ -54,16 +54,21 @@ def test_summary_echoes_request_and_server_selected_ids_with_one_model_call(summ
     assert api.llm.for_request.call_args.args[0] > 0
 
 
-@pytest.mark.parametrize("case", ["empty", "odd", "role", "pair", "duplicate", "count", "characters", "privacy", "profile", "request_id", "partial"])
+@pytest.mark.parametrize("case", ["empty", "odd", "role", "id_role", "blank", "pair", "duplicate", "count", "characters", "privacy", "profile", "request_id", "partial"])
 def test_invalid_input_never_constructs_or_calls_model(summary_api, case):
     api = summary_api
     body = payload()
     if case == "empty":
         body["messages"] = []
     elif case == "odd":
+        body = payload(2)
         body["messages"].pop()
     elif case == "role":
         body["messages"].reverse()
+    elif case == "id_role":
+        body["messages"][0]["id"] = "B" * 20 + ":assistant"
+    elif case == "blank":
+        body["messages"][0]["content"] = " \t\r\n"
     elif case == "pair":
         body["messages"][1]["id"] = "B" * 20 + ":assistant"
     elif case == "duplicate":

@@ -51,16 +51,26 @@ class SummaryRequest(BaseModel):
 
     @model_validator(mode="after")
     def complete_pairs(self):
-        if len(self.messages) % 2 or sum(len(message.content) for message in self.messages) > 12000:
+        if len(self.messages) % 2:
             raise ValueError("완전한 문답 60메시지·12000자 이내여야 합니다.")
-        ids = set()
+        if sum(len(message.content) for message in self.messages) > 12000:
+            raise ValueError("완전한 문답 60메시지·12000자 이내여야 합니다.")
+
+        seen_ids = set()
         for index, message in enumerate(self.messages):
-            role = "assistant" if index % 2 else "user"
-            if (message.role != role or message.id != message.id[:20] + ":" + role
-                    or message.id in ids or not message.content.strip()
-                    or index % 2 and message.id[:20] != self.messages[index - 1].id[:20]):
+            expected_role = "assistant" if index % 2 else "user"
+            pair_id = message.id[:20]
+            if message.role != expected_role:
                 raise ValueError("문답 순서와 ID가 일치해야 합니다.")
-            ids.add(message.id)
+            if message.id != pair_id + ":" + expected_role:
+                raise ValueError("문답 순서와 ID가 일치해야 합니다.")
+            if message.id in seen_ids:
+                raise ValueError("문답 순서와 ID가 일치해야 합니다.")
+            if not message.content.strip():
+                raise ValueError("문답 순서와 ID가 일치해야 합니다.")
+            if expected_role == "assistant" and pair_id != self.messages[index - 1].id[:20]:
+                raise ValueError("문답 순서와 ID가 일치해야 합니다.")
+            seen_ids.add(message.id)
         return self
 
 

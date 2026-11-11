@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:50 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:55 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1097,3 +1097,11 @@
 - 기존 Terra 담당이 승인된 샌드박스 밖 기존 Python3.12 격리 진입으로 pipeline·automatic_store·replacement_boundaries·transaction_scope·worker_diagnostics·documents의6파일을1회 실행해80통과+하위2통과·실패/skip0·pytest3.99초·명령6.85초·exit0다. Settings 상속/VERCEL/시험DB DSN과 env_file을 격리하고 실제 DB/httpx transport 차단·모델offline·pytest플러그인 자동로딩 중지를 재사용했다. 변경2파일 compile 구문도OK다. 실패·재실행은 없었다.
 - 원자료는 .local/co-op/checks-runtime/refactor-document-worker-20261112-focused.log와 refactor-document-worker-20261112-syntax.log다. 설계가 실제 diff·로그·구문 결과를 읽었고 diff --check도 통과했다. 실제DB·모델/Docling·서비스·파일변환·lease복구/원자게시는 미실측이다. 다음은 push·PR·CI·병합이다.
 - 6번 선행 대조를 위해01:49 EC2 SSH 상태/경로/해시 읽기를1회 재시도했으나8초 연결 시간 초과였다. 서비스·소스·환경은 변경하지 않았고 현재 접속 가능 여부/IP 확인을 요청했다. 5번 통합은 계속하되6번의 EC2 보존 파일 수정 전 대조 조건은 남는다.
+
+<a id="log-20261112-0155-worker-merge-rag"></a>
+## 2026-11-12 01:55 KST · 5번 통합·EC2 실제 대조·6번 RAG 착수
+
+- codex/refactor-document-worker의 착수450a53f·제품3eee6a3·결과39ebbea를 push해 PR #27을 생성했다. head/39ebbeaa81ee28b025facbd27fc628fc74098dee의 Actions43062504129에서 web-extension·python backend/worker/dev 4job 성공과 Vercel Preview 상태 success를 확인했다. expected head SHA로 병합했고 실제 merged/main69abfee27481409ed38c8d32e1ca548545552f0e 및 커밋 포함을 확인했다. 로컬main은ff-only 동기화했다.
+- EC2는01:54 SSH가 복구돼 main/364cbb8과 기존11개 미커밋 경로를 실제 확인했다. 전체diff SHA256 `4ff7518bfb5505c4b0a106eb4217fd6808e7e096e492e5b5717860d8200b3bd4`는 기존 기록과 동일하다. 소스5파일·검사6파일의 실제diff를 읽었고 잘린 검사3파일은 별도 조회해 보완했다. B안은 items/evidence 발췌의 GroundedAnswer·프롬프트와생성스키마 변경·strict_json 및 관련기대값 변경이다. 기존 품질실험 보류를 유지해 이번에 채택/복사하지 않는다. EC2 source/Git/index/서비스/환경/데이터 변경은 없다.
+- main/69abfee에서 codex/refactor-rag를 만들었다. 개발이6번 배정제품·기존검사, 설계가 문서·리뷰·Git을 맡는다. 현행 answer_document의 source/contact ID 검증과 문서버전·근거·연락처 선택을 같은 모듈의 명확한 단위로 정리한다. local main의 WelfareAnswer/text·기존프롬프트/모델·검색/리랭킹/예산·진단/오류·호출횟수/순서·프로필동의와문서권한을 보존한다.
+- EC2와 겹치는 qa/검사도 로컬main 기준으로만 작업하며 서버실험 소스는 그대로 둔다. 이전chat 경로 삭제는 실제 호출/지원범위 확인을 선행하고 불명확하면 유지한다. 실제 모델품질·스트리밍·DB/운영반영은 이 단계에 포함하지 않는다. 7~8번은 대기한다.

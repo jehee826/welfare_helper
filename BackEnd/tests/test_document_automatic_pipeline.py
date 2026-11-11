@@ -77,8 +77,8 @@ def test_legacy_review_wait_is_not_automatically_processed(monkeypatch, tmp_path
         worker.process_job(str(uuid4()), 'lease', tmp_path)
 
 
-@pytest.mark.parametrize('already_analyzed', [False, True])
-def test_worker_runs_analysis_to_embedding_without_review(monkeypatch, tmp_path, already_analyzed):
+@pytest.mark.parametrize('already_analyzed,digest_changed', [(False, False), (True, False), (True, True)])
+def test_worker_runs_analysis_to_embedding_without_review(monkeypatch, tmp_path, already_analyzed, digest_changed):
     from BackEnd.rag import ollama, reranker
 
     doc, analysis, payload = source_fixture()
@@ -111,13 +111,66 @@ def test_worker_runs_analysis_to_embedding_without_review(monkeypatch, tmp_path,
     clients = []
     def client(*_args, **kwargs):
         clients.append(kwargs)
-        return SimpleNamespace(model_digest=lambda: 'digest', embed=lambda texts: [[0.0] * 1024 for _ in texts])
+        return SimpleNamespace(model_digest=Mock(side_effect=['digest', 'changed' if digest_changed else 'digest']),
+                               embed=lambda texts: [[0.0] * 1024 for _ in texts])
     monkeypatch.setattr(ollama, 'OllamaClient', client)
     monkeypatch.setattr(reranker, 'LocalReranker', lambda *_: SimpleNamespace(count_tokens=len))
-    worker.process_job(str(uuid4()), 'lease', tmp_path)
+    if digest_changed:
+        with pytest.raises(DocumentError, match='embedding_digest_changed'):
+            worker.process_job(str(uuid4()), 'lease', tmp_path)
+    else:
+        worker.process_job(str(uuid4()), 'lease', tmp_path)
     assert clients[0]['embed_cpu_only'] is True
-    assert calls == ([] if already_analyzed else ['analysis', 'analysis_saved']) + ['embedding', 'vectors', 'published']
+    assert calls == ([] if already_analyzed else ['analysis', 'analysis_saved']) + ['embedding', 'vectors'] + ([] if digest_changed else ['published'])
     assert job['reviewed_by'] is None and job['reviewed_at'] is None
+
+
+def test_embedding_batches_reuse_hashes_and_keep_save_progress_order():
+    texts = ['cached', 'first', 'first'] + [f'unique-{index}' for index in range(13)]
+    texts += ['first', 'second', 'second'] + ['cached'] * 13 + ['second', 'first']
+    records = [{'chunk': SimpleNamespace(chunk_id=f'chunk-{index}', embedding_text=lambda text=text: text)}
+               for index, text in enumerate(texts)]
+    vectors = {text: [float(index)] * 1024 for index, text in enumerate(dict.fromkeys(texts))}
+    events = []
+    store = SimpleNamespace(
+        reused_vectors=Mock(return_value={stable_hash(b'cached'): vectors['cached']}),
+        save_vectors=Mock(side_effect=lambda *args: events.append(('save', args))),
+    )
+    llm = SimpleNamespace(embed=Mock(side_effect=lambda missing: [vectors[text] for text in missing]))
+    stage = lambda name, **values: events.append((name, values))
+
+    worker.embed_and_save_batches(records, store=store, llm=llm, model='embed', digest='digest',
+                                 job_id='job', token='lease', document_id='document', stage=stage)
+
+    store.reused_vectors.assert_called_once()
+    model, digest, hashes = store.reused_vectors.call_args.args
+    assert (model, digest) == ('embed', 'digest')
+    assert set(hashes) == {stable_hash(text.encode()) for text in texts}
+    assert llm.embed.call_args_list == [call(['first'] + [f'unique-{index}' for index in range(13)]), call(['second'])]
+    saves = store.save_vectors.call_args_list
+    assert [len(saved.args[3]) for saved in saves] == [16, 16, 2]
+    for saved in saves:
+        job_id, token, document_id, batch, saved_vectors, model, digest = saved.args
+        assert (job_id, token, document_id, model, digest) == ('job', 'lease', 'document', 'embed', 'digest')
+        assert saved_vectors == {record['chunk'].chunk_id: vectors[record['chunk'].embedding_text()] for record in batch}
+    assert [event[0] for event in events] == ['embedding', 'save', 'embedding', 'save', 'embedding', 'save', 'embedding']
+    assert [values for name, values in events if name == 'embedding'] == [
+        {'chunks': 34, 'embedded': 0}, {'chunks': 34, 'embedded': 14, 'stored': 16},
+        {'chunks': 34, 'embedded': 15, 'stored': 32}, {'chunks': 34, 'embedded': 15, 'stored': 34},
+    ]
+
+
+@pytest.mark.parametrize('vectors', [[], [[0.0] * 1024, [1.0] * 1024]])
+def test_embedding_cardinality_mismatch_never_saves_a_batch(vectors):
+    records = [{'chunk': SimpleNamespace(chunk_id='chunk', embedding_text=lambda: 'input')}]
+    store = SimpleNamespace(reused_vectors=Mock(return_value={}), save_vectors=Mock())
+    llm = SimpleNamespace(embed=Mock(return_value=vectors))
+    stage = Mock()
+    with pytest.raises(ValueError):
+        worker.embed_and_save_batches(records, store=store, llm=llm, model='embed', digest='digest',
+                                     job_id='job', token='lease', document_id='document', stage=stage)
+    store.save_vectors.assert_not_called()
+    stage.assert_called_once_with('embedding', chunks=1, embedded=0)
 
 
 class StopChildTests(unittest.TestCase):

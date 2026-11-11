@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { ApiError } from "../api/httpApi";
 import { createMockApi } from "../api/mockApi";
 import type { AdminProgram, WelfareApi } from "../api/types";
-import { ProgramManager } from "../components/admin/ProgramManager";
+import { AdminPage } from "./AdminPage";
 import { renderApp } from "../test/renderApp";
 
 const auth = vi.hoisted(() => ({ check: vi.fn(), signIn: vi.fn() }));
@@ -109,7 +109,7 @@ describe("제도 관리와 원문 문서", () => {
     const user = userEvent.setup();
     let rejectRequest!: (error: unknown) => void;
     const ask = vi.fn().mockImplementation(() => new Promise((_, reject) => { rejectRequest = reject; }));
-    render(<ProgramManager api={fakeApi({ ask })} />);
+    render(<AdminPage api={fakeApi({ ask })} />);
     await user.type(screen.getByLabelText("샘플 질문"), "공개 질문");
     await user.click(screen.getByRole("button", { name: "확인" }));
     expect(screen.getByRole("button", { name: "확인 중…" })).toBeDisabled();
@@ -121,7 +121,7 @@ describe("제도 관리와 원문 문서", () => {
 
   it("원문 문서 수를 보여주고, 문서가 있는 제도는 이름과 서비스 ID를 잠근다", async () => {
     const user = userEvent.setup();
-    render(<ProgramManager api={fakeApi()} />);
+    render(<AdminPage api={fakeApi()} />);
     const row = (await screen.findByRole("button", { name: "기초연금 수정" })).closest("tr")!;
     expect(row).toHaveTextContent("2건 (게시 1)");
 
@@ -136,7 +136,7 @@ describe("제도 관리와 원문 문서", () => {
   it("수정하면 바뀐 항목만 보낸다", async () => {
     const user = userEvent.setup();
     const updateProgram = vi.fn().mockResolvedValue({ ...linked, summary: "새 요약" });
-    render(<ProgramManager api={fakeApi({ updateProgram })} />);
+    render(<AdminPage api={fakeApi({ updateProgram })} />);
     await user.click(await screen.findByRole("button", { name: "기초연금 수정" }));
     const summary = within(screen.getByRole("dialog")).getByLabelText("요약");
     await user.clear(summary);
@@ -150,7 +150,7 @@ describe("제도 관리와 원문 문서", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const user = userEvent.setup();
     const deleteProgram = vi.fn().mockRejectedValue(new ApiError("program_has_documents", 409, "program_has_documents"));
-    render(<ProgramManager api={fakeApi({ deleteProgram })} />);
+    render(<AdminPage api={fakeApi({ deleteProgram })} />);
     await user.click(await screen.findByRole("button", { name: "기초연금 삭제" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("원문 문서가 연결돼 있어");
     expect(screen.getByRole("button", { name: "기초연금 수정" })).toBeInTheDocument();
@@ -159,7 +159,7 @@ describe("제도 관리와 원문 문서", () => {
   it("다른 사람이 먼저 고쳤으면 다시 불러오라고 알려준다", async () => {
     const user = userEvent.setup();
     const updateProgram = vi.fn().mockRejectedValue(new ApiError("program_changed", 409, "program_changed"));
-    render(<ProgramManager api={fakeApi({ updateProgram })} />);
+    render(<AdminPage api={fakeApi({ updateProgram })} />);
     await user.click(await screen.findByRole("button", { name: "기초연금 수정" }));
     await user.type(within(screen.getByRole("dialog")).getByLabelText("요약"), " 추가");
     await user.click(screen.getByRole("button", { name: "저장" }));

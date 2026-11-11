@@ -90,11 +90,12 @@ postgres_data/
 /docs/design/database/*
 !/docs/design/database/복지챗봇.erd
 
-# 활성 계획·진행·인계는 세 문서만 공유
+# 활성 기록 세 문서와 사용자가 요청한 리팩토링 계획을 공유
 /docs/plan/*
 !/docs/plan/merge_plan.md
 !/docs/plan/handoff.md
 !/docs/plan/devlog.md
+!/docs/plan/refactor.md
 
 # 과거 문서는 기본 로컬 보관, 기존 공유 문서의 이동본만 추적
 /docs/archive/*

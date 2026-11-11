@@ -1,19 +1,19 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:05 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:15 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 리팩토링 1번 확장은 PR #23, 2번 공개 웹 상담은 PR #24로 main에 통합했다. 두 PR의 CI4job이 각각 통과했다. 현재는 3번 관리자 웹·공유 진입점 착수다. [1번 통합](devlog.md#log-20261112-0055-extension-merge-webchat) / [2번 결과](devlog.md#log-20261112-0102-webchat-result) / [2번 통합·3번 착수](devlog.md#log-20261112-0105-webchat-merge-admin)
-- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-admin-web`, 기준 main/a12ed10d9eea63779196bd99162aeeaf13986153이다. 개발 채팅이 관리자 웹 제품·관련 기존 검사, 설계가 기록·리뷰·Git을 단독 작성한다. 우선 AdminPage/ProgramManager 통합과 DocumentsPage 작업 분기 정리이며 4~8번은 대기한다.
+- 리팩토링 1번 확장과2번 공개 웹은 PR #23·#24로 main에 통합했다. 현재3번 관리자 웹은 로컬 구현·집중 검사·설계 리뷰 완료, PR 통합 대기다. [3번 결과](devlog.md#log-20261112-0115-admin-web-result)
+- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-admin-web`, 기준 main/a12ed10d9eea63779196bd99162aeeaf13986153이다. 제품은4d49ccb·828c836이며 개발이 작성권을 반환했다. 설계가 기록·리뷰·Git을 맡아 push·PR·CI·병합을 진행한다. 4~8번은 대기한다.
 
 ## 구현·배포 기준과 보존할 변경
 
 - 로컬 main은 a12ed10까지 ff-only 동기화했다. EC2 `/home/ubuntu/welfare_helper`의 마지막 동기화 기준은 main/364cbb8이며 이번 리팩토링에서 접속·pull·서비스 재기동을 하지 않았다. 운영 backend 소스f11e8af와 실행 이미지는 Git HEAD와 별개다. [이전 동기화](devlog.md#log-20261110-1618-main-sync)
 - 마지막 확인된 backend 이미지는 `595f3713aa4f2a2ddc2af61d479b6a8bcb9a88647ef4f88cf9d6497501e6546c`, worker는 `5ae7df5b290797e2249ac5489cae09299a9fb95aed4ddbb6359eb2ce5ae9e820`이다. 기록 수집은 두 서비스에서 true로 활성화했다. 기존 모델·Caddy·부팅 이미지 pin·환경·볼륨·DB는 유지한다. 최근 상태를 새로 실측한 것은 아니다.
-- EC2 실패 B안11파일과 원자료는 보존한다. 다음 백엔드 작업 전에 현지 diff와 비교하며 최신 main으로 덮지 않는다. 보존 근거·해시는 기존 [일지](devlog.md#log-20261110-1618-main-sync)를 따른다.
+- EC2 실패 B안11파일과 원자료는 보존한다. 이번 읽기 확인은 SSH22 시간 초과로 실패했다. 현지 diff 재확인 전 해당 경로를 덮거나 서버 동기화/배포하지 않는다. 로컬 다음 단계는 기존 B안 경로와 겹치지 않는 변경부터 진행한다. 보존 근거·해시는 기존 [일지](devlog.md#log-20261110-1618-main-sync)를 따른다.
 - 확장은 `Extension/`, MV3/0.1.0, API `https://15.164.190.21`이다. 설치 확장 재로드와 실제 모델·음성 시험은 이번에 하지 않았다. 기존 저장·동의/취소·공개 DOM 계약은 유지한다.
 - Vercel은 welfare7/welfare-helper와 `welfare-helper-iota.vercel.app`을 유지한다. PR #24 head/abd0d92의 Preview 상태 success를 확인했다. main/a12ed10 production 완료와 관리자 로그인·실제 웹/API 종단은 별도 확인 대상이다. 본계정 중복 Git 연결 해제·기존 인증을 유지한다.
 

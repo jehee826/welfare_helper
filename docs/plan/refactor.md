@@ -1,6 +1,6 @@
 # welfare_helper 섹터별 리팩토링 계획
 
-최초 작성: 2026-11-11. 최신 업데이트: 2026-11-12 01:05 KST
+최초 작성: 2026-11-11. 최신 업데이트: 2026-11-12 01:15 KST
 
 구현 순서는 **확장 → 공개 웹 → 관리자 웹 → FastAPI 공통·관리자 → 문서 처리·DB → RAG → Desktop·화면 안내 → 배포·CI**다. 한 섹터의 결과를 검토한 뒤 다음 섹터로 넘어간다. 이번 산출물은 이 순서대로 사용할 설계 문서다.
 
@@ -10,7 +10,7 @@
 
 전체 대상은 **278파일**이다. 구현·설정·도구 162개와 테스트·픽스처·수동 측정 도구 116개다. 실행에 쓰이는 manifest, HTML, CSS, SQL, 환경 예시와 배포 설정을 포함했다. 의존성 잠금 산출물, 설명 문서, 복지 원문 데이터, 실제 환경 파일은 집계에서 제외했다. 파일별 소속은 문서 끝 목록에서 확인한다.
 
-한 번에 한 섹터를 진행한다. 각 섹터에서 **첫 변경 → 나머지 후보 검토 → 집중 검사 → 결과 인계** 순서로 마친 뒤 다음 번호로 이동한다. 모든 파일을 수정할 필요는 없다. 공유 파일은 목록에 기재된 섹터에서만 쓰고 다른 섹터에서는 소비자로 검토한다. 현재 1번은 **PR #23·main/f3ad16d 통합 완료**, 2번은 **PR #24·main/a12ed10 통합 완료**, 3번은 **구현 착수**, 4~8번은 **구현 대기**다. 1번 제품 커밋은25f67bc이며 head10cf711의 CI4job이 통과했다. [변경·검사 결과](devlog.md#log-20261112-0038-extension-refactor-result) / [통합·2번 착수](devlog.md#log-20261112-0055-extension-merge-webchat)
+한 번에 한 섹터를 진행한다. 각 섹터에서 **첫 변경 → 나머지 후보 검토 → 집중 검사 → 결과 인계** 순서로 마친 뒤 다음 번호로 이동한다. 모든 파일을 수정할 필요는 없다. 공유 파일은 목록에 기재된 섹터에서만 쓰고 다른 섹터에서는 소비자로 검토한다. 현재 1번은 **PR #23·main/f3ad16d 통합 완료**, 2번은 **PR #24·main/a12ed10 통합 완료**, 3번은 **로컬 구현·검증·리뷰 완료, PR 통합 대기**, 4~8번은 **구현 대기**다. 1번 제품 커밋은25f67bc이며 head10cf711의 CI4job이 통과했다. [변경·검사 결과](devlog.md#log-20261112-0038-extension-refactor-result) / [통합·2번 착수](devlog.md#log-20261112-0055-extension-merge-webchat)
 
 ### 1. Chrome 확장 — 51파일
 
@@ -32,7 +32,7 @@
 
 ### 3. 관리자 웹·공유 웹 진입점 — 52파일
 
-상태는 main/a12ed10 기준 codex/refactor-admin-web에서 착수다. 개발이 제품·관련 기존 검사, 설계가 문서·리뷰·Git을 맡는다. 먼저 제도 화면의 단일 경유 컴포넌트를 통합하고 문서 작업 분기를 정리한다.
+상태는 main/a12ed10 기준 codex/refactor-admin-web에서 로컬 완료다. 제품4d49ccb에서 ProgramManager를 AdminPage로 통합해 파일1개를 줄였고828c836에서 문서 작업 분기를 평탄하게 정리했다. 기존14파일124개 검사·타입·빌드와 설계 리뷰를 마쳤으며 PR 통합 대기다. [결과](devlog.md#log-20261112-0115-admin-web-result)
 
 - **따라갈 순서.** `main.tsx/App.tsx` → `AuthProvider/AdminGate` → 제도·문서·연락처·비밀번호 화면 → 각 API. Vite·라우팅·테스트 진입점도 이 섹터 책임이다.
 - **첫 변경.** `AdminPage`와 단일 제품 호출처인 `ProgramManager`를 한 페이지로 합친다. 이후 `DocumentsPage.perform`의 원문 읽기·검색·질의를 분리하고 제도 폼/연락처 화면도 요청 종료와 오류 처리 순서 중심으로 정리한다.
@@ -94,7 +94,7 @@ offscreen이 요약 응답을 한 번 해석하고 그 반환값을 전달하도
 
 #### 관리자 제도 관리 페이지의 한 단계짜리 경유를 없앤다
 
-- **근거.** [AdminPage.tsx](../../FrontEnd/src/pages/AdminPage.tsx)는 11줄이며 제목, 설명 두 줄, `<ProgramManager api={api}/>`로 구성된다. 제품에서 `ProgramManager`를 렌더링하는 곳은 이 페이지 한 곳이다. 테스트는 `ProgramManager`를 직접 렌더링한다.
+- **검토 당시 근거.** 기존 AdminPage는11줄의 제목·설명·ProgramManager 호출뿐이었고 제품 호출처는 그 페이지 한 곳이었다. 현재는 [AdminPage.tsx](../../FrontEnd/src/pages/AdminPage.tsx)에 통합했고 검사도 페이지를 직접 렌더링한다.
 - **변경.** 제도 관리 화면 구현을 기존 `pages/AdminPage.tsx`에 놓고 페이지가 제목부터 목록·작업까지 소유하게 한다. `components/admin/ProgramManager.tsx`를 제거한다. 별도의 재수출 파일을 남기지 않는다. 독립된 폼인 `ProgramForm`은 유지한다. 기존 테스트의 렌더링 대상을 페이지로 옮겨 같은 사용자 행동을 확인한다.
 - **완료 기준.** `/admin/programs` 경로, 관리자 인증, API 주입, 등록·수정·삭제 흐름을 유지하면서 화면을 이해하기 위해 열어야 하는 파일이 하나 줄어든다.
 
@@ -119,7 +119,7 @@ offscreen이 요약 응답을 한 번 해석하고 그 반환값을 전달하도
 
 | 대상 | 판단과 이유 |
 |---|---|
-| `AdminPage`와 `ProgramManager` | 먼저 통합한다. 단일 화면의 제목과 본체를 연결하는 한 단계가 사라지고 라우트 파일 하나에서 시작할 수 있다. |
+| `AdminPage`와 `ProgramManager` | 통합 구현 완료. 단일 화면의 제목과 본체를 연결하는 한 단계와 파일1개를 줄였다. |
 | `webchat/Contacts.tsx`, `password-rotation.css` | 선택 사항이다. 연락처 컴포넌트는 24줄이고 제품 호출처는 하나이지만 전화 링크·운영시간을 한 덩어리로 읽을 수 있다. 368줄인 `WebChatPage`로 옮길 이익이 작다. 비밀번호 CSS는 5줄이나 독립 dialog에만 쓰인다. 두 파일 모두 현 구조를 유지하는 편이 낫다. |
 | `rag/embeddings.py`, `rag/factory.py`, `documents/auth.py`, 웹 `api/config.ts` | 공유 모듈로 유지한다. 18줄짜리 벡터 검증기는 Ollama·저장·검색·repository에서 쓰고, 서비스 조립은 공개 상담과 관리자 문서 경로에서 함께 사용한다. 문서 관리자 의존성과 웹 API 주소 정책도 호출처가 여럿이다. |
 | `Extension/options.js`, Desktop preload, 백엔드 startup/readiness | 작은 실행 진입점으로 유지한다. options 스크립트는 HTML의 CSP와 확장 패키지 파일 목록에 걸린다. preload는 Electron 창 경계이고, startup·readiness는 Compose와 컨테이너가 모듈 이름으로 실행한다. 일반 함수의 import 수만 세면 이 소비자들이 빠진다. |

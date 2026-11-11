@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 00:44 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 00:55 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1032,3 +1032,10 @@
 
 - 승인된777099f·25f67bc·826a755만 origin/codex/refactor-extension에 push했다. ls-remote의826a755f8a410afc42e107ed252c33d894cae050과 로컬 HEAD 일치, upstream 연결 및 작업 트리 깨끗함을 확인했다.
 - PR 생성·main 병합·EC2 변경·추가 시험은 수행하지 않았다. 다음은 사용자의 main 대상 PR 생성과 통합이다. 2번 섹터는 통합 뒤 착수한다. 이 push 완료 기록과 계획·인계 상태는 후속 로컬 문서 커밋으로 남기며 승인 범위를 넘어 추가 push하지 않는다.
+
+<a id="log-20261112-0055-extension-merge-webchat"></a>
+## 2026-11-12 00:55 KST · 1번 통합 완료와 2번 공개 웹 착수
+
+- 로컬 기록10cf711까지 기능 브랜치에 push하고 PR #23을 생성했다. head10cf711의 Actions43052582590에서 web-extension·python backend/worker/dev 4job 성공 및 Vercel 상태 success를 확인했다. expected head SHA를 지정해 merge했고 실제 merged와 main/f3ad16dc8e4939f8762e9ee481f3e3d18046dae5 및 기존 커밋 포함을 재확인했다. 로컬 main도 ff-only 동기화했다. EC2·모델·DB·실제 Chrome은 변경하지 않았다.
+- main/f3ad16d에서 codex/refactor-webchat을 만들었다. 개발 채팅이 FrontEnd/src/webchat/의 제품과 기존 관련 검사, 설계가 문서·리뷰·Git을 단독 작성한다. 첫 변경은 WebChatPage의 active/timer/AbortController 종료 중복을 같은 파일에서 줄이는 것이다. 요청 ID와 취소 사유는 호출부에 남기고 API/저장·연락처 검증·음성 수명은 유지한다.
+- 11파일을 검토하되 모든 파일 수정이 목적은 아니다. 기존 웹챗·API·라우트·음성 집중 검사와 타입/빌드 확인 후 읽기 리뷰·제품 커밋·PR 통합을 진행한다. 새로운 추상화·서버 변경·실제 추론·운영 조작은 이 단계에 포함하지 않는다. 3~8번은 대기한다.

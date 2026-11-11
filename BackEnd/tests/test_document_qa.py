@@ -2,6 +2,7 @@ from dataclasses import replace
 import json
 import re
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -84,10 +85,76 @@ def test_model_selected_reference_retains_conditions_and_contacts_for_only_used_
     service.llm.chat = generate
     answer, trace = answer_document(repo, service, "선택 자료의 조건을 알려주세요")
     assert answer['kind'] == 'answer'
-    assert {item['chunk_id'] for item in answer['evidence']} == {first.chunk_id, condition.chunk_id} | ({other.chunk_id} if include_other else set())
+    assert [item['chunk_id'] for item in answer['evidence']] == [first.chunk_id, condition.chunk_id] + ([other.chunk_id] if include_other else [])
     assert {item['document_id'] for item in answer['evidence']} == {DOC_ID} | ({other.document_id} if include_other else set())
     assert {item['phone'] for item in answer['contacts']} == ({'1355', '1523'} if include_other else {'1355'})
     assert trace['source_reference_selection'] == 'model_selected_document_versions'
+
+
+@pytest.mark.parametrize('raw,validation,selection', [
+    ({'status': 'answer'}, 'invalid_schema', None),
+    ({'status': 'answer', 'text': ' \t '}, 'empty_answer', None),
+    ({'status': 'answer', 'text': '합성 답변', 'source_ids': ['C999']}, 'invalid_answer', None),
+    ({'status': 'answer', 'text': '합성 답변', 'source_ids': ['C1'], 'contact_ids': ['invented']},
+     'invalid_answer', 'model_selected_document_versions'),
+    ({'status': 'no_evidence', 'text': '합성 안내', 'contact_ids': ['invented']},
+     'invalid_answer', 'legacy_server_references'),
+])
+def test_invalid_selection_preserves_diagnostics_before_failure(raw, validation, selection):
+    repo, service, calls = components()
+    service.llm.chat = Mock(return_value=raw)
+    response, trace = answer_document(repo, service, '합성 질문', select_contacts=True)
+    assert response['kind'] == 'fallback' and response['reason'] == 'invalid_evidence_answer'
+    assert response['evidence'] == response['contacts'] == []
+    assert trace['answer_validation'] == validation
+    if selection is None:
+        assert 'source_reference_selection' not in trace
+    else:
+        assert trace['source_reference_selection'] == selection
+    assert trace['citation_validation'] == 'not_performed_server_references'
+    assert trace['selected_contacts'] == []
+    assert trace['source_references'] == {'C1': 'source:1'}
+    assert service._document_bm25 is not None
+    service.llm.chat.assert_called_once()
+    assert calls['embeddings'] == 1
+
+
+def test_answer_parser_type_error_keeps_safe_failure_and_diagnostics(monkeypatch):
+    from BackEnd.documents import qa
+    repo, service, _ = components()
+    monkeypatch.setattr(qa, 'validate_answer', Mock(side_effect=TypeError('synthetic parser error')))
+    response, trace = answer_document(repo, service, '합성 질문')
+    assert response['reason'] == 'invalid_evidence_answer'
+    assert response['evidence'] == response['contacts'] == []
+    assert trace['answer_validation'] == 'invalid_answer'
+    assert 'source_reference_selection' not in trace
+    assert 'synthetic parser error' not in response['text']
+
+
+def test_contact_selection_cannot_escape_selected_document_versions():
+    repo, service, calls = components()
+    first = replace(repo.snapshot().chunks[0], version='v1', heading_context='문의처',
+                    text='합성 첫 부서 1355', source_url='https://example.go.kr/one')
+    other = replace(first, chunk_id='source:other', document_id='00000000-0000-0000-0000-000000000002',
+                    service_id='PROGRAM_2', version='v2', text='합성 둘째 부서 1523', source_url='https://example.go.kr/two')
+    snapshot = replace(repo.snapshot(), chunks=[first, other])
+    repo.document_scope = None
+    repo.snapshot = lambda: snapshot
+    repo.dense_search = lambda *args, **kwargs: [replace(chunk, score=.65) for chunk in snapshot.chunks]
+    def generate(_system, prompt, **_kwargs):
+        sources = json.loads(prompt.split('문서 근거(JSON):\n')[1].split('\n\n질문:')[0])
+        selected = next(source for source in sources if source['document_id'] == first.document_id)
+        foreign = next(source for source in sources if source['document_id'] == other.document_id)
+        return {'status': 'answer', 'text': '합성 안내', 'source_ids': [selected['chunks'][0]['id']],
+                'contact_ids': [foreign['contact_candidates'][0]['id']]}
+    service.llm.chat = Mock(side_effect=generate)
+    response, trace = answer_document(repo, service, '합성 질문', select_contacts=True)
+    assert response['reason'] == 'invalid_evidence_answer'
+    assert response['evidence'] == response['contacts'] == []
+    assert trace['source_reference_selection'] == 'model_selected_document_versions'
+    assert trace['answer_validation'] == 'invalid_answer' and trace['selected_contacts'] == []
+    service.llm.chat.assert_called_once()
+    assert calls['embeddings'] == 1
 
 
 @pytest.mark.parametrize('selection', [[], ['C999'], ['C1', 'C1']])

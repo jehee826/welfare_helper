@@ -38,6 +38,48 @@ def _document_keyword_index(repo, service, snapshot, digest):
     return index, (key, index) if keep else None
 
 
+def _validate_answer_selection(raw_answer, included, references, evidence, contact_options,
+                               *, select_contacts, empty_evidence, trace):
+    referenced = included
+    allowed_contacts = {}
+    try:
+        answer = ContactSelectionAnswer.model_validate(raw_answer) if select_contacts else validate_answer(raw_answer)
+        if not answer.text.strip():
+            raise ValueError('empty_answer')
+        if answer.source_ids is not None:
+            source_ids = answer.source_ids
+            if (len(set(source_ids)) != len(source_ids) or any(identifier not in references for identifier in source_ids)
+                    or answer.status == 'answer' and not source_ids):
+                raise ValueError('invalid_source_selection')
+            versions = {(document['document_id'], document['version']) for document in included
+                        if document['reference_id'] in source_ids}
+            # 표시·문의처만 좁히며 선택 문서의 조건·예외와 원문 버전은 함께 보존한다.
+            referenced = [document for document in included if (document['document_id'], document['version']) in versions]
+            selected_chunks = {document['id'] for document in referenced}
+            evidence = [item for item in evidence if item['chunk_id'] in selected_chunks]
+            trace['source_reference_selection'] = 'model_selected_document_versions'
+        else:
+            trace['source_reference_selection'] = 'legacy_server_references'
+        allowed_contacts = {candidate['id']: candidate for candidate in contact_options
+                            if any(d['document_id'] == candidate['document_id'] and d['version'] == candidate['document_version']
+                                   for d in referenced)}
+        if select_contacts and (len(set(answer.contact_ids)) != len(answer.contact_ids)
+                                or any(identifier not in allowed_contacts for identifier in answer.contact_ids)
+                                or answer.status != 'answer' and answer.contact_ids):
+            raise ValueError('invalid_contact_selection')
+        if empty_evidence and answer.status not in {'out_of_scope', 'no_evidence'}:
+            raise ValueError('invalid_scope_answer')
+        trace['answer_validation'] = 'accepted'
+    except ValidationError:
+        answer = None
+        trace['answer_validation'] = 'invalid_schema'
+    except (ValueError, TypeError) as exc:
+        answer = None
+        code = str(exc)
+        trace['answer_validation'] = code if code == 'empty_answer' else 'invalid_answer'
+    return answer, referenced, evidence, allowed_contacts
+
+
 @diagnose_qa
 def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None,
                     select_contacts=False, profile_context=None):
@@ -254,42 +296,9 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         if current_digest != digest:
             service._document_bm25 = None
             raise DocumentError("embedding_digest_changed")
-    referenced = included
-    try:
-        answer = ContactSelectionAnswer.model_validate(raw_answer) if select_contacts else validate_answer(raw_answer)
-        if not answer.text.strip():
-            raise ValueError('empty_answer')
-        if answer.source_ids is not None:
-            source_ids = answer.source_ids
-            if (len(set(source_ids)) != len(source_ids) or any(identifier not in references for identifier in source_ids)
-                    or answer.status == 'answer' and not source_ids):
-                raise ValueError('invalid_source_selection')
-            versions = {(document['document_id'], document['version']) for document in included
-                        if document['reference_id'] in source_ids}
-            # 표시·문의처만 좁히며 선택 문서의 조건·예외와 원문 버전은 함께 보존한다.
-            referenced = [document for document in included if (document['document_id'], document['version']) in versions]
-            selected_chunks = {document['id'] for document in referenced}
-            evidence = [item for item in evidence if item['chunk_id'] in selected_chunks]
-            trace['source_reference_selection'] = 'model_selected_document_versions'
-        else:
-            trace['source_reference_selection'] = 'legacy_server_references'
-        allowed_contacts = {candidate['id']: candidate for candidate in contact_options
-                            if any(d['document_id'] == candidate['document_id'] and d['version'] == candidate['document_version']
-                                   for d in referenced)}
-        if select_contacts and (len(set(answer.contact_ids)) != len(answer.contact_ids)
-                                or any(identifier not in allowed_contacts for identifier in answer.contact_ids)
-                                or answer.status != 'answer' and answer.contact_ids):
-            raise ValueError('invalid_contact_selection')
-        if empty_evidence and answer.status not in {'out_of_scope', 'no_evidence'}:
-            raise ValueError('invalid_scope_answer')
-        trace['answer_validation'] = 'accepted'
-    except ValidationError:
-        answer = None
-        trace['answer_validation'] = 'invalid_schema'
-    except (ValueError, TypeError) as exc:
-        answer = None
-        code = str(exc)
-        trace['answer_validation'] = code if code == 'empty_answer' else 'invalid_answer'
+    answer, referenced, evidence, allowed_contacts = _validate_answer_selection(
+        raw_answer, included, references, evidence, contact_options,
+        select_contacts=select_contacts, empty_evidence=empty_evidence, trace=trace)
     trace['citation_validation'] = 'not_performed_server_references'
     # 새 인덱스는 요청의 마지막 원문/digest 확인과 취소 점검이 끝난 뒤에만 게시한다.
     checkpoint()

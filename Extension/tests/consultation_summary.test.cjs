@@ -124,16 +124,17 @@ test('요약 응답은 요청 ID·완전쌍 source IDs·부분 표시·출력 �
 });
 
 test('offscreen은 고정 공개 요약 경로로만 보내고 비익명 접근은 거절한다',async()=>{
-  for(const admin of [false,true]){
-    let connect,receive;const sent=[],calls=[];
+  for(const [admin,partial] of [[false,false],[false,true],[true,false]]){
+    let connect,receive,parsed,parses=0;const sent=[],calls=[];
     const chrome={runtime:{id:'x',onMessage:{addListener(){}},onConnect:{addListener(fn){connect=fn;}},sendMessage:async()=>({mode:admin?'admin':'anonymous',accessId:'public-1',origin:protocol.documentOrigin()})}};
-    const input={request_id:id(100),messages:seed(1)[key].conversations[0].messages.map(({id,role,content})=>({id,role,content})),partial:false};
-    vm.runInNewContext(source('offscreen.js'),{chrome,GyeoteProtocol:protocol,AbortController,setTimeout,clearTimeout,Uint8Array,TextDecoder,Blob,fetch:async(url,options)=>{
-      calls.push({url,options});const body=JSON.parse(options.body);return new Response(JSON.stringify({request_id:body.request_id,text:'당시 상담 요약',source_message_ids:body.messages.map(message=>message.id),partial:false}));
+    const input={request_id:id(100),messages:seed(1)[key].conversations[0].messages.map(({id,role,content})=>({id,role,content})),partial};
+    const policy={...protocol,summaryReply(body,submitted){parses++;parsed=protocol.summaryReply(body,submitted);return parsed;}};
+    vm.runInNewContext(source('offscreen.js'),{chrome,GyeoteProtocol:policy,AbortController,setTimeout,clearTimeout,Uint8Array,TextDecoder,Blob,fetch:async(url,options)=>{
+      calls.push({url,options});const body=JSON.parse(options.body);return new Response(JSON.stringify({request_id:body.request_id,text:'당시 상담 요약',source_message_ids:body.messages.map(message=>message.id),partial:body.partial}));
     }});
     connect({name:'gyeote:guide',sender:{id:'x',frameId:0,url:'https://www.bokjiro.go.kr/',tab:{url:'https://www.bokjiro.go.kr/'}},postMessage:packet=>sent.push(packet),disconnect(){},onMessage:{addListener(fn){receive=fn;}},onDisconnect:{addListener(){}}});
     await receive({requestId:input.request_id,mode:'summary',payload:input,documentAccess:'anonymous:anonymous:public-1'});
-    if(admin){assert.equal(calls.length,0);assert.equal(sent[0].error,'connection_failed');}
-    else{assert.equal(calls.length,1);assert.equal(calls[0].url,protocol.documentOrigin()+'/api/v1/conversation/summary');assert.equal(calls[0].options.headers.Authorization,undefined);assert.equal(sent[0].type,'result');}
+    if(admin){assert.equal(calls.length,0);assert.equal(parses,0);assert.equal(sent[0].error,'connection_failed');}
+    else{assert.equal(calls.length,1);assert.equal(calls[0].url,protocol.documentOrigin()+'/api/v1/conversation/summary');assert.equal(calls[0].options.headers.Authorization,undefined);assert.equal(sent[0].type,'result');assert.equal(parses,1);assert.equal(sent[0].body,parsed);assert.equal(parsed.partial,partial);}
   }
 });

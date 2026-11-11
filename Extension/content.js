@@ -600,6 +600,43 @@
       if(version!==serial)return;
       const port=chrome.runtime.connect({name:'gyeote:guide'});requestPort=port;let finished=false;
       port.onDisconnect.addListener(()=>{if(version===serial&&requestPort===port&&!finished)cancel(errors.connection_failed);});
+      async function displayAndSaveDocumentReply(body){
+        const answer=GyeoteProtocol.documentReply(body,requestInput?.conversation_context??null);
+        removePending();
+        pendingQuestion=null;
+        setStatus('');
+        appendDocumentAnswer(answer);
+        clearTimeout(requestTimer);
+        const saved=await savedPanel.save(conversationContext,requestId,question,answer,conversationContext.profileRevision,()=>version===serial&&requestPort===port&&mode==='document');
+        if(version!==serial||requestPort!==port)return;
+        if(!saved){
+          setStatus('답변과 대화 맥락의 저장을 확인하지 못했습니다. 저장 상태와 재시도를 확인하세요.');
+          return;
+        }
+        const notices=[];
+        if(profileContextOmitted)notices.push('저장 정보 제공을 확인하지 못해 이번 답변에는 사용하지 않았습니다.');
+        if(answer.context_update?.status==='failed'){
+          notices.push('이전 대화 일부만 참고해 답변했습니다.');
+        }else if(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted){
+          notices.push('일부 대화 맥락은 제외됐습니다.');
+        }
+        setStatus(notices.join(' '));
+      }
+      function applyScreenReply(body){
+        const answer=GyeoteProtocol.reply(body,payload);
+        if(snapshot!==source||!GyeoteDOM.current(source))throw new Error('invalid_reply');
+        removePending();
+        const display=apply(source,answer.targets,answer.answer);
+        if(answer.targets.length&&!selected.length)throw new Error('invalid_reply');
+        pendingQuestion=null;
+        setStatus('');
+        activeReply=appendMessage('assistant',display);
+        activeReply.answer=answer.answer;
+        const spokenReply=activeReply;
+        addSpeech(spokenReply,()=>spokenReply.text.textContent);
+        history.push({role:'user',text:question},{role:'assistant',text:answer.answer});
+        while(history.length>4||history.reduce((n,m)=>n+m.text.length,0)>1000)history.shift();
+      }
       port.onMessage.addListener(async packet=>{
         if(version!==serial||requestPort!==port||finished||packet.requestId!==requestId)return;
         finished=true;
@@ -608,23 +645,33 @@
           if(documentMode){
             if(version!==serial||requestPort!==port)return;
             if(Date.now()>=startedAt+budgetSeconds*1000)throw new Error('request_stopped');
+            await displayAndSaveDocumentReply(packet.body);
+          }else{
+            applyScreenReply(packet.body);
           }
-          if(documentMode){
-            const answer=GyeoteProtocol.documentReply(packet.body,requestInput?.conversation_context??null);removePending();pendingQuestion=null;setStatus('');appendDocumentAnswer(answer);
+        }catch(error){
+          if(version!==serial||requestPort!==port)return;
+          if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){
+            resetDocumentView();
+            void refreshDocumentAccess();
+          }
+          let message;
+          if(error.message==='request_stopped')message=stoppedText();
+          else if(documentMode)message=documentError(error.message);
+          else message=errors[error.message]||errors.invalid_reply;
+          finishQuestion(message);
+          clear(message);
+        }finally{
+          if(version===serial&&requestPort===port){
+            removePending();
             clearTimeout(requestTimer);
-            const saved=await savedPanel.save(conversationContext,requestId,question,answer,conversationContext.profileRevision,()=>version===serial&&requestPort===port&&mode==='document');
-            if(version===serial&&requestPort===port)setStatus(saved?[(profileContextOmitted?'저장 정보 제공을 확인하지 못해 이번 답변에는 사용하지 않았습니다.':''),(answer.context_update?.status==='failed'?'이전 대화 일부만 참고해 답변했습니다.':''),(answer.context_update?.status!=='failed'&&(requestInput?.conversation_context.omitted||answer.context_update?.status==='omitted'||answer.context_usage?.omitted)?'일부 대화 맥락은 제외됐습니다.':'')].filter(Boolean).join(' '):'답변과 대화 맥락의 저장을 확인하지 못했습니다. 저장 상태와 재시도를 확인하세요.');
-            return;
+            busy=false;
+            requestPort=null;
+            updateRequestControl();
+            inputAssist.update();
           }
-          const answer=GyeoteProtocol.reply(packet.body,payload);
-          if(snapshot!==source||!GyeoteDOM.current(source))throw new Error('invalid_reply');
-          removePending();
-          const display=apply(source,answer.targets,answer.answer);
-          if(answer.targets.length&&!selected.length)throw new Error('invalid_reply');
-          pendingQuestion=null;setStatus('');activeReply=appendMessage('assistant',display);activeReply.answer=answer.answer;const spokenReply=activeReply;addSpeech(spokenReply,()=>spokenReply.text.textContent);
-          history.push({role:'user',text:question},{role:'assistant',text:answer.answer});while(history.length>4||history.reduce((n,m)=>n+m.text.length,0)>1000)history.shift();
-        }catch(error){if(version!==serial||requestPort!==port)return;if(documentMode&&['document_auth_required','document_access_changed'].includes(error.message)){resetDocumentView();void refreshDocumentAccess();}const message=error.message==='request_stopped'?stoppedText():documentMode?documentError(error.message):errors[error.message]||errors.invalid_reply;finishQuestion(message);clear(message);}
-        finally{if(version===serial&&requestPort===port){removePending();clearTimeout(requestTimer);busy=false;requestPort=null;updateRequestControl();inputAssist.update();}port.disconnect();}
+          port.disconnect();
+        }
       });
       port.postMessage({requestId,mode,payload,...(documentMode?{documentAccess:requestAccess}:{}),...(conversationContext?{conversationContext:{revision:conversationContext.expectedRevision,generation:conversationContext.generation}}:{}),deadlineAt:startedAt+budgetSeconds*1000});
     }catch(error){

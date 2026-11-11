@@ -1,19 +1,19 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:40 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:50 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 리팩토링 1~4번은 PR #23~#26으로 main 통합 완료이며 각 PR의 CI4job이 통과했다. 현재5번 문서 수집·저장·게시는 로컬 착수다. [4번 결과](devlog.md#log-20261112-0136-backend-core-result) / [4번 통합·5번 착수](devlog.md#log-20261112-0140-backend-merge-worker)
-- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-document-worker`, 기준 main/8db25a5fd751526cb70b9fffa46e4b0a5043d0fa다. 개발이5번 제품·기존 집중 검사, 설계가 기록·리뷰·Git을 맡는다. 첫 변경은 worker의 임베딩 배치 작성/저장 루프를 같은 파일에서 읽기 쉽게 묶는 것이다. 6~8번은 대기한다.
+- 리팩토링 1~4번은 PR #23~#26으로 main 통합 완료이며 각 PR의 CI4job이 통과했다. 현재5번은 worker 배치 구조 정리·배정 책임 검토·집중 대역 검사·설계 리뷰까지 로컬 완료, PR 통합 대기다. [5번 결과](devlog.md#log-20261112-0150-document-worker-result)
+- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-document-worker`, 기준 main/8db25a5fd751526cb70b9fffa46e4b0a5043d0fa, 제품3eee6a3다. 개발은 작성권을 반환했고 설계가 기록·리뷰·Git을 맡는다. 6~8번은 대기한다. 다음RAG는 EC2 보존 변경과 겹치므로 접속 복구·현지 diff 대조가 필요하다.
 
 ## 구현·배포 기준과 보존할 변경
 
 - 로컬 main은8db25a5까지 ff-only 동기화했다. EC2 `/home/ubuntu/welfare_helper`의 마지막 동기화 기준은 main/364cbb8이며 이번 접속 시도는 시간 초과였다. pull·서비스 재기동은 하지 않았다. 운영 backend 소스f11e8af와 실행 이미지는 Git HEAD와 별개다. [이전 동기화](devlog.md#log-20261110-1618-main-sync)
 - 마지막 확인된 backend 이미지는 `595f3713aa4f2a2ddc2af61d479b6a8bcb9a88647ef4f88cf9d6497501e6546c`, worker는 `5ae7df5b290797e2249ac5489cae09299a9fb95aed4ddbb6359eb2ce5ae9e820`이다. 기록 수집은 두 서비스에서 true로 활성화했다. 기존 모델·Caddy·부팅 이미지 pin·환경·볼륨·DB는 유지한다. 최근 상태를 새로 실측한 것은 아니다.
-- EC2 실패 B안11파일과 원자료는 보존한다. 이번 읽기 확인은 SSH22 시간 초과로 실패했다. 현지 diff 재확인 전 해당 경로를 덮거나 서버 동기화/배포하지 않는다. 로컬 다음 단계는 기존 B안 경로와 겹치지 않는 변경부터 진행한다. 보존 근거·해시는 기존 [일지](devlog.md#log-20261110-1618-main-sync)를 따른다.
+- EC2 실패 B안11파일과 원자료는 보존한다. 01:15 읽기 확인과01:49 재확인 모두 SSH22 시간 초과였다. 현재 접속 가능 여부·IP 확인을 요청했다. 현지 diff 재확인 전 해당 경로를 덮거나 서버 동기화/배포하지 않는다. 로컬 독립 작업은 계속하며 보존 근거·해시는 기존 [일지](devlog.md#log-20261110-1618-main-sync)를 따른다.
 - 확장은 `Extension/`, MV3/0.1.0, API `https://15.164.190.21`이다. 설치 확장 재로드와 실제 모델·음성 시험은 이번에 하지 않았다. 기존 저장·동의/취소·공개 DOM 계약은 유지한다.
 - Vercel은 welfare7/welfare-helper와 `welfare-helper-iota.vercel.app`을 유지한다. PR #26 head/828dd3e의 Preview 상태 success를 확인했다. 최신main production 완료와 관리자 로그인·실제 웹/API 종단은 별도 확인 대상이다. 본계정 중복 Git 연결 해제·기존 인증을 유지한다.
 

@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:15 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:36 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1064,3 +1064,19 @@
 - 기존 Terra 담당이 ci.mjs test로 관리자·라우팅·인증·문서/교체·연락처·암호·공유API/개인정보·공개 route의14파일124개를1회 실행해124통과·실패/skip0·26.90초였다. 원문 도중 hash/job 변경2사례와 명시 재처리 POST1회/새 작업 이동1사례를 보강했다. tsc --noEmit은 진단0·exit0, ci.mjs build는64모듈·1.02초·exit0다. 실패·재실행 없이 완료했다.
 - 원자료는 .local/co-op/checks-runtime/refactor-admin-web-20261112-focused.log·refactor-admin-web-20261112-type.log·refactor-admin-web-20261112-build.log다. 타입 로그는 빈 파일이다. 설계 diff --check 통과, 코드의 ProgramManager 잔여 참조0개를 확인했다. 실제 Chrome·운영 관리자 UI/API·DB·EC2/모델·배포는 미실측이다. 다음은 push·PR·CI·병합이며4번은 아직 착수하지 않았다.
 - 다음 백엔드 단계 전 EC2 branch/HEAD/status/numstat/diff 해시만 읽으려 했으나 SSH22 연결이 시간 초과돼 실행되지 않았다. 소스·서비스·환경을 바꾸지 않았다. 로컬 리팩토링과 현재 웹 PR 통합은 진행하되 EC2 B안11파일은 재확인 전 덮지 않고 서버 동기화/배포는 별도 남긴다.
+
+<a id="log-20261112-0120-admin-merge-backend"></a>
+## 2026-11-12 01:20 KST · 3번 통합과 4번 백엔드 공통 착수
+
+- codex/refactor-admin-web의 착수8e87f0e·제품4d49ccb/828c836·결과720abb1을 push해 PR #25를 생성했다. head/720abb1f9242af710ec47c42c437dae74c7f1da3의 Actions43056822838에서 web-extension·python backend/worker/dev 4job 성공과 Vercel Preview 상태 success를 확인했다. expected head SHA로 병합했고 실제 merged/main f0bf276d271099978ac40b2adfb6d4137c352305 및 기존 커밋 포함을 재확인했다. 로컬 main은 ff-only 동기화했다. 운영 UI/API 종단·production 배포 완료는 새로 실측하지 않았다.
+- main/f0bf276에서 codex/refactor-backend-core를 생성했다. 개발은4번 배정 백엔드·관련 집중 검사, 설계는 문서·리뷰·Git을 맡는다. 상담 요약 complete_pairs의 길이·교대·ID 중복·짝/내용 검증을 같은 함수에서 순서대로 정리하고 나머지42파일의 공통화 타당성과 책임을 검토한다. 공개 DTO·오류·권한·개인정보·입력예산·취소/기한·추론 gate·DB 트랜잭션/보존 경계는 유지한다.
+- EC2 SSH 확인 실패로 현지 B안 최신 차이는 미확인이다. 해당11경로는 보존하며4번 배정 중 겹치는 test_admin_referrals.py는 편집하지 않는다. 실제 DB·모델·서비스·환경·EC2 조작 없이 로컬 환경 설정을 격리한 기존 집중 대역 검사로 진행한다. 5~8번은 대기한다.
+
+<a id="log-20261112-0136-backend-core-result"></a>
+## 2026-11-12 01:36 KST · 4번 백엔드 공통 로컬 완료
+
+- 개발이 작성권을 반환한 뒤 설계가 요약 제품·기존 검사2파일23추가/8삭제를 리뷰하고fd4f9c240e4142b6409244bec9692364b54bf419로 선별 커밋했다. complete_pairs의 홀수·총길이·기대 역할·ID 역할·중복·공백·문답 prefix를 기존 평가 순서의 개별 분기로 펼치고 prefix 계산은 한 번 재사용했다. ValueError 문구와 공개 오류·Pydantic 경계·60메시지/12000자·프롬프트/출력/예산·partial·모델1회/검색0회는 유지했다. 기존 invalid_input에는 ID 역할·공백2사례를 더하고 홀수 사례를3메시지로 바꿔 최소길이에 가려지지 않게 했다.
+- main/실행·속도 제한·관리자 인증/자격증명·DB 주입/트랜잭션/readonly 차이·설정·개인정보·진단의 독립 책임을 검토해 유지했다. API/저장/권한·취소/기한·동기 실행 후 gate 반환·90일 보존은 바꾸지 않았다. B안11파일 변경은 없다.
+- 환경 실패 이력: 최초 stdin 실행은120초 이상 무출력으로 해당 세션만 종료(exit1·0B 로그), 완료 수 미확정이다. import 진단은 정상이고 변경2파일 compile 구문 검사도 OK였다. 제한 재검사는302개 수집 후 첫 HTTP 대역 사례 앞에서90초 대기해 종료(exit1·완료 통과0 기록)했다. 별도 asyncio.run(asyncio.sleep(0))도 앱 도달 전 Windows socket._fallback_socketpair→accept에서20초 제한으로 종료됐다. 정확한 OS 차단 메커니즘은 확정하지 않았다.
+- 자동 승인 심사를 통과한 샌드박스 밖 동일 기존 Python3.12.13 환경에서는13파일302/302통과·실패/skip0·pytest5.51초·명령7.069초·exit0다. 기존 Terra 담당이 python -I -B -u -c 격리 진입으로 Settings 관련 상속 환경과 시험DB DSN/VERCEL을 제거하고 env_file=None·모델 offline·pytest 플러그인 자동로딩 중지·실제 psycopg2/httpx transport 차단 후 pytest.main을 실행했다. ASGI/TestClient/MockTransport는 유지했다. 설치·환경 파일 변경·전체 CI·실제 DB/모델/EC2 실행은 없다.
+- 집중 대상은 test_conversation_summary, test_api, test_request_execution, test_chat_rate_limit, test_document_http_budget, test_document_privacy, test_admin_auth_runtime, test_admin_peer_limit, test_admin_programs, test_admin_referrals, test_settings, test_database_password, test_program_store_locks 각.py다. test_admin_referrals는 기존 대역 검사만 재사용했다. 원자료는 .local/co-op/checks-runtime/refactor-backend-core-20261112-의 focused.log·entry-diagnostic.log·syntax.log·focused-recheck.log·http-entry-diagnostic.log·focused-elevated.log다. 설계가 diff·구문 결과·실패 소켓 스택·302통과 로그를 읽었고 diff --check도 통과했다. 다음은 push·PR·CI·병합이다. 운영 반영과5~8번은 대기한다.

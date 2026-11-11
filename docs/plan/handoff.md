@@ -1,13 +1,13 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:20 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:36 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 리팩토링 1~3번은 PR #23·#24·#25로 main 통합 완료이며 각각 CI4job이 통과했다. 현재4번 FastAPI·관리자·공통 실행은 로컬 착수다. [3번 결과](devlog.md#log-20261112-0115-admin-web-result) / [3번 통합·4번 착수](devlog.md#log-20261112-0120-admin-merge-backend)
-- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-backend-core`, 기준 main/f0bf276d271099978ac40b2adfb6d4137c352305다. 개발이 백엔드4번 배정 제품·기존 집중 검사, 설계가 기록·리뷰·Git을 맡는다. 첫 변경은 상담 요약의 완전한 문답 검증 순서를 같은 함수에서 읽기 쉽게 정리하는 것이다. 5~8번은 대기한다.
+- 리팩토링 1~3번은 PR #23·#24·#25로 main 통합 완료이며 각각 CI4job이 통과했다. 현재4번은 요약 완전쌍 검증 정리·배정 책임 검토·격리 집중 검사·설계 리뷰까지 로컬 완료다. [4번 결과](devlog.md#log-20261112-0136-backend-core-result)
+- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-backend-core`, 기준 main/f0bf276d271099978ac40b2adfb6d4137c352305, 제품fd4f9c2다. 개발은 작성권을 반환했고 설계가 기록·리뷰·Git을 맡아 push·PR·CI·병합을 진행한다. 5~8번은 대기한다. 로컬 Windows 샌드박스의 asyncio 소켓 대기와 동일 환경 샌드박스 밖302통과를 구분해 일지에 보존했다.
 
 ## 구현·배포 기준과 보존할 변경
 

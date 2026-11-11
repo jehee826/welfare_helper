@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:36 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:40 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1080,3 +1080,10 @@
 - 환경 실패 이력: 최초 stdin 실행은120초 이상 무출력으로 해당 세션만 종료(exit1·0B 로그), 완료 수 미확정이다. import 진단은 정상이고 변경2파일 compile 구문 검사도 OK였다. 제한 재검사는302개 수집 후 첫 HTTP 대역 사례 앞에서90초 대기해 종료(exit1·완료 통과0 기록)했다. 별도 asyncio.run(asyncio.sleep(0))도 앱 도달 전 Windows socket._fallback_socketpair→accept에서20초 제한으로 종료됐다. 정확한 OS 차단 메커니즘은 확정하지 않았다.
 - 자동 승인 심사를 통과한 샌드박스 밖 동일 기존 Python3.12.13 환경에서는13파일302/302통과·실패/skip0·pytest5.51초·명령7.069초·exit0다. 기존 Terra 담당이 python -I -B -u -c 격리 진입으로 Settings 관련 상속 환경과 시험DB DSN/VERCEL을 제거하고 env_file=None·모델 offline·pytest 플러그인 자동로딩 중지·실제 psycopg2/httpx transport 차단 후 pytest.main을 실행했다. ASGI/TestClient/MockTransport는 유지했다. 설치·환경 파일 변경·전체 CI·실제 DB/모델/EC2 실행은 없다.
 - 집중 대상은 test_conversation_summary, test_api, test_request_execution, test_chat_rate_limit, test_document_http_budget, test_document_privacy, test_admin_auth_runtime, test_admin_peer_limit, test_admin_programs, test_admin_referrals, test_settings, test_database_password, test_program_store_locks 각.py다. test_admin_referrals는 기존 대역 검사만 재사용했다. 원자료는 .local/co-op/checks-runtime/refactor-backend-core-20261112-의 focused.log·entry-diagnostic.log·syntax.log·focused-recheck.log·http-entry-diagnostic.log·focused-elevated.log다. 설계가 diff·구문 결과·실패 소켓 스택·302통과 로그를 읽었고 diff --check도 통과했다. 다음은 push·PR·CI·병합이다. 운영 반영과5~8번은 대기한다.
+
+<a id="log-20261112-0140-backend-merge-worker"></a>
+## 2026-11-12 01:40 KST · 4번 통합과 5번 문서 처리 착수
+
+- codex/refactor-backend-core의 착수cf9dcfa·제품fd4f9c2·결과828dd3e를 push해 PR #26을 생성했다. head/828dd3e43a944ed8da4e25fee1abf3aa33ee3bed의 Actions43060284303에서 web-extension·python backend/worker/dev 4job 성공과 Vercel Preview 상태 success를 확인했다. expected head SHA로 병합하고 실제 merged/main8db25a5fd751526cb70b9fffa46e4b0a5043d0fa 및 커밋 포함을 재확인했다. 로컬 main은 ff-only 동기화했다. 서버 배포는 하지 않았다.
+- main/8db25a5에서 codex/refactor-document-worker를 만들었다. 개발이5번 배정 제품·기존 집중 검사, 설계가 문서·리뷰·Git을 맡는다. process_job의 임베딩 배치 작성·캐시·저장 루프를 같은 파일의 한 단위로 묶고 주 함수에는 작업 검증·획득·digest·게시 순서를 남긴다. documents/api의 등록/교체 공통 업로드와 진입점도 관련 범위에서 검토한다.
+- 배치16개·중복 텍스트/캐시 재사용·임베딩 호출/저장/진행 순서·게시 전 digest·lease token·취소/재시작·기존 게시본 보존·업로드 스트림 크기/파일/권한 경계를 유지한다. SQL 이력과 DB 데이터·서비스/모델·환경은 변경하지 않는다. Windows 샌드박스 asyncio 대기가 재현된 기존 격리 검사 경로를 고려해 불필요한 동일 실패 반복 없이 필요한 검사만 진행한다. 6~8번은 대기한다.

@@ -118,25 +118,19 @@ export function WebChatPage({ baseUrl = apiBase() }: { baseUrl?: string | null }
     if (phase.kind === "done") resultHeading.current?.focus();
   }, [phase]);
 
+  const releaseActive = useCallback(() => {
+    const current = active.current;
+    active.current = null;
+    if (current) window.clearTimeout(current.timer);
+    return current;
+  }, []);
+
   useEffect(
     () => () => {
-      const current = active.current;
-      active.current = null;
-      if (current) {
-        window.clearTimeout(current.timer);
-        current.controller.abort();
-      }
+      releaseActive()?.controller.abort();
     },
-    [],
+    [releaseActive],
   );
-
-  const finishActive = (id: number) => {
-    const current = active.current;
-    if (!current || current.id !== id) return false;
-    window.clearTimeout(current.timer);
-    active.current = null;
-    return true;
-  };
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -173,12 +167,13 @@ export function WebChatPage({ baseUrl = apiBase() }: { baseUrl?: string | null }
       setReferral(enabled ? "enabled" : "disabled");
       setPhase({ kind: "loading", question: query, stage: "answer" });
       const response = await postChat(baseUrl, query, controller.signal);
-      if (!finishActive(id)) return;
+      if (active.current?.id !== id) return;
+      releaseActive();
       setPhase({ kind: "done", question: query, response });
       setDraft((current) => (current.trim() === query ? "" : current));
     } catch (error) {
       if (active.current?.id !== id) return;
-      finishActive(id);
+      releaseActive();
       const code: ApiErrorCode = timedOut ? "timeout" : error instanceof ApiError ? error.code : "network";
       if (code === "capabilities") setReferral("unknown");
       setPhase({ kind: "error", question: query, code });
@@ -187,10 +182,8 @@ export function WebChatPage({ baseUrl = apiBase() }: { baseUrl?: string | null }
   };
 
   const cancelRequest = () => {
-    const current = active.current;
+    const current = releaseActive();
     if (!current) return;
-    active.current = null;
-    window.clearTimeout(current.timer);
     current.controller.abort();
     setPhase({ kind: "canceled", question: current.question });
     input.current?.focus();

@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-10 16:18 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 00:44 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -996,3 +996,39 @@
 - 노트북의 Claude·fix-rag-normal-flow 브랜치를 main 포함 확인 후 삭제했다. fix-merge는 원격 추적 ref와의 차이 때문에 -d가 거절됐으나 main에는 전부 포함돼 있다. 해당 브랜치는 이 완료 기록의 정상 PR 공유에 사용한 뒤 삭제한다. EC2의 완료 브랜치도 main 포함 여부와 오래된 upstream을 대조해 안전 삭제하며 강제 삭제·reset·stash는 사용하지 않는다.
 - EC2는 main만 남겼다. fix-rag-normal-flow·fix-screen-guidance·feat-floating-ui·fix-merge 4개를 -d로 삭제했다. 뒤2개는 main 포함을 재확인하고 오래된 upstream만 해제했다. B11 diff SHA256은4ff7518bfb5505c4b0a106eb4217fd6808e7e096e492e5b5717860d8200b3bd4, status SHA256은2df7932a8b16249feda42ff90ad08b1c5e04b216a302611c01fdd0e02fe16b1e로 전후 동일하다.
 - 제품 코드·서비스·이미지·모델·Caddy·환경설정·DB를 변경하거나 실행 시험하지 않았다. 이 완료 기록 PR은 문서만 포함한다. 병합 뒤 양쪽 main을 ff-only 동기화하고 원격/로컬 완료 브랜치 삭제까지 끝낸 결과와 최종 SHA를 채팅에 보고한다. 실제 사용자 확인과 보류 RAG/CSV 범위는 유지한다.
+
+<a id="log-20261111-1237-refactor"></a>
+## 2026-11-11 12:37 KST · 리팩토링 구조 검토
+
+- 동기화 완료 보고의 최종 기준은 원격·노트북·EC2 main/364cbb8이다. 이번 검토는 해당 노트북 소스에서 수행했다.
+- 설계가 제품·도구 소스 구성과 후보의 호출처·입출력을 대조했다. 확장 offscreen 요약 중복 파싱, 관리자 제도 화면의 단일 경유 컴포넌트, Desktop 안내의 JSON 왕복을 독립 변경으로 제안했다. RAG의 이전 답변 경로는 서비스 조립 및 테스트 의존성이 있어 지원 범위 확인 뒤 정리하도록 기록했다.
+- 요청된 로컬 설계 문서 `docs/plan/refactor.md`에 근거·유지할 계약·적용 순서·기존 검사 사례를 적고 소스 링크 11개의 경로를 확인했다. 제품 변경·실행 시험은 수행하지 않았다.
+
+<a id="log-20261111-sector-review"></a>
+## 2026-11-11 12:49 KST · 섹터별 순차 리팩토링 계획
+
+- 주요 후보 중심 초안을 확장해 추적 중인 제품·설정·도구 162개와 테스트·픽스처·측정 도구 116개의 내용을 정적 조사했다. 호출 경계와 변경 후보는 관련 본문과 소비자를 대조했다.
+- 확장부터 배포·CI까지 8개 섹터에 진입점, 첫 변경, 보존 계약과 종료 기준을 작성했다. 문서 부록에서 파일 경로와 섹터 번호를 역으로 읽어 조사 목록과 대조했고 전체 278개, 중복·누락·다른 섹터 배정 오류 0개였다. 구현과 실행 검사는 대기 상태다.
+
+<a id="log-20261112-0025-extension-refactor"></a>
+## 2026-11-12 00:25 KST · 1번 확장 섹터 리팩토링 착수
+
+- 로컬 main과 origin/main의364cbb8 일치를 fetch로 확인했다. 기존 설계 작성 문서3파일의 미커밋 변경을 보존해 codex/refactor-extension을 만들었다. 요청된 refactor.md만 Git 제외 규칙의 예외로 추가해 계획과 함께 공유한다.
+- 설계가 Git·기록·리뷰, 기존 개발 채팅이 제품 구현·집중 로컬 검사를 맡는다. offscreen.js와 content.js가 우선 허용 제품 경로다. 포트 응답·요청/저장 DTO·동의/취소·공개 DOM 경계를 유지하며 같은 파일에서 중복 호출과 응답 분기를 정리한다.
+- 구현 이후 관련 요약·포트·상담 저장/복원·취소 검사를 수행하고 설계 리뷰 후 제품 변경만 별도 로컬 커밋한다. 다음 섹터는 1번 통합 뒤 진행한다. 이번 착수 단계의 제품 수정·검사·운영 반영은 아직 없다.
+
+<a id="log-20261112-0038-extension-refactor-result"></a>
+## 2026-11-12 00:38 KST · 1번 확장 섹터 로컬 완료
+
+- 제품 작성자는 개발 채팅, 검토·기록·Git은 설계 담당이다. 개발이 작성권을 반환한 뒤 설계가4파일128추가/29삭제를 확인하고25f67bc2f69dafb4cc4d1e8f7b2c904f237d999b로 선별 커밋했다. 앞선 계획·착수777099f와 함께 기능 브랜치에만 있다.
+- offscreen의 summaryReply를 한 번 실행하고 결과를 전달한다. HTTP 오류 우선순위·모드별 요청/성공 분기를 펼쳤다. documentReply의 선별 반환값으로 raw 응답을 바꾸지 않고 기존 redactDocument(body)를 전달해 추가 필드를 보존한다. content는 요청 로컬 displayAndSaveDocumentReply/applyScreenReply로 표시·저장과 DOM 적용을 나눴다. 저장 실패·맥락 알림·포트 소유권·최종 정리 순서는 유지했다.
+- 관련 기존13파일은 offscreen, consultation_summary, mode, conversations_content, conversation_context, conversations_worker, continuous_conversation, profile_offscreen, profile_usage, remote_screen, document_timeout, visibility_document, admin_auth 각 .test.cjs다. Terra 검사 담당이 최초212개를 실행해211통과/1실패/skip0·16.190초였다. 신규 mode 단언은 VM/호스트 객체 prototype 차이로 deepStrictEqual이 실패했다. JSON 포트 값 비교로 그 단언만 수정했고 mode12개만 재실행해12통과/실패·skip0·4.573초다. 최종212개 사례가 각각 통과했으며 수정 후 전체13파일 재실행은 하지 않았다.
+- 원자료는 .local/co-op/checks-runtime/refactor-extension-20261112-focused.log 및 refactor-extension-20261112-mode-recheck.log다. 첫 실패를 보존했다. 설계가 실제 로그와 diff를 읽어 오류 매핑·문서 필드·비동기 저장 후 상태 갱신·현재 DOM 확인을 대조했고 diff --check도 통과했다.
+- 나머지 확장 파일은 manifest/CSP·패키징 진입점, worker의 sender/소유권/별도 저장 큐, protocol의 경계 검증, 대화 변환·CAS 저장·미저장 UI, DOM의 시점별 재확인, 프로필 revision과 음성 초안 수명의 책임을 검토해 유지했다. 새 제품 모듈이나 저장 형식은 추가하지 않았다.
+- 실제 Chrome·기기 음성·HTTP·모델·EC2·DB·패키징 실행은 없었다. 원격 push·PR·배포는 대기 중이고 다음은 해당 기능 브랜치 통합이다. 2번 공개 웹은 아직 착수하지 않았다.
+
+<a id="log-20261112-0044-extension-push"></a>
+## 2026-11-12 00:44 KST · 1번 확장 섹터 승인3커밋 push
+
+- 승인된777099f·25f67bc·826a755만 origin/codex/refactor-extension에 push했다. ls-remote의826a755f8a410afc42e107ed252c33d894cae050과 로컬 HEAD 일치, upstream 연결 및 작업 트리 깨끗함을 확인했다.
+- PR 생성·main 병합·EC2 변경·추가 시험은 수행하지 않았다. 다음은 사용자의 main 대상 PR 생성과 통합이다. 2번 섹터는 통합 뒤 착수한다. 이 push 완료 기록과 계획·인계 상태는 후속 로컬 문서 커밋으로 남기며 승인 범위를 넘어 추가 push하지 않는다.

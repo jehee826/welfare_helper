@@ -1,4 +1,20 @@
 let active=null;
+function httpError(status,code,mode){
+  const documentMode=mode!=='screen';
+  if(mode==='summary'&&['summary_input_budget','summary_public_only','summary_unavailable','summary_generation_failed'].includes(code))return code;
+  if(!documentMode){
+    if(status===413)return 'screen_body_size_limit';
+    if(status===422)return ['invalid_screen_request','screen_context_budget_exceeded'].includes(code)?code:'screen_request_rejected';
+  }
+  if(documentMode){
+    if(code==='sensitive_input')return 'sensitive_input';
+    if([401,403].includes(status))return 'document_auth_required';
+    if(status===504)return 'request_timeout';
+    if(status===499)return 'request_cancelled';
+  }
+  if(status===429&&code==='chat_rate_limited')return 'chat_rate_limited';
+  return ({404:'feature_disabled',413:'input_budget',422:'input_budget',429:'busy',499:'request_stopped',504:'request_stopped'})[status]||'generation_failed';
+}
 chrome.runtime.onMessage.addListener((packet,sender)=>{
   if(packet?.target==='gyeote:offscreen'&&packet.type==='gyeote:conversations-changed'&&sender.id===chrome.runtime.id&&!sender.tab){
     if(active?.conversationContext&&(packet.generation!==active.conversationContext.generation||!Number.isSafeInteger(packet.revision)||packet.revision>active.conversationContext.revision))active.controller.abort();
@@ -32,7 +48,17 @@ chrome.runtime.onConnect.addListener(port=>{
       if(!documentMode&&Object.keys(packet).some(key=>!['requestId','mode','payload','deadlineAt'].includes(key)))throw new Error('invalid_reply');
       active.documentMode=documentMode;
       if(documentMode&&packet.profileRevision!==undefined&&(!Number.isSafeInteger(packet.profileRevision)||packet.profileRevision<0))throw new Error('invalid_profile');
-      payload=summaryMode?GyeoteProtocol.summaryRequest(packet.payload):documentMode?GyeoteProtocol.documentRequest(packet.payload):GyeoteProtocol.remoteScreenRequest(packet.payload);
+      let endpoint;
+      if(summaryMode){
+        payload=GyeoteProtocol.summaryRequest(packet.payload);
+        endpoint='/api/v1/conversation/summary';
+      }else if(documentMode){
+        payload=GyeoteProtocol.documentRequest(packet.payload);
+        endpoint='/api/v1/chat';
+      }else{
+        payload=GyeoteProtocol.remoteScreenRequest(packet.payload);
+        endpoint='/api/v1/screen/guide';
+      }
       if(summaryMode&&payload.request_id!==requestId)throw new Error('invalid_reply');
       active.profileContext=payload.profile_context??null;
       if(documentMode){
@@ -59,13 +85,10 @@ chrome.runtime.onConnect.addListener(port=>{
       payload.timeout_seconds=Math.min(payload.timeout_seconds??1800,Math.max(1,Math.ceil(remaining/1000)));
       if(controller.signal.aborted)throw new Error('request_stopped');
       const headers={'Content-Type':'application/json'};
-      const response=await fetch(origin+(summaryMode?'/api/v1/conversation/summary':documentMode?'/api/v1/chat':'/api/v1/screen/guide'),{method:'POST',headers,body:JSON.stringify(payload),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
+      const response=await fetch(origin+endpoint,{method:'POST',headers,body:JSON.stringify(payload),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
       if(!response.ok){
         const code=await response.json().then(r=>r.detail).catch(()=>null);
-        if(summaryMode&&['summary_input_budget','summary_public_only','summary_unavailable','summary_generation_failed'].includes(code))throw new Error(code);
-        if(!documentMode&&response.status===413)throw new Error('screen_body_size_limit');
-        if(!documentMode&&response.status===422)throw new Error(['invalid_screen_request','screen_context_budget_exceeded'].includes(code)?code:'screen_request_rejected');
-        throw new Error(documentMode&&code==='sensitive_input'?'sensitive_input':documentMode&&[401,403].includes(response.status)?'document_auth_required':documentMode&&response.status===504?'request_timeout':documentMode&&response.status===499?'request_cancelled':response.status===429&&code==='chat_rate_limited'?'chat_rate_limited':({404:'feature_disabled',413:'input_budget',422:'input_budget',429:'busy',499:'request_stopped',504:'request_stopped'})[response.status]||'generation_failed');
+        throw new Error(httpError(response.status,code,mode));
       }
       const reader=response.body.getReader();let size=0,chunks=[];
       try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>(documentMode?1024*1024:65536))throw new Error('invalid_reply');chunks.push(value);}}
@@ -79,9 +102,17 @@ chrome.runtime.onConnect.addListener(port=>{
         if(['anonymous','anonymous',latest.accessId||'initial'].join(':')!==packet.documentAccess)throw new Error('document_access_changed');
         if(payload.profile_context){const current=await chrome.runtime.sendMessage({type:'gyeote:profile-context'});if(!current?.ok||JSON.stringify(current.context)!==JSON.stringify(payload.profile_context))throw new Error('profile_changed');}
       }
-      if(summaryMode)GyeoteProtocol.summaryReply(body,payload);else if(documentMode)GyeoteProtocol.documentReply(body,payload.conversation_context??null);else GyeoteProtocol.reply(body,payload);
+      let result=body;
+      if(summaryMode){
+        result=GyeoteProtocol.summaryReply(body,payload);
+      }else if(documentMode){
+        GyeoteProtocol.documentReply(body,payload.conversation_context??null);
+      }else{
+        GyeoteProtocol.reply(body,payload);
+      }
       if(controller.signal.aborted)throw new Error('request_stopped');
-      send({type:'result',requestId,body:summaryMode?GyeoteProtocol.summaryReply(body,payload):documentMode?GyeoteProtocol.privacy.redactDocument(body):body});
+      if(documentMode&&!summaryMode)result=GyeoteProtocol.privacy.redactDocument(body);
+      send({type:'result',requestId,body:result});
     }catch(error){
       send({type:'error',requestId,error:controller.signal.aborted?'request_stopped':['connection_configuration_invalid','sensitive_input','invalid_profile','profile_changed','invalid_context','invalid_context_update','document_auth_required','document_access_changed','feature_disabled','input_budget','screen_body_size_limit','invalid_screen_request','screen_context_budget_exceeded','screen_request_rejected','busy','chat_rate_limited','generation_failed','invalid_reply','request_stopped','request_timeout','request_cancelled','summary_input_budget','summary_public_only','summary_unavailable','summary_generation_failed'].includes(error.message)?error.message:'connection_failed'});
     }

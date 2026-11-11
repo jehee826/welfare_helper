@@ -1,12 +1,12 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 00:55 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:02 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 1번 확장 섹터는 PR #23·main/f3ad16d로 통합했고 head10cf711의 CI4job 성공을 확인했다. 현재는 2번 공개 웹 상담 착수다. 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, 브랜치 `codex/refactor-webchat`, 기준 main/f3ad16d다. 개발 채팅은 `FrontEnd/src/webchat/`의 제품·관련 기존 검사, 설계는 기록·리뷰·Git을 맡는다. 우선 WebChatPage의 요청 자원 정리 중복을 줄이고 요청 ID·취소/시간 초과·입력 보존·연락처·음성 계약을 유지한다. 3~8번은 대기한다. [통합·착수](devlog.md#log-20261112-0055-extension-merge-webchat)
+- 1번 확장은 PR #23·main/f3ad16d로 통합 완료다.2번 공개 웹 상담은 로컬 구현·11파일 검토·집중 검사·설계 리뷰를 마쳤다. 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, 브랜치 `codex/refactor-webchat`, 기준 main/f3ad16d, 제품2a2af24다. 개발이 작성권을 반환했고 설계가 Git·문서를 맡는다. 다음은 기능 브랜치 push·PR·CI 확인 후 병합이다. 3~8번은 대기한다. [2번 결과](devlog.md#log-20261112-0102-webchat-result)
 
 - 문서853c576도 PR #21로 main에 반영했다. 노트북 Jehee-Laptop과 EC2를 main/c3c8161로 동기화했고 EC2 B11의 원본·diff·status 해시는 동일하다. 현재는 완료 기록만 후속 공유하는 단계이며 제품 기준3c18f4f는 변하지 않았다. 이 기록의 PR 병합 뒤 양쪽 main을 다시 ff-only 동기화하고 완료 브랜치 정리를 마친다. [동기화 기록](devlog.md#log-20261110-1618-main-sync)
 - 제품 통합 완료: PR #20에 이어 PR #19를16:01 KST 병합했다. 제품 기준main3c18f4f와 병합 전 head76f9c51의 자동 CI4job 성공을 확인했다. 후속 문서853c576도 PR #21로 공유했다. [병합·검증](devlog.md#log-20261110-1603-pr19-complete)

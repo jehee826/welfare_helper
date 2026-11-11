@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 00:55 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:02 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1039,3 +1039,11 @@
 - 로컬 기록10cf711까지 기능 브랜치에 push하고 PR #23을 생성했다. head10cf711의 Actions43052582590에서 web-extension·python backend/worker/dev 4job 성공 및 Vercel 상태 success를 확인했다. expected head SHA를 지정해 merge했고 실제 merged와 main/f3ad16dc8e4939f8762e9ee481f3e3d18046dae5 및 기존 커밋 포함을 재확인했다. 로컬 main도 ff-only 동기화했다. EC2·모델·DB·실제 Chrome은 변경하지 않았다.
 - main/f3ad16d에서 codex/refactor-webchat을 만들었다. 개발 채팅이 FrontEnd/src/webchat/의 제품과 기존 관련 검사, 설계가 문서·리뷰·Git을 단독 작성한다. 첫 변경은 WebChatPage의 active/timer/AbortController 종료 중복을 같은 파일에서 줄이는 것이다. 요청 ID와 취소 사유는 호출부에 남기고 API/저장·연락처 검증·음성 수명은 유지한다.
 - 11파일을 검토하되 모든 파일 수정이 목적은 아니다. 기존 웹챗·API·라우트·음성 집중 검사와 타입/빌드 확인 후 읽기 리뷰·제품 커밋·PR 통합을 진행한다. 새로운 추상화·서버 변경·실제 추론·운영 조작은 이 단계에 포함하지 않는다. 3~8번은 대기한다.
+
+<a id="log-20261112-0102-webchat-result"></a>
+## 2026-11-12 01:02 KST · 2번 공개 웹 상담 로컬 완료
+
+- 개발이 제품 작성권을 반환한 뒤 설계가 WebChatPage.tsx·기존 WebChatPage.test.tsx의61추가/23삭제를 대조하고2a2af24b5d84ed6b9e5f28fe56a9385e4f8af051로 선별 커밋했다. 같은 파일의 안정적인 releaseActive 콜백이 active 해제·timer 정리·이전 요청 반환을 담당하며 성공/실패의 ID 확인은 호출부에 남겼다. 취소·언마운트에서만 반환된 controller를 abort한다. 600초 총기한·15초 설정 확인·익명 단발 요청·오래된 응답 차단·입력 보존은 유지했다.
+- 나머지 파일은 연락처 개별 검증과 응답 오류의 차이, Contacts의 전화 링크, speech의 공용 표시/낭독 규칙, 음성 인식의 owner/30초/종료5초와 합성의 독립 version 수명을 검토해 유지했다. CSS·공개 라우트/API·음성 기존 검사도 재사용했다. 새 모듈·저장 형식·서버 계약은 없다.
+- 기존 Terra 담당이 node FrontEnd/scripts/ci.mjs test에 웹챗·chatApi·route·voice 경로를 지정해1회 실행했고4파일35/35통과·실패/skip0·15.95초다. 대기 중 바꾼 초안 보존, 취소 후 새 요청과 늦은 응답 분리, check/answer 각 언마운트, 설정 확인15초 초과 사례를 보강했다. tsc -p FrontEnd/tsconfig.json --noEmit은 진단0·exit0, ci.mjs build는65모듈·1.04초·exit0다. 실패·재실행은 없고 기존 React Router future flag 경고2종은 유지했다.
+- 원자료는 .local/co-op/checks-runtime/refactor-webchat-20261112-focused.log·refactor-webchat-20261112-type.log·refactor-webchat-20261112-build.log다. 타입 로그는 진단이 없어 빈 파일이다. 설계가 실제 로그·diff와 이전/현재 요청 종료 순서를 읽었고 diff --check도 통과했다. 실제 Chrome·기기 음성·HTTP 서버·모델·EC2·DB는 미실측이다. 다음은 push·PR·CI·병합이며3번은 아직 착수하지 않았다.

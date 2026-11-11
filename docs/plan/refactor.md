@@ -1,6 +1,6 @@
 # welfare_helper 섹터별 리팩토링 계획
 
-최초 작성: 2026-11-11. 최신 업데이트: 2026-11-12 02:13 KST
+최초 작성: 2026-11-11. 최신 업데이트: 2026-11-12 02:21 KST
 
 구현 순서는 **확장 → 공개 웹 → 관리자 웹 → FastAPI 공통·관리자 → 문서 처리·DB → RAG → Desktop·화면 안내 → 배포·CI**다. 한 섹터의 결과를 검토한 뒤 다음 섹터로 넘어간다. 이번 산출물은 이 순서대로 사용할 설계 문서다.
 
@@ -10,7 +10,7 @@
 
 전체 대상은 **278파일**이다. 구현·설정·도구 162개와 테스트·픽스처·수동 측정 도구 116개다. 실행에 쓰이는 manifest, HTML, CSS, SQL, 환경 예시와 배포 설정을 포함했다. 의존성 잠금 산출물, 설명 문서, 복지 원문 데이터, 실제 환경 파일은 집계에서 제외했다. 파일별 소속은 문서 끝 목록에서 확인한다.
 
-한 번에 한 섹터를 진행한다. 각 섹터에서 **첫 변경 → 나머지 후보 검토 → 집중 검사 → 결과 인계** 순서로 마친 뒤 다음 번호로 이동한다. 모든 파일을 수정할 필요는 없다. 공유 파일은 목록에 기재된 섹터에서만 쓰고 다른 섹터에서는 소비자로 검토한다. 현재 1번은 **PR #23·main/f3ad16d 통합 완료**, 2번은 **PR #24·main/a12ed10 통합 완료**, 3번은 **PR #25·main/f0bf276 통합 완료**, 4번은 **PR #26·main/8db25a5 통합 완료**, 5번은 **PR #27·main/69abfee 통합 완료**, 6번은 **PR #28·main/01d3021 통합 완료**, 7번은 **로컬 착수**, 8번은 **구현 대기**다. 1번 제품 커밋은25f67bc이며 head10cf711의 CI4job이 통과했다. [변경·검사 결과](devlog.md#log-20261112-0038-extension-refactor-result) / [통합·2번 착수](devlog.md#log-20261112-0055-extension-merge-webchat)
+한 번에 한 섹터를 진행한다. 각 섹터에서 **첫 변경 → 나머지 후보 검토 → 집중 검사 → 결과 인계** 순서로 마친 뒤 다음 번호로 이동한다. 모든 파일을 수정할 필요는 없다. 공유 파일은 목록에 기재된 섹터에서만 쓰고 다른 섹터에서는 소비자로 검토한다. 현재 1번은 **PR #23·main/f3ad16d 통합 완료**, 2번은 **PR #24·main/a12ed10 통합 완료**, 3번은 **PR #25·main/f0bf276 통합 완료**, 4번은 **PR #26·main/8db25a5 통합 완료**, 5번은 **PR #27·main/69abfee 통합 완료**, 6번은 **PR #28·main/01d3021 통합 완료**, 7번은 **로컬 구현·검증·리뷰 완료, PR 통합 대기**, 8번은 **구현 대기**다. 1번 제품 커밋은25f67bc이며 head10cf711의 CI4job이 통과했다. [변경·검사 결과](devlog.md#log-20261112-0038-extension-refactor-result) / [통합·2번 착수](devlog.md#log-20261112-0055-extension-merge-webchat)
 
 ### 1. Chrome 확장 — 51파일
 
@@ -68,7 +68,7 @@
 
 ### 7. Desktop·화면 안내 서버 — 36파일
 
-상태는 main/01d3021 기준 codex/refactor-desktop에서 로컬 착수다. step의 JSON 왕복 제거와 취소·강조 수명을 정리한다. UIA/실제 화면 시험과 이미지 다운로드/worker·DB 복구시험은 수행하지 않는다.
+상태는 main/01d3021 기준 codex/refactor-desktop에서 로컬 완료다. 제품4c90966에서 객체 직접 검증으로 JSON 왕복을 없앴고d9a5d61에서 취소·강조 정리 순서를 펼쳤다. 배정36파일 책임검토·Node3파일36개 검사·구문·설계 리뷰를 마쳤고 PR 통합 대기다. UIA/실제 화면·build/pack/smoke와 이미지 다운로드/worker·DB 복구시험은 미실행이다. [결과](devlog.md#log-20261112-0221-desktop-result)
 
 - **따라갈 순서.** Windows UIA 감시 → Chrome 창/탭 확인 → Electron main/preload → 로컬 클라이언트 → 화면 안내 서버 → 현재 대상 재확인·강조. 확장 DOM과 공유하는 서버 화면 안내 진입점도 이 섹터에서 관리한다.
 - **첫 변경.** `guideStep`이 이미 파싱한 응답의 `step`을 `JSON.stringify`했다가 `parseStep`에서 다시 읽는 경로를 객체 직접 검증으로 바꾼다. 다음으로 화면 상태가 바뀔 때 안내와 강조가 취소되는 순서를 `assistant.cjs`에서 읽기 쉽게 정리한다.
@@ -108,7 +108,7 @@ offscreen이 요약 응답을 한 번 해석하고 그 반환값을 전달하도
 
 #### Desktop 화면 안내에서 JSON 왕복을 없앤다
 
-- **근거.** [local-clients.cjs](../../Desktop/electron/local-clients.cjs)의 `jsonRequest`가 HTTP 응답을 이미 객체로 파싱한다. `guideStep`은 그 객체의 `step`을 다시 직렬화하고 [assistant-policy.cjs](../../Desktop/electron/assistant-policy.cjs)의 `parseStep`이 즉시 다시 파싱한다.
+- **검토 당시 근거.** [local-clients.cjs](../../Desktop/electron/local-clients.cjs)의 jsonRequest가 이미 파싱한step을 문자열로 되돌리고 정책이 재파싱했다. 현재는 [assistant-policy.cjs](../../Desktop/electron/assistant-policy.cjs)의 validateStep이 객체를 직접 검증하며 HTTP 파싱은 네트워크 경계에 남겼다.
 - **변경.** 제품·패키징·테스트 호출처를 대조한 뒤 검증 함수가 객체를 직접 받게 한다. HTTP 본문 파싱은 네트워크 경계에 둔다. 기존 문자열 호출이 필요한 외부 소비자가 확인되면 그 경계에서만 문자열을 처리한다.
 - **완료 기준.** 잘못된 HTTP JSON, 허용하지 않은 action, 비활성·가려진 대상 거절을 각각 담당하는 경계에서 확인한다. 정상 응답에서는 step을 문자열로 되돌리는 과정이 없다. Desktop 관련 작업을 진행할 때 독립 적용할 수 있다.
 

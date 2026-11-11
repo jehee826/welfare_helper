@@ -1,13 +1,13 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:13 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:21 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 리팩토링 1~6번은 PR #23~#28로 main 통합 완료이며 각 PR의 CI4job이 통과했다. 현재7번 Desktop·화면 안내는 로컬 착수다. [6번 결과](devlog.md#log-20261112-0209-rag-result) / [통합·7번 착수](devlog.md#log-20261112-0213-rag-merge-desktop)
-- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-desktop`, 기준 main/01d3021013949e63b61e826a71d5cd563fcf4074다. 개발이7번 제품·관련 기존 검사, 설계가 문서·리뷰·Git을 맡는다. 첫 변경은 Desktop 응답step의 불필요한 JSON 왕복을 없애고 화면 변경 시 취소·강조 제거 순서를 정리하는 것이다. 8번은 대기한다.
+- 리팩토링 1~6번은 PR #23~#28로 main 통합 완료이며 각 PR의 CI4job이 통과했다. 현재7번은 JSON 왕복 제거·취소/강조 정리와 배정 책임 검토·집중 검사·설계 리뷰까지 로컬 완료, PR 통합 대기다. [7번 결과](devlog.md#log-20261112-0221-desktop-result)
+- 노트북 Jehee-Laptop 루트 `C:/Users/jehee/vscode-workspace/welfare_helper`, Git디렉터리 `.git`, 브랜치 `codex/refactor-desktop`, 기준 main/01d3021013949e63b61e826a71d5cd563fcf4074, 제품4c90966·d9a5d61다. 개발은 작성권을 반환했고 설계가 문서·리뷰·Git을 맡는다. push·PR·CI·병합이 다음이며8번은 대기한다.
 
 ## 구현·배포 기준과 보존할 변경
 

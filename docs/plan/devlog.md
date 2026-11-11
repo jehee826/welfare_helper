@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 00:25 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 00:38 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1016,3 +1016,13 @@
 - 로컬 main과 origin/main의364cbb8 일치를 fetch로 확인했다. 기존 설계 작성 문서3파일의 미커밋 변경을 보존해 codex/refactor-extension을 만들었다. 요청된 refactor.md만 Git 제외 규칙의 예외로 추가해 계획과 함께 공유한다.
 - 설계가 Git·기록·리뷰, 기존 개발 채팅이 제품 구현·집중 로컬 검사를 맡는다. offscreen.js와 content.js가 우선 허용 제품 경로다. 포트 응답·요청/저장 DTO·동의/취소·공개 DOM 경계를 유지하며 같은 파일에서 중복 호출과 응답 분기를 정리한다.
 - 구현 이후 관련 요약·포트·상담 저장/복원·취소 검사를 수행하고 설계 리뷰 후 제품 변경만 별도 로컬 커밋한다. 다음 섹터는 1번 통합 뒤 진행한다. 이번 착수 단계의 제품 수정·검사·운영 반영은 아직 없다.
+
+<a id="log-20261112-0038-extension-refactor-result"></a>
+## 2026-11-12 00:38 KST · 1번 확장 섹터 로컬 완료
+
+- 제품 작성자는 개발 채팅, 검토·기록·Git은 설계 담당이다. 개발이 작성권을 반환한 뒤 설계가4파일128추가/29삭제를 확인하고25f67bc2f69dafb4cc4d1e8f7b2c904f237d999b로 선별 커밋했다. 앞선 계획·착수777099f와 함께 기능 브랜치에만 있다.
+- offscreen의 summaryReply를 한 번 실행하고 결과를 전달한다. HTTP 오류 우선순위·모드별 요청/성공 분기를 펼쳤다. documentReply의 선별 반환값으로 raw 응답을 바꾸지 않고 기존 redactDocument(body)를 전달해 추가 필드를 보존한다. content는 요청 로컬 displayAndSaveDocumentReply/applyScreenReply로 표시·저장과 DOM 적용을 나눴다. 저장 실패·맥락 알림·포트 소유권·최종 정리 순서는 유지했다.
+- 관련 기존13파일은 offscreen, consultation_summary, mode, conversations_content, conversation_context, conversations_worker, continuous_conversation, profile_offscreen, profile_usage, remote_screen, document_timeout, visibility_document, admin_auth 각 .test.cjs다. Terra 검사 담당이 최초212개를 실행해211통과/1실패/skip0·16.190초였다. 신규 mode 단언은 VM/호스트 객체 prototype 차이로 deepStrictEqual이 실패했다. JSON 포트 값 비교로 그 단언만 수정했고 mode12개만 재실행해12통과/실패·skip0·4.573초다. 최종212개 사례가 각각 통과했으며 수정 후 전체13파일 재실행은 하지 않았다.
+- 원자료는 .local/co-op/checks-runtime/refactor-extension-20261112-focused.log 및 refactor-extension-20261112-mode-recheck.log다. 첫 실패를 보존했다. 설계가 실제 로그와 diff를 읽어 오류 매핑·문서 필드·비동기 저장 후 상태 갱신·현재 DOM 확인을 대조했고 diff --check도 통과했다.
+- 나머지 확장 파일은 manifest/CSP·패키징 진입점, worker의 sender/소유권/별도 저장 큐, protocol의 경계 검증, 대화 변환·CAS 저장·미저장 UI, DOM의 시점별 재확인, 프로필 revision과 음성 초안 수명의 책임을 검토해 유지했다. 새 제품 모듈이나 저장 형식은 추가하지 않았다.
+- 실제 Chrome·기기 음성·HTTP·모델·EC2·DB·패키징 실행은 없었다. 원격 push·PR·배포는 대기 중이고 다음은 해당 기능 브랜치 통합이다. 2번 공개 웹은 아직 착수하지 않았다.

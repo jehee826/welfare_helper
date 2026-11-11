@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:02 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:05 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1047,3 +1047,10 @@
 - 나머지 파일은 연락처 개별 검증과 응답 오류의 차이, Contacts의 전화 링크, speech의 공용 표시/낭독 규칙, 음성 인식의 owner/30초/종료5초와 합성의 독립 version 수명을 검토해 유지했다. CSS·공개 라우트/API·음성 기존 검사도 재사용했다. 새 모듈·저장 형식·서버 계약은 없다.
 - 기존 Terra 담당이 node FrontEnd/scripts/ci.mjs test에 웹챗·chatApi·route·voice 경로를 지정해1회 실행했고4파일35/35통과·실패/skip0·15.95초다. 대기 중 바꾼 초안 보존, 취소 후 새 요청과 늦은 응답 분리, check/answer 각 언마운트, 설정 확인15초 초과 사례를 보강했다. tsc -p FrontEnd/tsconfig.json --noEmit은 진단0·exit0, ci.mjs build는65모듈·1.04초·exit0다. 실패·재실행은 없고 기존 React Router future flag 경고2종은 유지했다.
 - 원자료는 .local/co-op/checks-runtime/refactor-webchat-20261112-focused.log·refactor-webchat-20261112-type.log·refactor-webchat-20261112-build.log다. 타입 로그는 진단이 없어 빈 파일이다. 설계가 실제 로그·diff와 이전/현재 요청 종료 순서를 읽었고 diff --check도 통과했다. 실제 Chrome·기기 음성·HTTP 서버·모델·EC2·DB는 미실측이다. 다음은 push·PR·CI·병합이며3번은 아직 착수하지 않았다.
+
+<a id="log-20261112-0105-webchat-merge-admin"></a>
+## 2026-11-12 01:05 KST · 2번 통합과 3번 관리자 웹 착수
+
+- codex/refactor-webchat의 착수49d4e65·제품2a2af24·결과abd0d92를 push해 PR #24를 생성했다. head/abd0d920dd4d9a51010151ff3cb23469d92ec85d의 Actions43054440747에서 web-extension·python backend/worker/dev 4job 성공과 Vercel Preview 상태 success를 확인했다. expected head SHA로 병합하고 실제 merged 및 main/a12ed10d9eea63779196bd99162aeeaf13986153의 커밋 포함을 확인했다. 로컬 main은 ff-only 동기화했다. production 배포 완료·UI/API 종단을 새로 확인하지 않았고 EC2·DB는 변경하지 않았다.
+- main/a12ed10에서 codex/refactor-admin-web을 생성했다. 개발은 FrontEnd의 3번 배정 경로 제품·관련 검사, 설계는 문서·읽기 리뷰·Git을 맡는다. 첫 변경은 AdminPage와 단일 제품 호출 ProgramManager 통합이며 삭제된 모듈을 기존 화면 검사에서 참조하지 않도록 맞춘다. 이어 DocumentsPage의 원문·검색·질의·재처리 순서를 같은 파일에서 명확하게 정리하고 다른 배정 파일의 유지/정리 판단을 전달한다.
+- 관리자 세션 ID/오래된401, 주입 API/mock 소비자, 문서/분석 버전 전후 확인·중단·기존 게시본 보존, 조회/삭제 기간과 권한 계약을 유지한다. 기존 영향 검사·타입·빌드 후 설계 리뷰·통합으로 마친다. 실제 관리자/DB 작업·새 추상화·의존성 갱신·운영 조작은 포함하지 않는다. 4~8번은 대기한다.

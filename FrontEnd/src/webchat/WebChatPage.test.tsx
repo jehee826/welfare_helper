@@ -116,8 +116,10 @@ describe("질문 전송", () => {
     await user.click(screen.getByRole("button", { name: "보내는 중" }));
     await user.type(screen.getByLabelText("질문"), "{Enter}");
     expect(chatCalls(fetchMock)).toHaveLength(1);
+    fireEvent.change(screen.getByLabelText("질문"), { target: { value: "다음 질문 초안" } });
     await act(async () => pending.resolve(json(200, { kind: "answer", text: "답" })));
     expect(await screen.findByText("답")).toBeInTheDocument();
+    expect(screen.getByLabelText("질문")).toHaveValue("다음 질문 초안");
   });
 });
 
@@ -168,11 +170,13 @@ describe("응답 표시", () => {
 });
 
 describe("취소와 실패", () => {
-  it("취소한 요청의 늦은 응답은 표시하지 않는다", async () => {
+  it("취소한 요청의 늦은 응답은 새 요청을 종료하거나 표시하지 않는다", async () => {
     const late = deferred<Response>();
+    const next = deferred<Response>();
+    const replies = [late, next];
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith("/capabilities")) return json(404);
-      return late.promise;
+      return replies.shift()!.promise;
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
@@ -181,9 +185,34 @@ describe("취소와 실패", () => {
     await screen.findByText("답변을 준비하고 있습니다.");
     await user.click(screen.getByRole("button", { name: "요청 취소" }));
     expect(screen.getByText(/요청을 취소했습니다/)).toBeInTheDocument();
+    expect(screen.getByLabelText("질문")).toHaveValue("기초연금");
+    await ask(user, "장애인 연금");
+    await screen.findByText("답변을 준비하고 있습니다.");
     await act(async () => late.resolve(json(200, { kind: "answer", text: "늦은 답변" })));
     expect(screen.queryByText("늦은 답변")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("질문")).toHaveValue("기초연금");
+    expect(screen.getByText("답변을 준비하고 있습니다.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "보내는 중" }));
+    expect(chatCalls(fetchMock)).toHaveLength(2);
+    await act(async () => next.resolve(json(200, { kind: "answer", text: "현재 답변" })));
+    expect(await screen.findByText("현재 답변")).toBeInTheDocument();
+  });
+
+  it.each(["check", "answer"] as const)("%s 단계에서 화면을 떠나면 진행 중인 요청을 중단한다", async (stage) => {
+    const pending = deferred<Response>();
+    const fetchMock = stage === "check"
+      ? installFetch([], [{ status: 404 }, () => pending.promise])
+      : installFetch([() => pending.promise], { status: 404 });
+    const user = userEvent.setup();
+    const { unmount } = render(<WebChatPage baseUrl={BASE} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await ask(user, "기초연금");
+    await screen.findByText(stage === "check" ? "연결을 확인하고 있습니다." : "답변을 준비하고 있습니다.");
+    const signal = fetchMock.mock.calls[fetchMock.mock.calls.length - 1][1]!.signal!;
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => pending.resolve(json(200, { kind: "answer", text: "떠난 화면의 답변" })));
+    expect(chatCalls(fetchMock)).toHaveLength(stage === "check" ? 0 : 1);
   });
 
   it.each([
@@ -251,6 +280,22 @@ describe("연락처 기록 수집 상태", () => {
     render(<WebChatPage baseUrl={BASE} />);
     await ask(user, "기초연금");
     expect(await screen.findByRole("alert")).toHaveTextContent("질문을 보내지 않았습니다");
+    expect(chatCalls(fetchMock)).toHaveLength(0);
+    expect(screen.getByLabelText("질문")).toHaveValue("기초연금");
+  });
+
+  it("전송 직전 설정 확인이 15초를 넘으면 질문을 보내지 않고 입력을 보존한다", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetchMock = installFetch([], [{ status: 404 }, () => new Promise<Response>(() => undefined)]);
+    render(<WebChatPage baseUrl={BASE} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText("질문"), { target: { value: "기초연금" } });
+    fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+    await screen.findByText("연결을 확인하고 있습니다.");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("질문을 보내지 않았습니다");
     expect(chatCalls(fetchMock)).toHaveLength(0);
     expect(screen.getByLabelText("질문")).toHaveValue("기초연금");
   });

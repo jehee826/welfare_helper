@@ -12,8 +12,19 @@ function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow
   let ui={mode,status:"idle",text:"Chrome에서 복지로를 열고 현재 화면에 관해 질문하세요.",connection:"대기",screenMessages:[],ragMessages:[],model:"서버 OLLAMA_LLM 공유",currentStepId:null};
   const emit=update=>{ui={...ui,...update};publish(ui);};
   const hide=()=>{if(presenter)presenter.hide();else overlay.hide();};
-  const cancelPending=()=>{pendingGuide=false;clearTimeout(pendingTimer);};
-  const invalidate=()=>{revision++;queue.cancel();ragController?.abort();ragController=null;step=null;ui.currentStepId=null;hide();};
+  const cancelPending=()=>{
+    pendingGuide=false;
+    clearTimeout(pendingTimer);
+  };
+  function invalidate(){
+    revision++;
+    queue.cancel();
+    ragController?.abort();
+    ragController=null;
+    step=null;
+    ui.currentStepId=null;
+    hide();
+  }
   const siteKey=()=>snapshot?.context.split(":").slice(0,2).join(":")||knownSiteKey;
   function currentReply(text){
     if(!step)return;
@@ -43,7 +54,12 @@ function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow
   const receive=(next,reason,presence)=>{
     if(stopped||mode==="demo")return;
     clearTimeout(expiry);
-    expiry=setTimeout(()=>{snapshot=null;cancelPending();invalidate();emit({status:"idle",text:"화면 정보가 오래되어 표시를 멈췄습니다. 현재 화면으로 다시 질문하세요.",currentStepId:null});},3500);
+    expiry=setTimeout(()=>{
+      snapshot=null;
+      cancelPending();
+      invalidate();
+      emit({status:"idle",text:"화면 정보가 오래되어 표시를 멈췄습니다. 현재 화면으로 다시 질문하세요.",currentStepId:null});
+    },3500);
     const old=snapshot;snapshot=next;
     if(presence)knownSiteKey=presence.key;
     if(next)knownSiteKey=next.context.split(":").slice(0,2).join(":");
@@ -51,13 +67,23 @@ function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow
       const transient=["target_rechecking","target_changed_during_read"].includes(reason);
       hide();
       if(transient&&step?.action==="안내")currentReply(watchMessage(reason));
-      if(transient&&ui.status==="waiting"&&!pendingGuide){invalidate();emit({status:"idle",currentStepId:null});}
-      if(!transient){cancelPending();invalidate();if(!manual&&!presence)panel.hide();}
+      if(transient&&ui.status==="waiting"&&!pendingGuide){
+        invalidate();
+        emit({status:"idle",currentStepId:null});
+      }
+      if(!transient){
+        cancelPending();
+        invalidate();
+        if(!manual&&!presence)panel.hide();
+      }
       if(autoOpen&&presence?.active&&suppressed!==presence.key){manual=false;panel.showInactive();}
       emit({connection:presence?"복지로 주소 확인 · 페이지 정보 미확인":"미확인",text:watchMessage(reason),currentStepId:transient?ui.currentStepId:null});
       return;
     }
-    if(old&&old.signature!==next.signature||step&&step.signature!==next.signature){invalidate();emit({status:pendingGuide?"waiting":"idle",text:"화면이 바뀌어 이전 표시를 지웠습니다. 필요한 내용을 질문하세요.",currentStepId:null});}
+    if((old&&old.signature!==next.signature)||(step&&step.signature!==next.signature)){
+      invalidate();
+      emit({status:pendingGuide?"waiting":"idle",text:"화면이 바뀌어 이전 표시를 지웠습니다. 필요한 내용을 질문하세요.",currentStepId:null});
+    }
     if(autoOpen&&next.active&&suppressed!==siteKey()&&!panel.isVisible()){
       const physical=next.viewport;
       const browser=screen.screenToDipRect(null,{x:Math.floor(physical.x),y:Math.floor(physical.y),width:Math.ceil(physical.width),height:Math.ceil(physical.height)});
@@ -68,7 +94,11 @@ function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow
     }
     if(next.active)manual=false;
     emit({connection:"복지로 · 공개 요소 "+next.elements.length+"개"+(next.partial?" · 일부만 확인":"")});
-    if(pendingGuide&&next.verifiedAt>=requestedAt&&(next.active||next.panelFocused)){cancelPending();void infer();return;}
+    if(pendingGuide&&next.verifiedAt>=requestedAt&&(next.active||next.panelFocused)){
+      cancelPending();
+      void infer();
+      return;
+    }
     renderHighlight();
   };
   let stopWatch=watchChrome(receive,panelWindow,overlayWindow);
@@ -128,6 +158,29 @@ function assistant({panel,overlay,overlayPresenter,panelWindow="0",overlayWindow
     }
     if(action==="reset"){cancelPending();invalidate();goal="";clarifications.length=0;emit({status:"idle",text:"새 화면 질문을 입력하세요.",awaitingClarification:false,currentStepId:null,screenMessages:[]});}
   }
-  return {command,renderHighlight,get mode(){return mode;},state:()=>ui,manualOpen(){manual=true;suppressed="";stopWatch.discover?.();emit({});},hidden(){cancelPending();suppressed=siteKey();manual=false;invalidate();emit({status:"idle",currentStepId:null,text:"트레이에서 다시 열 수 있습니다."});},collapsed(value){cancelPending();ui.collapsed=value;invalidate();emit({status:"idle",currentStepId:null,text:"현재 안내를 중지했습니다. 펼친 뒤 다시 질문하세요."});},stop(){stopped=true;cancelPending();invalidate();clearTimeout(expiry);stopWatch();}};
+  return {
+    command,renderHighlight,get mode(){return mode;},state:()=>ui,
+    manualOpen(){manual=true;suppressed="";stopWatch.discover?.();emit({});},
+    hidden(){
+      cancelPending();
+      suppressed=siteKey();
+      manual=false;
+      invalidate();
+      emit({status:"idle",currentStepId:null,text:"트레이에서 다시 열 수 있습니다."});
+    },
+    collapsed(value){
+      cancelPending();
+      ui.collapsed=value;
+      invalidate();
+      emit({status:"idle",currentStepId:null,text:"현재 안내를 중지했습니다. 펼친 뒤 다시 질문하세요."});
+    },
+    stop(){
+      stopped=true;
+      cancelPending();
+      invalidate();
+      clearTimeout(expiry);
+      stopWatch();
+    },
+  };
 }
 module.exports={assistant};

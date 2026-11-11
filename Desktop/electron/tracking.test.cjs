@@ -60,6 +60,23 @@ test('취소·화면 변경 뒤 늦은 overlay ACK로 이전 표시를 되살리
   f.feed({...f.snap,signature:'new'});f.presenter.acknowledge(version);assert.equal(f.highlighted(),false);assert.equal(f.assistant.state().currentStepId,null);
  }finally{f.assistant.stop();}
 });
+
+test('화면 변경·숨김·접기·초기화·종료 뒤 늦은 모델 응답은 폐기함',async()=>{
+ for(const cancel of [f=>f.feed({...f.snap,signature:'new'}),f=>f.assistant.hidden(),f=>f.assistant.collapsed(true),f=>f.assistant.command('reset'),f=>f.assistant.stop()]){
+  let finish,signal,calls=0;
+  const f=fixture((_goal,_source,_progress,requestSignal)=>{
+   calls++;signal=requestSignal;return new Promise(resolve=>finish=resolve);
+  });
+  try{
+   f.feed(f.snap);await f.assistant.command('goal','복지서비스 찾기');await tick();
+   await cancel(f);
+   assert.equal(signal.aborted,true);
+   finish(await targetAnswer());await tick();
+   assert.equal(calls,1);assert.equal(f.assistant.state().currentStepId,null);
+   assert.notEqual(f.assistant.state().status,'guide');assert.equal(f.highlighted(),false);
+  }finally{f.assistant.stop();}
+ }
+});
 test('재검증 중에는 표시·현행 지시를 숨기고 같은 대상만 새 좌표로 복원',async()=>{
  let calls=0;const f=fixture(async()=>{calls++;return targetAnswer();});try{
   f.feed(f.snap);await f.assistant.command('goal','복지서비스 찾기');await tick();f.feed(null,'target_rechecking');assert.equal(f.highlighted(),false);assert.doesNotMatch(f.assistant.state().screenMessages.at(-1).text,/파란 테두리/);

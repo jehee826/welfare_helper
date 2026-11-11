@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:50 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:57 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1149,3 +1149,13 @@
 - 8개 브랜치 삭제 범위가 명시 승인된 뒤 모든 로컬/원격head의 예상값 일치·main 포함·미커밋 변경 없음·단일checkout/main 사용을 재확인했다. codex/refactor-extension, refactor-webchat, refactor-admin-web, refactor-backend-core, refactor-document-worker, refactor-rag, refactor-desktop의7개를 로컬 branch -d와 원격 --delete로 정리했다. 강제 삭제·이력 재작성은 없다.
 - 승인된 마지막 codex/refactor-runtime-review는main/6c59068로ff-only 맞춰 이 실제 정리 결과와 인계 상태를 공유하는 데만 사용한다. 기록 PR 통합 뒤 main ff-only·최종 커밋 포함/후속 변경/사용 여부를 확인하고 이 브랜치도 로컬·원격에서 삭제한다. 최종8개 삭제/브랜치 목록과 SHA는 완료 보고에서 확인한다.
 - 제품·설정·시험·EC2·DB·서비스·보존B안·이미지는 변경하지 않았다. 실제.env를 읽지 않았고 기존 검사를 재실행하지 않았다. 앞선 자동 승인 거절은 과거 실패로 보존하며 현재 명시 승인으로 해당 정리 범위만 진행한다.
+
+<a id="log-20261112-0257-refactor-deploy"></a>
+## 2026-11-12 02:57 KST · 리팩토링 main EC2 배포 착수
+
+- 앞선 정리 기록 PR #31은 main/b82b391df978a627dfe06993136390bf57f6ce42로 병합됐고 마지막 기록 브랜치까지 기존8개를 로컬·원격에서 삭제했다. 이번 착수 시 로컬 main/origin/main b82b391 일치와 깨끗한 작업 트리를 확인했다. PR #31의 새 CI 결과를 이번에 확인한 것은 아니다.
+- EC2 배포 지시에 따라 개발 세션을 단일 운영 담당으로 지정했다. 설계는 로컬 codex/deploy-refactor-main에서 세 활성 문서와 읽기 리뷰만 맡고 개발은 로컬 checkout/index/공유 문서를 수정하지 않는다. 기준 main/b82b391, 제품0e54cd4이며 API/저장 계약·프롬프트·모델·의존성/Compose 변경은 없다.
+- EC2의 마지막 확인값 main/364cbb8+B11과 실행 backend f11e8af는 별개다. B11의 원본·binary patch·기준SHA·status를 검증 백업하고 배포 checkout에서 분리한 뒤 main을 ff-only 동기화한다. Grounded/items/strict_json 실험은 채택하지 않는다. 기존 backend/worker 이미지·설정과 부팅 pin을 대조해 필요한 서버 코드만 반영하며 복구 이미지를 보존한다.
+- 완료 기준은 EC2 소스/이미지/기동 pin의 일치, backend/worker 준비도와 HTTPS 응답, REFERRAL_RECORDS_ENABLED=true·기존 인증/볼륨/모델/GPU·DB·Caddy/Ollama 보존이다. 실제.env 읽기/편집·비밀 출력·새 모델/pgvector 다운로드·worker/DB 복구 자동시험·실제 상담 추론·재부팅은 하지 않는다. 착수 시점 배포 결과는 미확정이다.
+- 03:00 개발 사전 보고: EC2 main/364cbb8과 B11 diff SHA256 동일·빈 index/untracked, 원격 main/b82b391의 후손 관계를 확인했다. 현재 backend/worker healthy, Ollama/edge 정상이며 디스크 여유는 약12GB다. f11e8af..target의 Dockerfile/lock/Compose/pyproject 차이가 없어 현재 운영 이미지 위에 대상 main의 BackEnd만 복사하는 방식으로 의존성을 재사용한다. root 전용 .local/codex-runtime/start-preserved.sh는 기존 컨테이너 이미지ID를 검증해 시작하는 경로이며 systemd active/enabled다.
+- 최초 sandbox SSH Permission denied는 승인된 escalation으로 해결했다. root 전용 경로 읽기 PermissionError는 권한 변경 없이 필요한 sudo 읽기로 확인했다. 설계는 백업/patch 복구 해시·후보/실행 파일별 소스해시·진행 중 문서작업 종료 확인·기존 runtime 복제/보존 및 두 이미지 pin만 원자 갱신하는 실행 방식을 검토했다. 실제 교체 결과는 후속 기록으로 구분한다.

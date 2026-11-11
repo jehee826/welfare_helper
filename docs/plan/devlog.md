@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:02 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-12 01:15 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1047,3 +1047,20 @@
 - 나머지 파일은 연락처 개별 검증과 응답 오류의 차이, Contacts의 전화 링크, speech의 공용 표시/낭독 규칙, 음성 인식의 owner/30초/종료5초와 합성의 독립 version 수명을 검토해 유지했다. CSS·공개 라우트/API·음성 기존 검사도 재사용했다. 새 모듈·저장 형식·서버 계약은 없다.
 - 기존 Terra 담당이 node FrontEnd/scripts/ci.mjs test에 웹챗·chatApi·route·voice 경로를 지정해1회 실행했고4파일35/35통과·실패/skip0·15.95초다. 대기 중 바꾼 초안 보존, 취소 후 새 요청과 늦은 응답 분리, check/answer 각 언마운트, 설정 확인15초 초과 사례를 보강했다. tsc -p FrontEnd/tsconfig.json --noEmit은 진단0·exit0, ci.mjs build는65모듈·1.04초·exit0다. 실패·재실행은 없고 기존 React Router future flag 경고2종은 유지했다.
 - 원자료는 .local/co-op/checks-runtime/refactor-webchat-20261112-focused.log·refactor-webchat-20261112-type.log·refactor-webchat-20261112-build.log다. 타입 로그는 진단이 없어 빈 파일이다. 설계가 실제 로그·diff와 이전/현재 요청 종료 순서를 읽었고 diff --check도 통과했다. 실제 Chrome·기기 음성·HTTP 서버·모델·EC2·DB는 미실측이다. 다음은 push·PR·CI·병합이며3번은 아직 착수하지 않았다.
+
+<a id="log-20261112-0105-webchat-merge-admin"></a>
+## 2026-11-12 01:05 KST · 2번 통합과 3번 관리자 웹 착수
+
+- codex/refactor-webchat의 착수49d4e65·제품2a2af24·결과abd0d92를 push해 PR #24를 생성했다. head/abd0d920dd4d9a51010151ff3cb23469d92ec85d의 Actions43054440747에서 web-extension·python backend/worker/dev 4job 성공과 Vercel Preview 상태 success를 확인했다. expected head SHA로 병합하고 실제 merged 및 main/a12ed10d9eea63779196bd99162aeeaf13986153의 커밋 포함을 확인했다. 로컬 main은 ff-only 동기화했다. production 배포 완료·UI/API 종단을 새로 확인하지 않았고 EC2·DB는 변경하지 않았다.
+- main/a12ed10에서 codex/refactor-admin-web을 생성했다. 개발은 FrontEnd의 3번 배정 경로 제품·관련 검사, 설계는 문서·읽기 리뷰·Git을 맡는다. 첫 변경은 AdminPage와 단일 제품 호출 ProgramManager 통합이며 삭제된 모듈을 기존 화면 검사에서 참조하지 않도록 맞춘다. 이어 DocumentsPage의 원문·검색·질의·재처리 순서를 같은 파일에서 명확하게 정리하고 다른 배정 파일의 유지/정리 판단을 전달한다.
+- 관리자 세션 ID/오래된401, 주입 API/mock 소비자, 문서/분석 버전 전후 확인·중단·기존 게시본 보존, 조회/삭제 기간과 권한 계약을 유지한다. 기존 영향 검사·타입·빌드 후 설계 리뷰·통합으로 마친다. 실제 관리자/DB 작업·새 추상화·의존성 갱신·운영 조작은 포함하지 않는다. 4~8번은 대기한다.
+
+<a id="log-20261112-0115-admin-web-result"></a>
+## 2026-11-12 01:15 KST · 3번 관리자 웹 로컬 완료
+
+- 개발이 제품 쓰기를 종료·작성권 반환한 뒤 설계가5경로329추가/267삭제와 원로그를 읽기 리뷰했다. 제도 관리 상태·CRUD·샘플 질문과 JSX를 AdminPage로 옮겨 ProgramManager를 삭제했고 직접 검사 소비자도 페이지로 바꿨다. 관리 로직·화면 래퍼·API 주입·ProgramForm은 유지했다. 해당3경로를4d49ccb로 선별 커밋했다.
+- DocumentsPage.perform의 retry·markdown은 처리 후 반환하고 검색/질의는 공통 최신 게시본 확인 뒤 진행하도록 평탄하게 정리했다. 공통 자원 시작·catch/finally, abort guard와 원문 전후 analysis job/hash 확인을 유지했다. retry POST1회·원문 상태GET→원문GET→상태GET·검색/질의 상태GET→POST 순서와 횟수를 대조했다. 관련2경로는828c836으로 별도 커밋했다.
+- 나머지는 관리자 세션/오래된401·공개 라우트 분리·WelfareApi/mock 및 필드 변환·폼과 연락처 조회/삭제/암호 발급의 독립 수명·오류/개인정보/스타일과 실행 진입점 책임을 검토해 유지했다. 새 모듈·계약·저장·의존성 변경은 없다.
+- 기존 Terra 담당이 ci.mjs test로 관리자·라우팅·인증·문서/교체·연락처·암호·공유API/개인정보·공개 route의14파일124개를1회 실행해124통과·실패/skip0·26.90초였다. 원문 도중 hash/job 변경2사례와 명시 재처리 POST1회/새 작업 이동1사례를 보강했다. tsc --noEmit은 진단0·exit0, ci.mjs build는64모듈·1.02초·exit0다. 실패·재실행 없이 완료했다.
+- 원자료는 .local/co-op/checks-runtime/refactor-admin-web-20261112-focused.log·refactor-admin-web-20261112-type.log·refactor-admin-web-20261112-build.log다. 타입 로그는 빈 파일이다. 설계 diff --check 통과, 코드의 ProgramManager 잔여 참조0개를 확인했다. 실제 Chrome·운영 관리자 UI/API·DB·EC2/모델·배포는 미실측이다. 다음은 push·PR·CI·병합이며4번은 아직 착수하지 않았다.
+- 다음 백엔드 단계 전 EC2 branch/HEAD/status/numstat/diff 해시만 읽으려 했으나 SSH22 연결이 시간 초과돼 실행되지 않았다. 소스·서비스·환경을 바꾸지 않았다. 로컬 리팩토링과 현재 웹 PR 통합은 진행하되 EC2 B안11파일은 재확인 전 덮지 않고 서버 동기화/배포는 별도 남긴다.

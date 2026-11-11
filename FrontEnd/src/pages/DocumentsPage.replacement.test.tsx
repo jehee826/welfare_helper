@@ -202,6 +202,59 @@ it('후보 원문을 본 뒤 게시 작업을 선택하면 후보 원문이 사�
   expect(await screen.findByText('게시 A 검색 결과')).toBeInTheDocument();
 });
 
+it.each(['hash', 'job'])('원문을 읽는 동안 분석 %s가 바뀌면 원문을 표시하지 않는다', async change => {
+  vi.stubEnv('DEV', true);
+  const doc='00000000-0000-0000-0000-000000000001', a='00000000-0000-0000-0000-000000000002', b='00000000-0000-0000-0000-000000000003';
+  const current={job_id:a,state:'succeeded',processing_mode:'automatic',progress:{stored:1}};
+  let loaded=false;
+  const json=(body:unknown)=>new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}});
+  const fetchMock=vi.fn(async(url:string)=>{
+    if(url.endsWith('/processing'))return json({ready:true});
+    if(url.includes('/programs?'))return json({items:[],next_offset:null});
+    if(url.includes('/jobs/'))return json(current);
+    if(url.endsWith('/markdown')){loaded=true;return new Response('교체 전 원문',{status:200,headers:{'Content-Type':'text/plain'}});}
+    return json({document_id:doc,name:'게시 문서',active_job_id:a,jobs:[current],analysis:{
+      hash:loaded&&change==='hash'?'new-hash':'old-hash',job_id:loaded&&change==='job'?b:a,
+      scope:'published',blockers:[],warnings:[],total_blocks:1,blocks:[],next_offset:null,
+    }});
+  });
+  vi.stubGlobal('fetch',fetchMock);
+  render(<MemoryRouter initialEntries={[`/admin/documents?document=${doc}&job=${a}`]}><App /></MemoryRouter>);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'원문 불러오기'})).toBeEnabled());
+  fetchMock.mockClear();
+  fireEvent.click(screen.getByRole('button',{name:'원문 불러오기'}));
+  expect(await screen.findByRole('alert')).toHaveTextContent('analysis_version_changed');
+  expect(screen.queryByText('교체 전 원문')).not.toBeInTheDocument();
+  expect(screen.getByRole('button',{name:'원문 불러오기'})).toBeEnabled();
+  expect(fetchMock.mock.calls.map(([url])=>url.replace(/^.*\/documents/,''))).toEqual([
+    '/'+doc+'?limit=1','/'+doc+'/markdown','/'+doc+'?limit=1',
+  ]);
+});
+
+it('기존 게시 원문 재처리는 한 번 요청하고 반환된 새 작업으로 이동한다', async () => {
+  vi.stubEnv('DEV', true);
+  const doc='00000000-0000-0000-0000-000000000001', a='00000000-0000-0000-0000-000000000002', b='00000000-0000-0000-0000-000000000003';
+  const current={job_id:a,state:'failed',processing_mode:'automatic',error_code:'failed'};
+  const next={job_id:b,state:'queued',processing_mode:'automatic'};
+  let retried=false;
+  const json=(body:unknown)=>new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}});
+  const fetchMock=vi.fn(async(url:string,options?:RequestInit)=>{
+    if(url.endsWith('/processing'))return json({ready:true});
+    if(url.includes('/programs?'))return json({items:[],next_offset:null});
+    if(url.endsWith('/retry')){expect(options?.method).toBe('POST');retried=true;return json({job_id:b});}
+    if(url.includes('/jobs/'))return json(url.endsWith(b)?next:current);
+    return json({document_id:doc,name:'기존 게시 문서',active_job_id:a,jobs:retried?[next,current]:[current]});
+  });
+  vi.stubGlobal('fetch',fetchMock);
+  render(<MemoryRouter initialEntries={[`/admin/documents?document=${doc}&job=${a}`]}><App /><LocationProbe /></MemoryRouter>);
+  await waitFor(()=>expect(screen.getByRole('button',{name:'기존 게시 원문 자동 재처리'})).toBeEnabled());
+  fireEvent.click(screen.getByRole('button',{name:'기존 게시 원문 자동 재처리'}));
+  expect(await screen.findByText('접수 완료 · 작업 대기')).toBeInTheDocument();
+  expect(screen.getByTestId('location')).toHaveTextContent('job='+b);
+  expect(fetchMock.mock.calls.filter(([url])=>url.endsWith('/retry'))).toHaveLength(1);
+  expect(screen.getByRole('button',{name:'실행'})).toBeDisabled();
+});
+
 it.each(['leave','expire'])('상태 조회 중 %s 후 늦은 상태가 작업 화면을 복구하지 않는다', async stop => {
   vi.stubEnv('DEV',true);
   saveAdminSession({access_token:'synthetic-token',session_id:'synthetic-session',expires_at:Math.floor(Date.now()/1000)+600});

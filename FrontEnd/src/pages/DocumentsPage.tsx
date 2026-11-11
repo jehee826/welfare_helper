@@ -182,33 +182,48 @@ function DocumentWorkspace({ documentId, requestedJob, onReplace, onJobChange }:
 
   async function perform(operation: "search" | "query" | "markdown" | "retry", query?: string) {
     if (submitting.current || !online || (operation === "search" || operation === "query") && !ready) return;
-    const abort = new AbortController(); action.current = abort; submitting.current = true; setBusy(true); setError("");
+    const abort = new AbortController();
+    action.current = abort;
+    submitting.current = true;
+    setBusy(true);
+    setError("");
     if (operation === "search" || operation === "query") { setResult(null); setAnswer(null); }
     try {
       if (operation === "retry") {
         const next = await documentRequest<{ job_id: string }>("/" + documentId + "/retry", abort.signal, { method: "POST" });
         if (!abort.signal.aborted) onJobChange(next.job_id);
-      } else {
-        const latest = await documentRequest<DocumentStatus>("/" + documentId + "?limit=1", abort.signal);
-        if (operation !== "markdown" && (latest.active_job_id !== job?.job_id || !latest.jobs.some(j => j.job_id === job?.job_id && j.state === "succeeded"))) {
-          setReload(v => v + 1); throw new DocumentApiError(409, "document_changed_during_search");
-        }
-        if (operation === "markdown") {
-          if (latest.analysis?.job_id !== job?.job_id) throw new DocumentApiError(409, "analysis_version_changed");
-          const text = await documentRequest<string>("/" + documentId + "/markdown", abort.signal);
-          const check = await documentRequest<DocumentStatus>("/" + documentId + "?limit=1", abort.signal);
-          if (check.analysis?.hash !== latest.analysis?.hash || check.analysis?.job_id !== job?.job_id) throw new DocumentApiError(409, "analysis_version_changed");
-          if (!abort.signal.aborted) setMarkdown(text);
-        } else if (operation === "search") {
-          const data = await documentRequest<SearchResult>("/" + documentId + "/search", abort.signal, jsonPost({ query }));
-          if (!abort.signal.aborted) setResult(data);
-        } else {
-          const data = await documentRequest<QueryResult>("/" + documentId + "/query", abort.signal, jsonPost({ query }));
-          if (!abort.signal.aborted) setAnswer(data);
-        }
+        return;
       }
-    } catch (e) { if (!abort.signal.aborted) setError(documentError(e)); }
-    finally { if (!abort.signal.aborted) { submitting.current = false; setBusy(false); } }
+
+      const latest = await documentRequest<DocumentStatus>("/" + documentId + "?limit=1", abort.signal);
+      if (operation === "markdown") {
+        if (latest.analysis?.job_id !== job?.job_id) throw new DocumentApiError(409, "analysis_version_changed");
+        const text = await documentRequest<string>("/" + documentId + "/markdown", abort.signal);
+        const check = await documentRequest<DocumentStatus>("/" + documentId + "?limit=1", abort.signal);
+        if (check.analysis?.hash !== latest.analysis?.hash || check.analysis?.job_id !== job?.job_id) throw new DocumentApiError(409, "analysis_version_changed");
+        if (!abort.signal.aborted) setMarkdown(text);
+        return;
+      }
+
+      if (latest.active_job_id !== job?.job_id || !latest.jobs.some(j => j.job_id === job?.job_id && j.state === "succeeded")) {
+        setReload(v => v + 1);
+        throw new DocumentApiError(409, "document_changed_during_search");
+      }
+      if (operation === "search") {
+        const data = await documentRequest<SearchResult>("/" + documentId + "/search", abort.signal, jsonPost({ query }));
+        if (!abort.signal.aborted) setResult(data);
+      } else {
+        const data = await documentRequest<QueryResult>("/" + documentId + "/query", abort.signal, jsonPost({ query }));
+        if (!abort.signal.aborted) setAnswer(data);
+      }
+    } catch (e) {
+      if (!abort.signal.aborted) setError(documentError(e));
+    } finally {
+      if (!abort.signal.aborted) {
+        submitting.current = false;
+        setBusy(false);
+      }
+    }
   }
 
   return <section className="card document-form" aria-label="문서 작업 상태">

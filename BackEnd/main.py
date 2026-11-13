@@ -1,13 +1,16 @@
+import asyncio
+import json
 import logging
 import hmac
 import os
+import threading
 from contextlib import closing
 from functools import lru_cache
 from typing import Literal
 
 import psycopg2
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from BackEnd.core.execution import InferenceBodyLimit, inference_request
@@ -63,7 +66,7 @@ app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_allowed_ori
 async def validation_error(request: Request, exc: RequestValidationError):
     if request.url.path in {"/api/v1/desktop/guide", "/api/v1/screen/guide"}:
         return JSONResponse(status_code=422, content={"detail": "invalid_screen_request" if request.url.path == "/api/v1/screen/guide" else "invalid_desktop_request"})
-    if request.url.path in {"/api/v1/chat", "/debug/rag", "/api/v1/conversation/summary"} or (
+    if request.url.path in {"/api/v1/chat", "/api/v1/chat/stream", "/debug/rag", "/api/v1/conversation/summary"} or (
         request.url.path.startswith("/api/v1/admin/documents/")
         and request.url.path.endswith(("/query", "/search"))
     ):
@@ -251,18 +254,23 @@ def database_health():
     return {"status": "ok", "database": "connected"}
 
 
-@app.post("/api/v1/chat", dependencies=[Depends(enforce_chat_rate_limit)])
-def chat(request: ChatRequest, http_request: Request, service: ChatService = Depends(get_chat_service),
-         credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
-    """게시 문서를 최소 근거 정책으로 질의한다. 검색 범위는 관리자 세션 유무에 따른다."""
+CHAT_FAILURE = "문서 검색이나 모델 실행에 실패했습니다. 서버 상태를 확인해 주세요."
+
+
+def _answer_chat(request: "ChatRequest", http_request: Request, service: ChatService,
+                 credentials: HTTPAuthorizationCredentials | None, *, ready=None, on_draft=None):
+    """일반·스트리밍 채팅이 같은 권한·기록·가림 경계를 사용한다."""
     try:
         with inference_request(http_request, get_settings().ollama_timeout, request.timeout_seconds):
+            if ready is not None:
+                ready()
             service = document_chat_service(http_request, service, credentials)
             recording = (getattr(get_settings(), 'referral_records_enabled', False) and credentials is None
                          and not getattr(service.repo, 'include_local_documents', False)
                          and not getattr(service.repo, 'document_scope', None))
             response, trace = answer_document(service.repo, service, request.query.strip(), **request.qa_options(),
-                                              **({'select_contacts': True} if recording else {}))
+                                              **({'select_contacts': True} if recording else {}),
+                                              **({'on_draft': on_draft} if on_draft is not None else {}))
             response = redact_document(response)
             if recording and response.get('kind') == 'answer' and response.get('contacts'):
                 from BackEnd.core.execution import checkpoint
@@ -278,10 +286,73 @@ def chat(request: ChatRequest, http_request: Request, service: ChatService = Dep
         raise HTTPException(status_code=503, detail=document_qa_error_code(exc)) from None
     except Exception as exc:
         logger.error("chat failed (%s)", type(exc).__name__)
-        raise HTTPException(
-            status_code=503,
-            detail="문서 검색이나 모델 실행에 실패했습니다. 서버 상태를 확인해 주세요.",
-        ) from None
+        raise HTTPException(status_code=503, detail=CHAT_FAILURE) from None
+
+
+@app.post("/api/v1/chat", dependencies=[Depends(enforce_chat_rate_limit)])
+def chat(request: ChatRequest, http_request: Request, service: ChatService = Depends(get_chat_service),
+         credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    """게시 문서를 최소 근거 정책으로 질의한다. 검색 범위는 관리자 세션 유무에 따른다."""
+    return _answer_chat(request, http_request, service, credentials)
+
+
+def _stream_line(event: dict) -> bytes:
+    return (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+@app.post("/api/v1/chat/stream", dependencies=[Depends(enforce_chat_rate_limit)])
+async def chat_stream(request: ChatRequest, http_request: Request, service: ChatService = Depends(get_chat_service),
+                      credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    """/api/v1/chat과 같은 답변을 NDJSON으로 보낸다. draft는 검증 전 표시용이며 final이 항상 대체한다.
+
+    수락 전 실패(429 등)는 일반 HTTP 오류로, 수락 뒤 실패는 error 이벤트로 전달한다.
+    """
+    loop = asyncio.get_running_loop()
+    events: asyncio.Queue = asyncio.Queue()
+
+    def put(event):
+        try:
+            loop.call_soon_threadsafe(events.put_nowait, event)
+        except RuntimeError:
+            pass
+
+    sent = [""]
+
+    def draft(text):
+        previous, sent[0] = sent[0], text
+        put({"type": "draft", "append": text[len(previous):]} if previous and text.startswith(previous)
+            else {"type": "draft", "text": text})
+
+    def run():
+        try:
+            response = _answer_chat(request, http_request, service, credentials,
+                                    ready=lambda: put({"type": "accepted"}), on_draft=draft)
+            put({"type": "final", "response": response})
+        except HTTPException as exc:
+            put({"type": "error", "status": exc.status_code, "detail": exc.detail,
+                 "headers": dict(exc.headers or {})})
+        except Exception as exc:
+            logger.error("chat stream failed (%s)", type(exc).__name__)
+            put({"type": "error", "status": 503, "detail": CHAT_FAILURE, "headers": {}})
+
+    threading.Thread(target=run, name="chat-stream", daemon=True).start()
+    first = await events.get()
+    if first["type"] == "error":
+        raise HTTPException(first["status"], first["detail"], headers=first["headers"] or None)
+
+    async def body():
+        yield _stream_line({"type": "accepted"})
+        while True:
+            event = await events.get()
+            if event["type"] == "error":
+                yield _stream_line({"type": "error", "status": event["status"], "detail": event["detail"]})
+                return
+            yield _stream_line(event)
+            if event["type"] == "final":
+                return
+
+    return StreamingResponse(body(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/v1/admin/session")
@@ -293,7 +364,7 @@ def admin_session(actor=Depends(require_document_admin)):
 @app.middleware("http")
 async def private_responses(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith(("/api/v1/admin", "/api/v1/desktop", "/api/v1/screen")) or request.url.path in {"/api/v1/chat", "/debug/rag", "/api/v1/conversation/summary"}:
+    if request.url.path.startswith(("/api/v1/admin", "/api/v1/desktop", "/api/v1/screen")) or request.url.path in {"/api/v1/chat", "/api/v1/chat/stream", "/debug/rag", "/api/v1/conversation/summary"}:
         response.headers["Cache-Control"] = "no-store"
     return response
 

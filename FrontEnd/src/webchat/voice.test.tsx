@@ -85,7 +85,7 @@ describe("음성 입력", () => {
     await user.click(screen.getByRole("button", { name: "말하기 끝" }));
     expect(screen.getByLabelText("질문")).toHaveValue("서울 거주 70세 기초연금 신청 방법");
     expect(screen.getByText(/확인·수정한 뒤 직접 보내 주세요/)).toBeInTheDocument();
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/api/v1/chat"))).toHaveLength(0);
+    expect(fetchMock.mock.calls.filter(([url]) => /\/api\/v1\/chat(\/stream)?$/.test(String(url)))).toHaveLength(0);
   });
 
   it("취소하면 결과를 넣지 않고 권한 거부는 안내한다", async () => {

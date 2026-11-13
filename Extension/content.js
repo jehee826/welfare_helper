@@ -41,6 +41,16 @@
     if(pendingQuestion.isConnected)pendingQuestion.append(notice);pendingQuestion=null;
   }
   function removePending(){pendingReply?.remove();pendingReply=null;}
+  function showDraft(text){
+    if(!pendingReply?.isConnected||typeof text!=='string'||!text)return;
+    const follow=atConversationEnd();let draft=pendingReply.querySelector('.draft-text');
+    if(!draft){
+      const label=document.createElement('span');label.className='sr-only';label.textContent='곁에가 답변을 작성하고 있습니다.';
+      draft=document.createElement('p');draft.className='draft-text';
+      pendingReply.setAttribute('aria-live','off');pendingReply.setAttribute('aria-busy','true');pendingReply.classList.add('drafting');pendingReply.replaceChildren(label,draft);
+    }
+    draft.textContent=GyeoteProtocol.privacy.maskText(text);if(follow)transcript.scrollTop=transcript.scrollHeight;
+  }
   function showPending(){
     removePending();const follow=atConversationEnd();pendingReply=document.createElement('div');pendingReply.className='pending-reply';pendingReply.setAttribute('role','status');pendingReply.setAttribute('aria-live','polite');
     pendingReply.innerHTML='<span class="sr-only">곁에가 답변을 준비하고 있습니다.</span><span class="thinking-dots" aria-hidden="true"><span>•</span><span>•</span><span>•</span></span>';
@@ -96,7 +106,7 @@
     .onboarding{background:#f7f7f7;padding:12px;border-radius:14px;margin-bottom:12px;font-size:14px}.onboarding p{margin:0 0 10px}.onboarding button{font-size:14px}.conversation{white-space:pre-wrap;min-height:100px}.conversation:empty::before{content:'무엇을 도와드릴까요?';display:block;padding:50px 8px;color:#777;text-align:center;font-size:18px}.conversation article{width:fit-content;max-width:94%;padding:12px 14px;margin:0 0 14px;background:#f5f5f5;border-radius:16px 16px 16px 4px}.conversation article.user-message{margin-left:auto;background:#202020;color:#fff;border-radius:16px 16px 4px 16px}.conversation article.user-message small{color:#ddd}.conversation small{display:block;margin-bottom:4px;color:#666;font-size:13px}.conversation article p{margin:8px 0}.conversation details{font-size:13px;margin-top:8px}.conversation-warning{padding:10px;border:1px solid #bbb;border-radius:10px;font-size:13px}.conversation-alerts:empty{display:none}
     @media(max-height:600px){.head{padding:8px 12px}.transcript{padding:12px}.consultation{padding:8px 12px}.consultation form{gap:6px}.question-suggestions button{padding:6px 4px}.conversation:empty::before{padding:20px 4px}}`;
   shadow.append(formStyle);
-  formStyle.textContent+=`.head{gap:4px;padding:10px 12px}.head strong{font-size:20px;letter-spacing:-1px;min-width:36px}.head .menu-toggle,.head .collapse{width:32px;flex-shrink:0}.head .profile-toggle{padding:6px;font-size:13px;flex-shrink:0}.mode-switch{display:flex;flex-shrink:0;border:1px solid #e5e5e5;border-radius:12px;background:#f6f6f6;padding:2px}.head .mode-switch button{font-size:13px;padding:4px 6px;min-height:40px;border-radius:9px;background:transparent}.head .mode-switch button[aria-pressed=true]{background:#fff;color:#111;box-shadow:0 1px 4px #0002}.head .mode-switch button:disabled{color:#888;cursor:not-allowed}.mode-reason{font-size:13px;margin:0;padding:4px 12px;color:#666;flex-shrink:0}.pending-reply{width:fit-content;padding:12px 16px;margin-bottom:14px;background:#f5f5f5;border-radius:16px 16px 16px 4px}.thinking-dots{display:flex;gap:5px;font-size:22px;line-height:1}.thinking-dots span{animation:gyeote-thinking 1.2s infinite ease-in-out}.thinking-dots span:nth-child(2){animation-delay:.15s}.thinking-dots span:nth-child(3){animation-delay:.3s}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}@keyframes gyeote-thinking{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}@media(prefers-reduced-motion:reduce){.thinking-dots span{animation:none;opacity:1}}`;
+  formStyle.textContent+=`.head{gap:4px;padding:10px 12px}.head strong{font-size:20px;letter-spacing:-1px;min-width:36px}.head .menu-toggle,.head .collapse{width:32px;flex-shrink:0}.head .profile-toggle{padding:6px;font-size:13px;flex-shrink:0}.mode-switch{display:flex;flex-shrink:0;border:1px solid #e5e5e5;border-radius:12px;background:#f6f6f6;padding:2px}.head .mode-switch button{font-size:13px;padding:4px 6px;min-height:40px;border-radius:9px;background:transparent}.head .mode-switch button[aria-pressed=true]{background:#fff;color:#111;box-shadow:0 1px 4px #0002}.head .mode-switch button:disabled{color:#888;cursor:not-allowed}.mode-reason{font-size:13px;margin:0;padding:4px 12px;color:#666;flex-shrink:0}.pending-reply{width:fit-content;padding:12px 16px;margin-bottom:14px;background:#f5f5f5;border-radius:16px 16px 16px 4px}.pending-reply.drafting{width:auto;max-width:100%}.draft-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}.thinking-dots{display:flex;gap:5px;font-size:22px;line-height:1}.thinking-dots span{animation:gyeote-thinking 1.2s infinite ease-in-out}.thinking-dots span:nth-child(2){animation-delay:.15s}.thinking-dots span:nth-child(3){animation-delay:.3s}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}@keyframes gyeote-thinking{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}@media(prefers-reduced-motion:reduce){.thinking-dots span{animation:none;opacity:1}}`;
   formStyle.textContent+='.unsaved-conversation{padding:10px;border:1px solid #777;border-radius:9px;margin-top:10px}.unsaved-conversation>div{max-height:180px;overflow:auto;overflow-wrap:anywhere}';
   $('.consultation').innerHTML='<form><label class="question-label" for="gyeote-question">복지 상담</label><div class="compose-row"><input id="gyeote-question" type="text" maxlength="240" autocomplete="off" placeholder="질문을 입력하세요"><button type="submit" aria-label="질문 보내기" title="질문 보내기"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 3-7 18-4-7-7-4Z"/><path d="m10 14 11-11"/></svg></button></div></form>';
   const questionForm=$('.consultation form'),sendButton=questionForm.querySelector('[type=submit]'),sendIcon=sendButton.innerHTML;
@@ -639,6 +649,7 @@
       }
       port.onMessage.addListener(async packet=>{
         if(version!==serial||requestPort!==port||finished||packet.requestId!==requestId)return;
+        if(packet.type==='draft'){if(documentMode)showDraft(packet.text);return;}
         finished=true;
         try{
           if(packet.type!=='result')throw new Error(packet.error||'invalid_reply');

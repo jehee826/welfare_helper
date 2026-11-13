@@ -85,15 +85,47 @@ chrome.runtime.onConnect.addListener(port=>{
       payload.timeout_seconds=Math.min(payload.timeout_seconds??1800,Math.max(1,Math.ceil(remaining/1000)));
       if(controller.signal.aborted)throw new Error('request_stopped');
       const headers={'Content-Type':'application/json'};
-      const response=await fetch(origin+endpoint,{method:'POST',headers,body:JSON.stringify(payload),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'});
+      const streamed=documentMode&&!summaryMode;
+      const init={method:'POST',headers,body:JSON.stringify(payload),signal:controller.signal,redirect:'error',credentials:'omit',cache:'no-store'};
+      let response=await fetch(origin+(streamed?'/api/v1/chat/stream':endpoint),init);
+      if(streamed&&[404,405].includes(response.status)){
+        const code=await response.json().then(r=>r.detail).catch(()=>null);
+        if(!['Not Found','Method Not Allowed'].includes(code))throw new Error(httpError(response.status,code,mode));
+        response=await fetch(origin+endpoint,init);
+      }
       if(!response.ok){
         const code=await response.json().then(r=>r.detail).catch(()=>null);
         throw new Error(httpError(response.status,code,mode));
       }
-      const reader=response.body.getReader();let size=0,chunks=[];
-      try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>(documentMode?1024*1024:65536))throw new Error('invalid_reply');chunks.push(value);}}
+      const ndjson=streamed&&(response.headers?.get('content-type')||'').startsWith('application/x-ndjson');
+      const limit=ndjson?2*1024*1024:documentMode?1024*1024:65536,decoder=new TextDecoder();
+      let size=0,chunks=[],body,draft='',buffered='';
+      const readLine=text=>{
+        if(!text.trim())return;
+        const event=JSON.parse(text);
+        if(event?.type==='accepted'&&body===undefined)return;
+        if(event?.type==='draft'&&body===undefined){
+          const next=typeof event.text==='string'?event.text:typeof event.append==='string'?draft+event.append:null;
+          if(next===null||next.length>3000)throw new Error('invalid_reply');
+          draft=next;if(!controller.signal.aborted)send({type:'draft',requestId,text:draft});return;
+        }
+        if(event?.type==='final'&&body===undefined&&event.response&&typeof event.response==='object'&&!Array.isArray(event.response)){body=event.response;return;}
+        if(event?.type==='error'&&Number.isInteger(event.status))throw new Error(httpError(event.status,event.detail,mode));
+        throw new Error('invalid_reply');
+      };
+      const reader=response.body.getReader();
+      try{
+        while(true){
+          const {done,value}=await reader.read();if(done)break;
+          size+=value.byteLength;if(size>limit)throw new Error('invalid_reply');
+          if(!ndjson){chunks.push(value);continue;}
+          buffered+=decoder.decode(value,{stream:true});
+          let index;while((index=buffered.indexOf('\n'))>=0){const line=buffered.slice(0,index);buffered=buffered.slice(index+1);readLine(line);}
+        }
+        if(ndjson){readLine(buffered+decoder.decode());if(body===undefined)throw new Error('invalid_reply');}
+      }
       finally{await reader.cancel().catch(()=>{});}
-      const body=JSON.parse(await new Blob(chunks,{type:'application/json'}).text());
+      if(!ndjson)body=JSON.parse(await new Blob(chunks,{type:'application/json'}).text());
       if(controller.signal.aborted)throw new Error('request_stopped');
       if(documentMode){
         const latest=await chrome.runtime.sendMessage({type:'gyeote:document-auth'});

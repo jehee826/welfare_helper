@@ -173,7 +173,7 @@ class OllamaClient:
                 response.raise_for_status()
                 return response.json()
 
-    async def _chat_before_deadline(self, system, user, schema, context, *, plain_text=False):
+    async def _chat_before_deadline(self, system, user, schema, context, *, plain_text=False, on_content=None):
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         payload = {"model": self.llm_model, "messages": messages, "stream": True,
                    "options": {**self.llm_options, "num_ctx": context}}
@@ -193,6 +193,8 @@ class OllamaClient:
             if not isinstance(content, str):
                 raise OllamaError("생성 스트림의 텍스트 형식이 올바르지 않습니다.")
             parts.append(content)
+            if on_content is not None and content:
+                on_content(content)
             if data.get("done") is True:
                 metadata = {key: data[key] for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated",
                     "total_duration", "load_duration", "prompt_eval_duration", "eval_duration") if key in data}
@@ -271,7 +273,8 @@ class OllamaClient:
         except Exception as exc:
             raise OllamaError(f"LangChain Ollama 텍스트 응답 실패: {type(exc).__name__}") from None
 
-    def chat(self, system: str, user: str, *, schema: dict | None = None) -> dict:
+    def chat(self, system: str, user: str, *, schema: dict | None = None, on_content=None) -> dict:
+        """on_content는 기한이 있는 요청의 스트림 조각을 받는다. 최종 결과는 기존 검증을 거친 JSON만 반환한다."""
         self.last_chat_diagnostics = {}
         try:
             context = self._effective_context or self.context_limit()
@@ -279,7 +282,7 @@ class OllamaClient:
             if self.input_cost(system, user) + output > context:
                 raise ContextBudgetError("필수 근거가 생성 문맥 예산을 초과했습니다.")
             if self.request_deadline is not None:
-                message = asyncio.run(self._chat_before_deadline(system, user, schema, context))
+                message = asyncio.run(self._chat_before_deadline(system, user, schema, context, on_content=on_content))
             elif self._chat_chain is None or schema is not None:
                 prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
                 model = ChatOllama(

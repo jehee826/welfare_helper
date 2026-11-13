@@ -34,7 +34,7 @@ test('499 취소는 중단으로 분류하고 재시도하지 않는다',async()
 test('문서 모드는 남은 전체 예산과 클라이언트 상한의 최솟값을 전송한다',async()=>{
  for(const timeoutSeconds of [undefined,2]){
   let sentBody,calls=0;
-  const f=fixture(connection,async(url,options)=>{calls++;assert.equal(url,protocol.documentOrigin()+'/api/v1/chat');sentBody=JSON.parse(options.body);return new Response(JSON.stringify({kind:'answer',text:'문서 답변',evidence:[]}));},{mode:'document',timeoutSeconds});
+  const f=fixture(connection,async(url,options)=>{calls++;assert.equal(url,protocol.documentOrigin()+'/api/v1/chat/stream');sentBody=JSON.parse(options.body);return new Response(JSON.stringify({kind:'answer',text:'문서 답변',evidence:[]}));},{mode:'document',timeoutSeconds});
   await f.run(Date.now()+3500);assert.equal(calls,1);assert.equal(f.sent[0].type,'result');
   assert.ok(sentBody.timeout_seconds>=1&&sentBody.timeout_seconds<=4);
   if(timeoutSeconds)assert.equal(sentBody.timeout_seconds,2);

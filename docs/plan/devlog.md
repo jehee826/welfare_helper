@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 21:58 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 22:22 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1265,3 +1265,31 @@
 - 내부 readiness HTTP200/database connected/models present/reranker cache_ready와 Windows PC에서 CA/IP 검증을 유지한 공개 HTTPS /health의 status ok·curl exit0을 확인했다. 설계가 개발 보고와 final-verification의 허용 필드 출력을 대조했다. 실제 추론·성능·질문 품질·Chrome/음성·관리자 로그인·DB 기록 조회는 이번에 검증하지 않았다.
 - 외부 변경 f08b60f1/image98f9ec87은 welfare-backend-external-before-6653c15로 중지 보존하고 Config/HostConfig 불변을 확인했다. 보존 이미지 태그는 welfare-preserved-external-backend:20261115다. B11 patch/tar 해시와 기존 정상 이미지·남아 있는 worker rollback도 보존했다. 원자료는 root 전용 EC2 .local/co-op/checks-runtime/ec2-restore-team-20261115의 preparation.json/candidate-checks.json/restoration.json/final-verification.json 및 private snapshot들이다.
 - 복원·빌드·기동 실패는 없었다. 실제 .env 읽기/편집·새 모델/의존성 다운로드·추가 추론·전체 시험·재부팅·DB 복구·인위 데이터 쓰기는 하지 않았다. 설계의 문서 편집에서 Windows python 실행 별칭이 접근 오류로 실패한 것은 파일 쓰기 전이었으며 PowerShell로 편집을 완료했다. 개발은 운영 쓰기를 종료했고 완료 기록의 문서 PR 통합 후 EC2는 ff-only 동기화만 수행한다.
+
+<a id="log-20261115-speed-current"></a>
+## 2026-11-15 22:09 KST · 통합 최신 버전 EC2 속도 재측정 착수
+
+- 사용자 요청으로 팀원 PR #35와 우리 스트리밍 보완을 합친 현재 운영 main/90cc66c의 속도를 캡스톤-개발 단일 담당이 측정한다. 설계는 codex/fix-chat-stream을 해당 main까지 ff-only로 맞춰 기존 네 문서만 작성한다. 제품 코드·운영 설정·모델·서비스는 변경하지 않는다.
+- 이전 stream-result.json의 동일 합성 질문·payload·HTTPS 경로·600초/재시도0 조건을 기준으로 현재 최초 상태 1회와 직후 동일 입력 1회를 순차 측정한다. 첫 요청 전 실제 모델 상주 상태를 확인하며 강제 unload/restart로 cold를 만들지 않는다. 비교 기준은 이전 cold 단건 accepted0.125/첫 draft194.266/final206.219초, 검색19.191/리랭킹12.900/생성166.470초다.
+- speed-20261108의 정확한 대표 3문항 합성 payload/조건 원자료가 남아 있으면 각 1회만 추가한다. 없다면 당시 문서를 보고 입력을 재구성하지 않는다. 답변 호출 상한은 실패 포함 5회이며 숨은 워밍업·자동 재시도·동시 부하·품질 평가 확장은 하지 않는다. 정상 공개 연락처 기록 경로는 ON 유지하고 시험용 DB 직접 쓰기·삭제는 하지 않는다.
+- accepted/첫 비어 있지 않은 draft/final/EOF와 기존 단계별 scalar를 수집하고 첫 응답은 별도 ignored 시험 원자료에 보존한다. 기존 시험 자료를 덮지 않는다. 결합 버전 전후 관측이며 리랭커 4의 단독 인과 효과나 통계적 평균으로 해석하지 않는다. 모델 상주·캐시·동일 입력·자료/모델 차이와 실패·미검증을 결과에 남긴다.
+
+<a id="log-20261115-speed-result"></a>
+## 2026-11-15 22:22 KST · 통합 최신 버전 속도 2회 측정 결과
+
+- 캡스톤-개발이 운영 main/90cc66c, 제품6653c15, backend359c004c·RERANK_THREADS4에서 기존 stream_once.py를 재사용했다. 이전 c15fb9e와 동일 합성 질문·query/timeout600 payload·HTTPS 스트리밍 경로이며 자동 재시도 0, TLS CA/IP 검증을 유지했다. 첫 요청 직전 22:16:19.333에 모델 상주 목록이 비어 있었고 강제 unload/재기동은 없었다. 호출은 2회 모두 정상 answer로 끝났으며 추가 질문은 하지 않았다.
+
+| 조건 | 첫 draft(초) | final(초) | 리랭킹(초) | 생성 구간(초) |
+|---|---:|---:|---:|---:|
+| 이전 c15fb9e, 모델 비상주 | 194.266 | 206.219 | 12.900 | 166.470 |
+| 현재 첫 요청, 모델 비상주 | 190.641 | 202.297 | 9.580 | 167.698 |
+| 현재 직후 동일 입력, Qwen 상주 | 8.250 | 18.312 | 3.532 | 8.478 |
+
+- 첫 요청은 22:16:34.508 시작, accepted0.141초·마지막 draft196.766초·EOF202.297초였다. accepted1/draft11/final1/error0, 본문330자·연락처1개, prompt_eval_count3044/eval_count347·stop 종료다. snapshot3.434/context0.014/retrieval18.796/validation1.052초, 서버 QA200.580초였다. 이전 cold도 prompt3044/eval347이었으며 final 기준3.922초(약1.90%), 첫 draft3.625초가 줄었다. 리랭킹은3.321초(약25.74%) 감소했으나 생성 구간은1.228초 늘었다. 현재 cold QA의 약83.6%가 생성 구간으로, 주요 병목은 여기에 남아 있다. 이 시간을 전부 모델 로딩 시간으로 단정하지 않는다.
+- 두 번째 요청 직전 22:20:12.023에 기존 Qwen digest19e422b…·ctx16384의 GPU 상주를 확인했다. 22:20:12.389 시작, accepted0.062초·마지막 draft13.687초·EOF18.328초였다. accepted1/draft10/final1/error0, 본문241자·연락처1개, prompt3044/eval284·stop 종료다. snapshot1.142/context0.014/retrieval2.420/validation1.148초, 서버 QA16.736초였다. 모델 상주·프로세스/입력 캐시·출력량 차이가 함께 있어 cold 대비 단축을 코드 개선율로 해석하지 않는다.
+- 비교 한계: 각 조건 1건으로 평균·통계적 개선을 입증하지 않았다. 이전 c15fb9e에도 우리 스트리밍 보완이 이미 포함되어 있어 이번 비교가 우리 변경의 독립 효과를 보여 주지는 않는다. 최신 결합 버전의 동작과 팀원 개선 전후 관측이며 리랭커4 단독 효과를 분리하지 않았다. DB 문서 스냅샷의 이전/현재 동일성 및 live 벡터 캐시 hit는 별도 계측하지 않았다. load/prompt/eval duration은 기존 logger에 없어 미수집이다. 대화 이력 없는 질문이므로 맥락 준비 조기종료·assistant400자 축소 효과와 품질은 이번 측정으로 확인하지 않았다.
+- 과거 speed-20261108 대표3문항 원자료는 지정된 로컬·EC2 위치에 없었다. 질문·이력·프로필을 재구성하지 않았으며 과거 F32.037/29.577/27.557초와 정확 입력 비교는 불가다. 과거 기록은 보존했다. 이번 결과를 RAG 정확도/실제 Chrome·음성·관리자/DB 기록 조회 통과로 확대하지 않는다. 정상 연락처 기록 ON은 유지했고 연락처 응답2개를 DB 저장2건 성공으로 단정하지 않는다.
+- 원자료는 로컬 .local/co-op/checks-runtime/speed-combined-90cc66c-20261115/의 measurement-summary.json/server-review-fields.json 및 run1·run2의 stream_once.py/stream-result.json/event-timings.jsonl/response.ndjson이다. 첫 출력은 해당 시험 자료에만 보존하고 일반 문서에 복사하지 않았다. 설계가 두 stream-result와 요약·허용 서버 stage/qa_end 필드를 직접 대조했다. 코드·설정·이미지·서비스 재기동·모델 다운로드·직접 DB 쓰기·실제 .env 변경은 없었다.
+- 다음 성능 검토는 cold 생성 구간의 모델 준비·입력 처리·출력 생성을 구분하는 것이 우선이다. 기존 scalar로 분해할 수 없는 부분은 미수집으로 남겼으며 추가 계측이나 시험은 이번에 자동 착수하지 않는다. 현재 자료만으로 warm18초를 모든 질문의 보장 시간으로 사용하지 않는다.
+
+- 종료 확인: 개발의 측정 Python 두 프로세스는 exit0으로 종료했고 수집 실패는 없었다. 종료 후 EC2 main clean, 네 서비스의 기존 컨테이너/StartedAt·재시작0을 확인했다. 개발이 연결한 기존 검토 담당도 원자료의 시각·단계·모델 상주 구분을 읽기 대조했다. 실제 호출2회/추가0은 운영 담당 보고와 두 회차 원자료를 근거로 하며 전역 네트워크 호출 계측은 하지 않았다.

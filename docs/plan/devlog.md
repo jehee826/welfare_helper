@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 03:10 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:25 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1172,3 +1172,12 @@
 - 최종 개발 보고와 로컬로 수집한 비밀 없는 postdeploy-verification.json·verification-notes.json을 추가 검토했다. 후보뿐 아니라 실행컨테이너의118파일도 각각main과 일치하며 시스템CA/IP SAN 검증을 유지한 HTTPS다. Config/HostConfig·mount/network 보존 대조에서 Docker의 OomKillDisable null→false 기본 정규화만 동등 처리했다. backend 교체로 메모리 관리자 세션은 다시 로그인해야 할 수 있다.
 - 문서작업 유휴·native 자식 없음 확인 후 worker→backend를 time=-1 정상 종료했으며 강제 종료하지 않았다. 원격 보호백업의 rollback.sh는 복구용 이전 컨테이너/부팅pin을 되살리는 방식이며 sh -n만 통과하고 실제 실행은 하지 않았다. 복구 실행 전 worker 유휴 확인이 필요하고 이미지 복구만으로 Git main/b82b391은 되돌아가지 않는다. B11 원본tar SHA256은248ffa913ccda8245c0142c354efd4bf987da4caf22684f5a77a4f7fa83920c2다.
 - 확인 명령의 추가 교정은 docker top의 PID컬럼 요구를 pid,comm으로 수정한 것과 잘못 가정한 내부CA 경로 대신 실제ACME 공개인증서의 시스템CA 검증을 적용한 것이다. TLS검증/설정을 약화하지 않았다. 배포 실패/rollback은 없고 개발 운영 담당은 추가실행 없이 종료했다. 비밀 포함 containers-private.json은 원격root 전용으로만 보존했고 로컬로 가져오지 않았다.
+
+<a id="log-20261115-final-plan"></a>
+## 2026-11-15 15:25 KST · 팀원 브랜치·문서 검토와 최종 잔여 계획
+
+- 앞선 배포 기록8a008bb/0556f38의 원격push는 완료됐고 main은b82b391 그대로다. 이번 fetch/원격heads 조회에서 새claude/feat-chat-stream c9abd74500921091c1ed707dce9ed19c25bd5cf6을 확인했다. main보다1커밋 앞서고 뒤처짐0,17파일+544/-54다. 조회된원격은main·문서·스트리밍3개, 열린PR0개이며 해당SHA의PR-triggered workflow조회도0개다. 다른기기미push·로컬시험결과는확인하지않았다.
+- 기존문서브랜치/clean에서 설계가 문서만 단독 작성했다. 추적 텍스트415개(복지원문368·지침/스킬16·archive12·현행19)의 목록/본문표시를 전수검색하고 현행계획·README·설계·관련일지/과거잔여를대조했다. 대형archive는 목차·잔여표시·후속해결추적이며 모든파일전문정독/원문정확도인증이아니다. 로컬과거후속계획2개도참고했고 개인시험/Word/비밀/DB는공유하지않았다. 문서집계의첫Python실행은WindowsApps alias접근실패로미실행돼PowerShell로대체했다. 제품시험실패가아니다.
+- 팀원제품diff와관련검사·기존실행수명/개인정보/Caddy/CI소스를읽었다. Ollama콜백→FastAPI NDJSON→확장/React초안표시·final대체구현은있다. test_chat_stream.py가명시CI목록에서빠졌고DraftStream은status미완성/부재에도text를보내므로text-first→out_of_scope순서의초안노출가능성이있다. 실행재현하지않았고취소/gate회수·초안저장차단·프록시실제분할은미검증으로분리했다.
+- README/architecture/admin의공개웹없음·프로필최종생성미사용·실행gate1설명이현재App.tsx/profile계약/실행gate3과다르다. rag의cutoff/TTL설명,refactor운영대기,Desktop옛인계링크도후속정정목록에넣었다. 과거W00~W16/F1~F8과후속성공을대조해완료기능을신규개발로되돌리지않았다. 추천F6의무효맥락후속형/본인조건삽입은미착수개선으로유지한다.
+- 사용자지정final-plan.md를만들고S0문서/Git→S1~S3스트리밍보완·검사/통합/배포→S4추천→S5실제잔여확인을상세화했다. RAG의실제의미실패/B안첫평가실패·CSV자료대기·복구/다운로드보류를별도로유지한다. .gitignore에는해당파일1개만명시허용하고목차/기존세문서에역할과링크를연결한다. 새문서는명시요청범위이며제품코드/운영/DB/모델/Chrome/테스트·상대브랜치수정/새push/PR/병합은없다.

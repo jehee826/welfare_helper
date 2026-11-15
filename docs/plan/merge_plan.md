@@ -1,10 +1,12 @@
 # 개발 계획과 진행 현황
 
-작성: 2026-11-08. 최신 업데이트: 2026-11-15 16:46 KST
+작성: 2026-11-08. 최신 업데이트: 2026-11-15 21:40 KST
 
 이 문서는 계획·현재 상태·남은 조건과 [개발일지](devlog.md)의 진행 위치를 보여 준다. 상세 변경·검사·실패 이력은 일지에만 기록하고 지금 할 일과 환경은 [현재 인계](handoff.md)를 따른다.
 
 ## 1. 현재 완료 범위와 남은 순서
+
+- 팀원PR #35·main/55124fc통합완료, 기존CI4job성공. 우리미공유배포기록을문서PR로통합한다. EC2는외부변경된backend이미지/기록OFF/영속인증미설정·4서비스중지를발견해설정선택대기이며배포미실행이다. 실제성능/400자맥락품질효과는미실측이다. [진행](devlog.md#log-20261115-team-sync)
 
 - final-plan S0 문서 정정·PR #32 main/a497bb1 통합과 기존Codex브랜치삭제완료. 현재codex/fix-chat-stream의7ec23c3에서S1최소보완·S2로컬집중검사완료. PR #33·main/6e808d7통합완료, head56d7f2f의원격CI4job성공. S3 EC2backend배포/공개합성1건점진전달확인완료. 첫draft194.266초·final206.219초의cold지연은남고실제Chrome은미확인이다. [결과](devlog.md#log-20261115-stream-deployed) [배포 착수](devlog.md#log-20261115-stream-deploy-start) [검사·실패정정](devlog.md#log-20261115-s1-result) EC2문서pull/제품배포는미실행이다. [완료·착수](devlog.md#log-20261115-s1-start)
 - 후속 상세 계획은 사용자 요청으로 만든 [final-plan](final-plan.md)을 따른다. S0문서/Git 정합성→S1~S3팀원 스트리밍 보완·검사·통합/배포→S4추천질문 개선→S5남은 실제 사용자/관리자 확인 순서다. RAG/CSV/복구 보류는 자동 재개하지 않는다. 문서 작성 완료와 각 단계 실행 완료를 구분한다. [검토·계획 기록](devlog.md#log-20261115-final-plan)

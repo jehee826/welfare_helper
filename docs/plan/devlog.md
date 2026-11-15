@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:46 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 21:40 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1240,3 +1240,13 @@
 - 실제원자료는로컬동일이름의.local/co-op/checks-runtime/ec2-chat-stream-c15fb9e-20261115에stream-result.json/event-timings.jsonl/response.ndjson/실행표식으로보존했다. 공개합성본문은시험원자료에만두며일반로그/문서에복사하지않았다. 실제.env·인증/수집ON·모델/GPU/DB설정변경·다운로드·Chrome/음성·실재부팅·DB복구시험·추가질문은없다. 사용자확장재로드/실제UI표시·관리자기록조회는남으며RAG/CSV/복구보류유지다.
 
 - 최종운영담당이작성권을반환했고추가조작을종료했다. 비밀없는client-summary.json/server-review-fields.json도같은로컬원자료폴더에보존했다. 마지막원자료수집명령의shell exit1은저장성공뒤Get-Process에서시험Python잔여가없어반환된값이며저장/배포/추론실패가아니다. 단건요청은exit0·시험프로세스종료를확인했다. 이번착수/결과문서는로컬기능브랜치에커밋하고노트북main/c15fb9e로복귀하며후속기록은아직원격공유하지않았다.
+
+<a id="log-20261115-team-sync"></a>
+## 2026-11-15 21:40 KST · 팀원 성능 개선과 우리 기록 최소 최신화
+
+- 사용자범위선택은main통합+로컬·EC2동기화다. 원격main/c15fb9e·팀원b73394d·우리문서2커밋493afde/c980abf를재확인했다. 팀원PR #35의최종head b73394db5d9691252dbda00fdab4961a6d0b7609/Actions43691951338의web-extension·python backend/worker/dev4job성공을재사용하고검사를반복하지않았다.
+- 팀원14파일diff·기존검사를읽기대조했다. 리랭커쌍동시실행/기본threads2→4·맥락준비최대512/assistant앞400자/최상위independent조기중단·문서행지문기반벡터재사용이다. 400자맥락품질/EC2성능은미실측이며캐시재사용은게시벡터불변가정이다. 단일초대형문서는캐시항목1개를남기는코드예외가있어20000청크를절대상한이라고단정하지않는다. 현재범위에서새리팩토링/품질평가로확대하지않았다.
+- expected head를고정해PR #35를main/55124fc5856c291f6591f8262c83b178abae59ca로병합했다. 우리문서브랜치에해당main을merge한302ee26은충돌없고main차이는우리문서뿐이다. 팀원브랜치는수정/삭제하지않았다.
+- 캡스톤-개발을EC2단일운영담당으로지정했다. 실제runtime/dirty/서비스확인뒤55124fc로ff-only·필요backend교체·runtime RERANK_THREADS4주입과pin갱신만진행한다. 실제.env읽기/편집없이기존나머지Config·인증/수집ON·GPU/모델·볼륨/데이터·worker/Ollama/Caddy를보존한다. 새로운실제질문·모델다운로드·전체시험·벤치마크는없다. 결과뒤문서를한번에PR통합하고최종문서main은EC2pull만하여중복서비스재기동을피한다.
+
+- 21:43 EC2사전확인에서직전정상배포와다른canonical backend f08b60f1…/image98f9ec87… 및RERANK_THREADS4·REFERRAL_RECORDS_ENABLED=false·ADMIN_CREDENTIALS_FILE빈값을발견했다. worker/Ollama/edge도exited였고꺼진backend의docker exec 읽기는실행불가로종료됐다. 변경주체/의도는미확정이다. 운영쓰기를멈추고기존정상backup/pin/볼륨과현재차이를읽기진단하며사용자에게기록/영속인증설정의유지방향을확인중이다. 이시점EC2변경은git fetch뿐이고pull/재생성/설정수정은없다.

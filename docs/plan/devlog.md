@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:53 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:09 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1208,3 +1208,9 @@
 - 검증은개발이연결한Terra담당이기존Python3.12격리진입·Settings생성전env_file차단/상속설정정리·모델offline·DBconnect차단·httpx외부transport차단과허용loopback을사용했다. Node/React는기존fetch대역/환경파일없는진입이다. OS수준패킷계측으로외부접속0을독립인증한것은아니다. 시험Python/Node잔여없음을Get-Process로확인했고CIM조회권한거절은우회종료하지않았다.
 - 최초bootstrap의BackEnd.config오류는pytest수집전실패이며core.settings로교정했다. 담당이초기파일로그를교정실행으로덮어쓴사실과tool출력근거를bootstrap-failure.json에남겼다. 원본로그를재생성했다고하지않는다. 최초Python로그의한글일부는리디렉션인코딩으로깨졌으나수치/영문nodeid/assertion을대조했다. 통과검사를로그미관때문에반복하지않았다.
 - 원자료는.local/co-op/checks-runtime/chat-stream-20261115- 아래접두어의python-focused.log/python-recheck.log/extension-focused.log/webchat-focused.log/syntax-final.log/syntax.log/bootstrap-failure.json이다(디렉터리명아닌파일접두어). 설계가필요원로그를직접읽었다. 새제품push/PR/배포·EC2문서pull은없고S3미착수다. 기존문서PR #32승인과새기능공유/운영범위는구분한다. RAG/CSV/복구보류유지.
+
+<a id="log-20261115-stream-pr"></a>
+## 2026-11-15 16:09 KST · 스트리밍 기능 push·PR 생성
+
+- 사용자 진행지시로root/branch/clean·remote·범위를재확인하고codex/fix-chat-stream/c31d41d7b7e512b77b5962bd0a42c0c62a617baf를명시push했다. 팀원c9abd74·이력보존merge7f760ab·착수e081ad3·보완7ec23c3·결과c31d41d의5커밋/22파일이며PR #33을main/a497bb1대상으로생성했다.
+- 현재원격CI확인과head고정병합을진행중이다. 기존로컬집중검사와원격결과를구분한다. 기록후속커밋도같은승인된기능PR에포함하며추가제품변경은없다. EC2운영배포·실제모델·DB·Chrome·원격팀원브랜치삭제는수행하지않았다. 최종merge SHA/CI실제결과는후속기록또는완료보고에서확인한다.

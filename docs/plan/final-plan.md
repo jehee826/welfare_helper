@@ -1,6 +1,6 @@
 # 최종 잔여 작업과 순차 실행 계획
 
-최초 작성: 2026-11-15. 최신 업데이트: 2026-11-15 15:53 KST
+최초 작성: 2026-11-15. 최신 업데이트: 2026-11-15 16:09 KST
 
 ## 1. 목적과 판정 기준
 
@@ -64,7 +64,7 @@
 
 ### S1. 팀원 스트리밍 구현의 남은 계약·결함 보완
 
-**상태:** S1 로컬 보완 완료(7ec23c3), S2 로컬 집중검사 완료. 팀원 원본 c9abd74를 main/a497bb1 기반 codex/fix-chat-stream에 이력 보존 merge한 뒤4파일만 보완했다. CI 목록 누락·최상위status확인·실제 재현된 기한후늦은초안 전송을 수정했다. 원격CI/PR통합·운영반영은 남았다. [결과와 한계](devlog.md#log-20261115-s1-result)
+**상태:** S1 로컬 보완 완료(7ec23c3), S2 로컬 집중검사 완료. 팀원 원본 c9abd74를 main/a497bb1 기반 codex/fix-chat-stream에 이력 보존 merge한 뒤4파일만 보완했다. CI 목록 누락·최상위status확인·실제 재현된 기한후늦은초안 전송을 수정했다. 원격push·PR #33생성완료, 원격CI/PR통합진행중·운영반영은 남았다. [결과와 한계](devlog.md#log-20261115-s1-result)
 
 현재 구현은 Ollama 최종 생성 조각 → `DraftStream`의 JSON text 추출 → FastAPI `/api/v1/chat/stream` NDJSON → 확장 offscreen/content 및 React 공개 웹 표시다. `accepted`, `draft(text 또는 append)`, `final(response)`, `error(status/detail)` 이벤트를 사용한다. 최종 응답은 기존 검증·연락처 기록 경로를 거치고 초안은 최종 답변으로 대체한다. 기존 `/api/v1/chat`은 유지하며 404/405의 정해진 오류일 때만 구 경로로 한 번 요청한다.
 

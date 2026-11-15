@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:09 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:12 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1214,3 +1214,10 @@
 
 - 사용자 진행지시로root/branch/clean·remote·범위를재확인하고codex/fix-chat-stream/c31d41d7b7e512b77b5962bd0a42c0c62a617baf를명시push했다. 팀원c9abd74·이력보존merge7f760ab·착수e081ad3·보완7ec23c3·결과c31d41d의5커밋/22파일이며PR #33을main/a497bb1대상으로생성했다.
 - 현재원격CI확인과head고정병합을진행중이다. 기존로컬집중검사와원격결과를구분한다. 기록후속커밋도같은승인된기능PR에포함하며추가제품변경은없다. EC2운영배포·실제모델·DB·Chrome·원격팀원브랜치삭제는수행하지않았다. 최종merge SHA/CI실제결과는후속기록또는완료보고에서확인한다.
+
+<a id="log-20261115-stream-merged"></a>
+## 2026-11-15 16:12 KST · 스트리밍 PR #33 main 통합 완료
+
+- c31d41d제품범위에진행기록56d7f2f를추가push한최종head56d7f2ffe647ed49375a66f6abf16ac14fd1b4e4의Actions43688624243을확인했다. web-extension·python backend/worker/dev4job전부success다. dev의scripts/ci_python.py tests실행성공과웹test/build·확장명시검사를확인했으며Vercelcommit status도success였다. 이는실제운영모델/Chrome/EC2성공을뜻하지않는다.
+- PR #33의head/mergeable을재확인하고expected_head_sha를고정해merge했다. 실제closed/merged와main/6e808d7ab59d3358ebf3fbe0d4bf71f7f51de617을확인했고현재기록브랜치를해당main으로ff-only맞췄다. 완료기록은같은기능후속문서로공유하고로컬main을ff-only동기화한다. 제품추가수정/테스트반복은없다.
+- S1보완·S2로컬/원격검사·PR통합완료, S3 EC2배포/기존HTTPS점진전달·실제모델·Chrome/음성·운영기록쓰기는미실행이다. EC2마지막확인소스는b82b391이고이번main과차이가난다. 팀원claude/feat-chat-stream은삭제하지않았다. RAG/CSV/복구보류유지.

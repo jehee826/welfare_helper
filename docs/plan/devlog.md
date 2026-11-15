@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 21:40 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 21:58 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1250,3 +1250,18 @@
 - 캡스톤-개발을EC2단일운영담당으로지정했다. 실제runtime/dirty/서비스확인뒤55124fc로ff-only·필요backend교체·runtime RERANK_THREADS4주입과pin갱신만진행한다. 실제.env읽기/편집없이기존나머지Config·인증/수집ON·GPU/모델·볼륨/데이터·worker/Ollama/Caddy를보존한다. 새로운실제질문·모델다운로드·전체시험·벤치마크는없다. 결과뒤문서를한번에PR통합하고최종문서main은EC2pull만하여중복서비스재기동을피한다.
 
 - 21:43 EC2사전확인에서직전정상배포와다른canonical backend f08b60f1…/image98f9ec87… 및RERANK_THREADS4·REFERRAL_RECORDS_ENABLED=false·ADMIN_CREDENTIALS_FILE빈값을발견했다. worker/Ollama/edge도exited였고꺼진backend의docker exec 읽기는실행불가로종료됐다. 변경주체/의도는미확정이다. 운영쓰기를멈추고기존정상backup/pin/볼륨과현재차이를읽기진단하며사용자에게기록/영속인증설정의유지방향을확인중이다. 이시점EC2변경은git fetch뿐이고pull/재생성/설정수정은없다.
+
+- 21:51 후속 진단·승인: 네 서비스는 19:00경 종료됐으며 OOMKilled=false, backend/Ollama exit143·worker/edge exit0이었다. systemd failed/exit1과 `Unexpected image: welfare-backend`를 확인했다. 정상 snapshot 대비 환경 차이는 ADMIN_CREDENTIALS_FILE/CORS_ALLOWED_ORIGINS/REFERRAL_RECORDS_ENABLED/RERANK_THREADS 네 키다. 현재 이미지에는 stream.py가 없으며 공개 소스 일부도 기준 main과 달라 이 이미지를 최신 배포본으로 취급하지 않는다. 변경 주체는 판단하지 않았다.
+- 정상 이미지 01102905/310f5c7a, root 전용 runtime/pin/rollout 백업, 기존 인증 볼륨과 파일은 보존돼 있다. 과거 backend 컨테이너 a3b36601/d790d515/rollback-b82b391은 현재 없으며 worker rollback-b82b391과 B11 patch/tar 해시는 보존 확인했다. 과거 컨테이너 보존 기록은 당시 사실이며 현재 존재를 뜻하지 않는다. 인증 내용·실제 .env는 읽지 않았다.
+- 설정 의미를 코드로 설명한 뒤 사용자가 정상 설정 복원·배포를 승인했다. 연락처 기록 ON, 기존 관리자 비밀번호 파일/CORS 복원, RERANK_THREADS=4 유지, 최신 이미지 배포/pin 정리와 필요한 기존 서비스 기동을 개발 단일 담당에 배정했다. 새로운 추론·벤치마크·DB 시험은 하지 않는다.
+- 문서 PR #36을 expected head 8d26649로 병합해 main/6653c1526a77ed14e9f31c611cb844c431474a08이 됐고 로컬 main도 ff-only 동기화했다. 이 SHA를 EC2 배포 기준으로 전달했다. 설계는 같은 문서 브랜치를 병합 main까지 ff-only한 뒤 이번 결과만 기록한다. 운영 결과는 다음 기록에서 구분한다.
+
+<a id="log-20261115-team-restored"></a>
+## 2026-11-15 21:58 KST · 정상 설정 복원·팀원 개선 배포 완료
+
+- 개발이 EC2 main을 6653c1526a77ed14e9f31c611cb844c431474a08로 ff-only 동기화하고 Git clean을 확인했다. 정상 이미지 01102905의 의존성 층 위에 코드 COPY 한 층으로 backend를 교체했다. 후보·실행 BackEnd 120파일이 대상 main과 일치하고 구문 검사도 통과했다. 새 이미지 359c004cdadbf304fc9f7681f51de7e3b0345b2bad5f875ae58adc41b87d731a, 컨테이너 22b8dd4107725569b30fa9d193853a320c869646628b9df771e0332ac9bde827이다.
+- 정상 runtime 대비 환경 차이는 RERANK_THREADS 2→4 한 키뿐이다. 실제 Settings에서 referral_records_enabled=true, 기존 admin_credentials_file 경로 및 threads4를 확인했다. CORS·HostConfig·mount/volume/network/aliases를 정상값으로 보존했다. 기존 인증 파일은 inode/크기/mtime/권한/소유권 불변이며 내용은 읽지 않았다.
+- worker 8e411a14/f36e1939, Ollama d0d401b9/31b0205a, edge aca9f11a/15d9f110은 컨테이너·이미지·Config·HostConfig·볼륨을 교체하지 않고 기동했다. backend/worker/Ollama healthy, edge running, 모두 restart_count=0이다. 기존 기동 경로는 exit0·34.649초였다. pin의 backend 이미지 ID만 변경했고 pin SHA256은 70c198ef3a1efdca18af5d0c8dfda1c2507a9a55a9a5f7846df6cfa68c9db4fe다. sh -n 통과, systemd active/enabled/Result=success를 확인했다.
+- 내부 readiness HTTP200/database connected/models present/reranker cache_ready와 Windows PC에서 CA/IP 검증을 유지한 공개 HTTPS /health의 status ok·curl exit0을 확인했다. 설계가 개발 보고와 final-verification의 허용 필드 출력을 대조했다. 실제 추론·성능·질문 품질·Chrome/음성·관리자 로그인·DB 기록 조회는 이번에 검증하지 않았다.
+- 외부 변경 f08b60f1/image98f9ec87은 welfare-backend-external-before-6653c15로 중지 보존하고 Config/HostConfig 불변을 확인했다. 보존 이미지 태그는 welfare-preserved-external-backend:20261115다. B11 patch/tar 해시와 기존 정상 이미지·남아 있는 worker rollback도 보존했다. 원자료는 root 전용 EC2 .local/co-op/checks-runtime/ec2-restore-team-20261115의 preparation.json/candidate-checks.json/restoration.json/final-verification.json 및 private snapshot들이다.
+- 복원·빌드·기동 실패는 없었다. 실제 .env 읽기/편집·새 모델/의존성 다운로드·추가 추론·전체 시험·재부팅·DB 복구·인위 데이터 쓰기는 하지 않았다. 설계의 문서 편집에서 Windows python 실행 별칭이 접근 오류로 실패한 것은 파일 쓰기 전이었으며 PowerShell로 편집을 완료했다. 개발은 운영 쓰기를 종료했고 완료 기록의 문서 PR 통합 후 EC2는 ff-only 동기화만 수행한다.

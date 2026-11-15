@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:25 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:35 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1181,3 +1181,10 @@
 - 팀원제품diff와관련검사·기존실행수명/개인정보/Caddy/CI소스를읽었다. Ollama콜백→FastAPI NDJSON→확장/React초안표시·final대체구현은있다. test_chat_stream.py가명시CI목록에서빠졌고DraftStream은status미완성/부재에도text를보내므로text-first→out_of_scope순서의초안노출가능성이있다. 실행재현하지않았고취소/gate회수·초안저장차단·프록시실제분할은미검증으로분리했다.
 - README/architecture/admin의공개웹없음·프로필최종생성미사용·실행gate1설명이현재App.tsx/profile계약/실행gate3과다르다. rag의cutoff/TTL설명,refactor운영대기,Desktop옛인계링크도후속정정목록에넣었다. 과거W00~W16/F1~F8과후속성공을대조해완료기능을신규개발로되돌리지않았다. 추천F6의무효맥락후속형/본인조건삽입은미착수개선으로유지한다.
 - 사용자지정final-plan.md를만들고S0문서/Git→S1~S3스트리밍보완·검사/통합/배포→S4추천→S5실제잔여확인을상세화했다. RAG의실제의미실패/B안첫평가실패·CSV자료대기·복구/다운로드보류를별도로유지한다. .gitignore에는해당파일1개만명시허용하고목차/기존세문서에역할과링크를연결한다. 새문서는명시요청범위이며제품코드/운영/DB/모델/Chrome/테스트·상대브랜치수정/새push/PR/병합은없다.
+
+<a id="log-20261115-s0-start"></a>
+## 2026-11-15 15:35 KST · Codex 브랜치 정리 점검과 S0 문서 정정
+
+- 삭제 요청 뒤 fetch/원격heads/PR 조회로 main/b82b391·문서원격0556f38·로컬cf64785를 확인했다. 문서3커밋8a008bb/0556f38/cf64785는 전부main 미포함이고PR도없다. final-plan을포함한변경유실을막기위해브랜치를보존하고S0의통합내용을먼저준비했다. 강제삭제·main직접반영은없다.
+- 설계가현재문서브랜치에서README·architecture/admin/rag·DesktopREADME·refactor를정정했다. App.tsx의공개webchat/관리자3경로,QA의동의프로필최종생성·dense/BM25공통min_similarity,execution의gate3,확장7일TTL,credential파일우선검증을읽기대조했다. cutoff는현행rag설명이맞고README의하한없음설명을정정했다. 옛요약/인용숫자검증·확장관리자토큰/출처UI설명도현행계약에맞췄다.
+- 실제EC2반영은11월12일완료이므로refactor대기표기를완료일지로연결했다. Desktop의옛docs/log링크만현재인계로수정했고과거실행절차를재시험한것으로표시하지않았다. 제품·테스트·실제env·운영·DB·모델·상대브랜치는변경하지않았다. 다음은선별문서커밋·구체PR통합범위확인·main포함후승인된브랜치삭제이며S1제품작성권은아직배정하지않았다.

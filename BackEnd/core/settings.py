@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     rerank_revision: str = "6f5ff65298512715a1e669753bc754d2bc8f367b"
     rerank_cache_dir: str = str(Path(__file__).resolve().parents[2] / ".reranker_cache")
     rerank_max_length: int = Field(default=512, ge=128, le=512)
-    rerank_threads: int = Field(default=2, ge=1, le=8)
+    rerank_threads: int = Field(default=4, ge=1, le=8)
     min_rerank_score: float = Field(default=0.5, ge=0, le=1)
     bokjiro_service_key: SecretStr | None = None
     bokjiro_detail_url: str = "https://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfaredetailedV001"

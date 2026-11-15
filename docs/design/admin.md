@@ -1,7 +1,7 @@
 # 현재 관리자 웹과 문서 처리
 
 작성·코드 대조: 2026-11-04. 기준 `793aca6`/`d1a0cae`.
-최신 업데이트: 2026-11-10 10:46 KST.
+최신 업데이트: 2026-11-15 15:32 KST. main/b82b391의 라우트·인증 코드를 대조했으며 실제 UI 시험은 하지 않았다.
 
 ## 목차
 
@@ -12,9 +12,9 @@
 
 ## 웹과 로그인
 
-[App.tsx](../../FrontEnd/src/App.tsx)는 루트와 `/admin`을 `/admin/documents`로 보낸다. `/admin/documents`와 `/admin/programs`는 AdminGate로 보호하며 일반 사용자 웹 챗봇 경로는 없다. 정적 파일 자체를 비밀로 취급하지 않고, 관리 API에서 인증을 다시 확인한다.
+[App.tsx](../../FrontEnd/src/App.tsx)는 루트와 `/admin`을 `/admin/documents`로 보낸다. `/admin/documents`·`/admin/programs`·`/admin/referrals`는 AdminGate로 보호한다. `/webchat`은 인증 없는 단발성 공개 상담이며 관리자 세션을 상담 요청에 보내지 않는다. 정적 파일 자체를 비밀로 취급하지 않고, 관리 API에서 인증을 다시 확인한다.
 
-[관리자 세션](../../BackEnd/admin/session.py)은 환경 설정의 공통 비밀번호를 서버에서 검증한다. 비밀번호를 확장이나 정적 웹에 박아 넣지 않는다. 세션은 **8시간·프로세스 메모리 보관**, 상한 **256개**이며 서버 재시작 시 다시 로그인해야 할 수 있다. Supabase Auth 가입은 이 공통 로그인 경로의 필수 단계가 아니다.
+[관리자 세션](../../BackEnd/admin/session.py)은 공통 비밀번호를 서버에서 검증한다. `ADMIN_CREDENTIALS_FILE` 설정 시 영속 credential 파일을 기준으로 검증하며 파일이 없거나 손상됐다고 환경 비밀번호로 복귀하지 않는다. 이 경로가 없는 환경에서만 `ADMIN_PASSWORD`를 사용한다. 현재 EC2는 영속 인증이 활성화돼 있다. 비밀번호를 확장이나 정적 웹에 박아 넣지 않는다. 세션은 **8시간·프로세스 메모리 보관**, 상한 **256개**이며 서버 재시작 시 다시 로그인해야 할 수 있다. Supabase Auth 가입은 이 공통 로그인 경로의 필수 단계가 아니다.
 
 관리자 웹의 `VITE_API_BASE_URL`은 빌드 시 결정된다. production에서 빈 값이면 연결 설정 오류를 안내한다. 정적 웹 배포와 EC2 서버 설정 변경은 별개이며, 실제 배포값은 소스 확인만으로 검증할 수 없다.
 

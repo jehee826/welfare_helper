@@ -186,6 +186,34 @@ def test_stream_rejects_busy_and_invalid_requests_before_streaming(api):
     assert invalid.status_code == 422 and invalid.json() == {"detail": "sensitive_input"}
 
 
+def test_ollama_chat_stops_stream_and_applies_call_output_limit(monkeypatch):
+    from BackEnd.core.execution import GenerationStopped
+    from BackEnd.rag import ollama
+    bodies = []
+    lines = [{"message": {"content": '{"relation":'}}, {"message": {"content": '"independent"'}},
+             {"message": {"content": "}"}, "done": True, "done_reason": "stop"}]
+    def handler(request):
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"model_info": {"x.context_length": 8192}})
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, content="".join(json.dumps(line) + "\n" for line in lines).encode())
+    original = httpx.AsyncClient
+    monkeypatch.setattr(ollama.httpx, "AsyncClient",
+                        lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    import time
+    client = ollama.OllamaClient("http://model", "bge-m3", "qwen", 30, {"num_ctx": 4096, "num_predict": 1024})
+    client = client.for_request(time.monotonic() + 30, lambda: False)
+    seen = []
+    def stop(piece):
+        seen.append(piece)
+        if len(seen) == 2:
+            raise GenerationStopped()
+    with pytest.raises(GenerationStopped):
+        client.chat("시스템", "질문", schema={"type": "object"}, on_content=stop, num_predict=128)
+    assert seen == ['{"relation":', '"independent"']
+    assert bodies[0]["options"]["num_predict"] == 128
+
+
 def test_stream_records_contacts_once_only_for_the_final_answer(api, monkeypatch):
     from BackEnd import main
     api.settings.referral_records_enabled = True

@@ -1,6 +1,8 @@
 """캐시된 INT8 교차 인코더로 질문과 후보 원문의 관련성을 평가한다."""
 
+import contextvars
 import math
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
 from collections import OrderedDict
@@ -52,6 +54,36 @@ class LocalReranker:
                 self._count_tokenizer.no_truncation()
             return len(self._count_tokenizer.encode(text, add_special_tokens=False).ids)
 
+    def _run_pair(self, encoded) -> float:
+        import numpy as np
+
+        checkpoint()
+        values = {"input_ids": encoded.ids, "attention_mask": encoded.attention_mask,
+                  "token_type_ids": encoded.type_ids}
+        inputs = {arg.name: np.asarray([values[arg.name]], dtype=np.int64) for arg in self._session.get_inputs()}
+        logits = self._session.run(None, inputs)[0].reshape(-1)
+        checkpoint()
+        if len(logits) != 1 or not math.isfinite(float(logits[0])):
+            raise ValueError("리랭커 점수가 유효하지 않습니다.")
+        value = float(logits[0])
+        return 1 / (1 + math.exp(-value)) if value >= 0 else math.exp(value) / (1 + math.exp(value))
+
+    def _run_pairs(self, encodings: list) -> list[float]:
+        """쌍마다 배치 크기 1로 계산하되 threads개를 같은 세션에서 동시에 실행한다.
+
+        INT8 동적 양자화는 배치 전체로 스케일을 정하므로 쌍을 묶지 않아야 점수가 순차 실행과 같다.
+        """
+        if self.threads <= 1 or len(encodings) <= 1:
+            return [self._run_pair(encoded) for encoded in encodings]
+        with ThreadPoolExecutor(max_workers=min(self.threads, len(encodings))) as pool:
+            futures = [pool.submit(contextvars.copy_context().run, self._run_pair, encoded) for encoded in encodings]
+            try:
+                return [future.result() for future in futures]
+            except BaseException:
+                for future in futures:
+                    future.cancel()
+                raise
+
     def score_with_diagnostics(self, query: str, passages: list[str]) -> tuple[list[float], list[dict]]:
         checkpoint()
         if not passages:
@@ -72,7 +104,7 @@ class LocalReranker:
                     tokenizer = Tokenizer.from_file(str(files[0]))
                     tokenizer.no_truncation()
                     options = ort.SessionOptions()
-                    options.intra_op_num_threads = self.threads
+                    options.intra_op_num_threads = 1
                     options.inter_op_num_threads = 1
                     options.enable_cpu_mem_arena = False
                     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
@@ -83,12 +115,11 @@ class LocalReranker:
                     self._tokenizer, self._session = tokenizer, session
                 checkpoint()
 
-                scores, diagnostics = [], []
-                import numpy as np
-                for passage in passages:
+                diagnostics, pairs = [], []
+                special = len(self._tokenizer.encode(query, "").ids) - query_tokens
+                budget = min(400, self.max_length - query_tokens - special - 16)
+                for index, passage in enumerate(passages):
                     checkpoint()
-                    special = len(self._tokenizer.encode(query, "").ids) - query_tokens
-                    budget = min(400, self.max_length - query_tokens - special - 16)
                     header, body = "", passage
                     lines = passage.split("\n", 2)
                     if len(lines) == 3 and lines[0].startswith("서비스명:") and lines[1].startswith("섹션:"):
@@ -104,26 +135,20 @@ class LocalReranker:
                                                max_tokens=budget, overlap=False)
                     except ValueError:
                         raise RerankerInputError("원문을 빠짐없이 입력 창으로 나누지 못했습니다.") from None
-                    window_scores, lengths = [], []
+                    lengths = []
                     for window in windows:
                         checkpoint()
                         encoded = self._tokenizer.encode(query, header + body[window.start:window.end])
                         if len(encoded.ids) > self.max_length - 16:
                             raise RerankerInputError("리랭커 쌍 입력 한도를 넘었습니다.")
                         lengths.append(len(encoded.ids))
-                        values = {"input_ids": encoded.ids, "attention_mask": encoded.attention_mask,
-                                  "token_type_ids": encoded.type_ids}
-                        inputs = {arg.name: np.asarray([values[arg.name]], dtype=np.int64)
-                                  for arg in self._session.get_inputs()}
-                        logits = self._session.run(None, inputs)[0].reshape(-1)
-                        checkpoint()
-                        if len(logits) != 1 or not math.isfinite(float(logits[0])):
-                            raise ValueError("리랭커 점수가 유효하지 않습니다.")
-                        value = float(logits[0])
-                        window_scores.append(1 / (1 + math.exp(-value)) if value >= 0
-                                             else math.exp(value) / (1 + math.exp(value)))
-                    scores.append(max(window_scores))
+                        pairs.append((index, encoded))
                     diagnostics.append({"windows": len(windows), "pair_tokens": lengths, "truncated": False})
+                scores = [-math.inf] * len(passages)
+                for (index, _), probability in zip(pairs, self._run_pairs([encoded for _, encoded in pairs])):
+                    scores[index] = max(scores[index], probability)
+                if any(score == -math.inf for score in scores):
+                    raise ValueError("평가하지 못한 후보가 있습니다.")
                 return scores, diagnostics
             except (ExecutionTimeoutError, ExecutionCancelledError, RerankerInputError):
                 raise

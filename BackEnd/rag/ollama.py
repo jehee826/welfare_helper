@@ -10,7 +10,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import AIMessage
 
 from BackEnd.rag.embeddings import validate_embeddings
-from BackEnd.core.execution import ExecutionTimeoutError, ExecutionCancelledError
+from BackEnd.core.execution import ExecutionTimeoutError, ExecutionCancelledError, GenerationStopped
 
 
 class OllamaError(RuntimeError):
@@ -173,10 +173,13 @@ class OllamaClient:
                 response.raise_for_status()
                 return response.json()
 
-    async def _chat_before_deadline(self, system, user, schema, context, *, plain_text=False, on_content=None):
+    async def _chat_before_deadline(self, system, user, schema, context, *, plain_text=False, on_content=None,
+                                    num_predict=None):
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        payload = {"model": self.llm_model, "messages": messages, "stream": True,
-                   "options": {**self.llm_options, "num_ctx": context}}
+        options = {**self.llm_options, "num_ctx": context}
+        if num_predict is not None:
+            options["num_predict"] = num_predict
+        payload = {"model": self.llm_model, "messages": messages, "stream": True, "options": options}
         if not plain_text:
             payload["format"] = schema if schema is not None else "json"
         parts, metadata = [], {}
@@ -273,25 +276,32 @@ class OllamaClient:
         except Exception as exc:
             raise OllamaError(f"LangChain Ollama 텍스트 응답 실패: {type(exc).__name__}") from None
 
-    def chat(self, system: str, user: str, *, schema: dict | None = None, on_content=None) -> dict:
-        """on_content는 기한이 있는 요청의 스트림 조각을 받는다. 최종 결과는 기존 검증을 거친 JSON만 반환한다."""
+    def chat(self, system: str, user: str, *, schema: dict | None = None, on_content=None,
+             num_predict: int | None = None) -> dict:
+        """on_content는 기한이 있는 요청의 스트림 조각을 받는다. 최종 결과는 기존 검증을 거친 JSON만 반환한다.
+
+        on_content가 GenerationStopped를 올리면 스트림을 닫아 생성을 멈추고 그 예외를 그대로 전달한다.
+        num_predict는 이 호출에만 적용하는 출력 토큰 한도다.
+        """
         self.last_chat_diagnostics = {}
         try:
             context = self._effective_context or self.context_limit()
-            output = self.llm_options.get("num_predict", 512)
+            output = num_predict or self.llm_options.get("num_predict", 512)
             if self.input_cost(system, user) + output > context:
                 raise ContextBudgetError("필수 근거가 생성 문맥 예산을 초과했습니다.")
             if self.request_deadline is not None:
-                message = asyncio.run(self._chat_before_deadline(system, user, schema, context, on_content=on_content))
-            elif self._chat_chain is None or schema is not None:
+                message = asyncio.run(self._chat_before_deadline(system, user, schema, context, on_content=on_content,
+                                                                 num_predict=num_predict))
+            elif self._chat_chain is None or schema is not None or num_predict:
                 prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
                 model = ChatOllama(
                     model=self.llm_model, base_url=self.base_url, format=schema if schema is not None else "json",
-                    client_kwargs={"timeout": self.remaining_timeout()}, **{**self.llm_options, "num_ctx": context},
+                    client_kwargs={"timeout": self.remaining_timeout()},
+                    **{**self.llm_options, "num_ctx": context, **({"num_predict": num_predict} if num_predict else {})},
                 )
                 chain = prompt | model
                 # 요청별 자료·문장 선택 문법은 공유 캐시에 넣지 않는다.
-                if schema is None:
+                if schema is None and not num_predict:
                     self._chat_chain = chain
             else:
                 chain = self._chat_chain
@@ -311,7 +321,7 @@ class OllamaClient:
             if not isinstance(result, dict):
                 raise ValueError("응답이 JSON 객체가 아닙니다.")
             return result
-        except (ContextBudgetError, GenerationTimeoutError, GenerationCancelledError):
+        except (ContextBudgetError, GenerationTimeoutError, GenerationCancelledError, GenerationStopped):
             raise
         except (httpx.TimeoutException, TimeoutError):
             raise GenerationTimeoutError("Ollama 응답 대기 시간을 넘었습니다.") from None

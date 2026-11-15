@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:38 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:53 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1196,3 +1196,15 @@
 - main/a497bb1에서codex/fix-chat-stream을만들고팀원원격claude/feat-chat-stream/c9abd74를merge해7f760ab098ca5a855a4051b9c8e879c1b169593f로준비했다. 충돌없음·제품17파일범위를확인했고상대브랜치/원격main은수정하지않았다. 설치확장재로드는하지않는다.
 - 기존캡스톤-개발연결에읽기검토를배정했다. wait_threads는도구내부오류로실패했으나list/read_thread로active와실제읽기명령을확인했다. 지원되지않는상태감시를진행중이라고표현하지않고필요시read_thread를최소사용한다. 설계문서작성/커밋후제품작성권을직렬인계한다.
 - S1의CI선정누락·JSON status순서·종료/취소검사공백을기존계약내최소수정하고S2직접영향검사만수행한다. 실제.env·모델/DB/EC2/Chrome·새제품push/PR/배포는이단계범위에없다. 결과/실패/검증은다음일지에기록한다.
+
+<a id="log-20261115-s1-result"></a>
+## 2026-11-15 15:53 KST · S1 스트리밍 보완·S2 로컬 집중검사 완료
+
+- 캡스톤-개발의작성권반환후설계가4파일diff/원로그·빈index·지정branch를확인하고7ec23c3a140ccfe63b6c1603ae8e00f2d7f6ff5e로선별커밋했다. stream.py+50/-8,main.py+7/-2,test_chat_stream.py+185/-1,ci_python.py+1/-1이며제품별도모듈/프레임워크·클라이언트추가변경은없다.
+- stream.py는정규식대신같은파일_member_start에서표준JSONDecoder.raw_decode로최상위키/완성값을건너뛰고status를확인한다. answer/clarify/no_evidence완성전에는초안을보류하며인용·중첩status/text를오인하지않는다. 기존escape해독·80자숫자보류/마스킹·0.1초throttle은유지한다. text-first는status까지표시가지연된다. CI명시목록에test_chat_stream.py를1회추가했다.
+- 최초Python6파일133사례는132통과/1실패·20.85초였다. 기한이지난native대역의늦은초안이전송되는실제결함을재현했다. main.draft에서기존checkpoint를확인하고기한/취소조각을버리는최소수정후직접영향5사례만재검사해5통과/skip0·7.81초다. 전체133사례를수정후일괄재실행하거나고유137건통과로표현하지않는다.
+- 서버검사대상은test_chat_stream/test_chat_http_recovery/test_request_execution/test_ollama/test_admin_referrals/test_document_qa다. 새17사례는text-first/status5·인용/중첩3·최상위text1·개인정보/Unicode3·final연락처1회1·accepted전단절1·초안중/최종직전단절/기한3이다. 기존loopback대역fixture를재사용해native종료전슬롯2/종료후3·늦은final/기록차단·watcher정리를확인했다. 새main가드는기존오류매핑/게이트프레임워크를변경하지않는다.
+- 확장기존8파일(mode/offscreen/document_timeout/remote_connection/timeout/profile_offscreen/conversations_content/answer_speech)120통과·24161.1587ms,React기존WebChatPage/chatApi/voice3파일37통과·23.67초다. 실패/skip0이며클라이언트수정은추가하지않았다. 최종4파일AST·CI선정1회/파일존재·diff--check도통과했다. 전체회귀/타입빌드/Chrome/청취/실제모델·DB·HTTPS는수행하지않았다.
+- 검증은개발이연결한Terra담당이기존Python3.12격리진입·Settings생성전env_file차단/상속설정정리·모델offline·DBconnect차단·httpx외부transport차단과허용loopback을사용했다. Node/React는기존fetch대역/환경파일없는진입이다. OS수준패킷계측으로외부접속0을독립인증한것은아니다. 시험Python/Node잔여없음을Get-Process로확인했고CIM조회권한거절은우회종료하지않았다.
+- 최초bootstrap의BackEnd.config오류는pytest수집전실패이며core.settings로교정했다. 담당이초기파일로그를교정실행으로덮어쓴사실과tool출력근거를bootstrap-failure.json에남겼다. 원본로그를재생성했다고하지않는다. 최초Python로그의한글일부는리디렉션인코딩으로깨졌으나수치/영문nodeid/assertion을대조했다. 통과검사를로그미관때문에반복하지않았다.
+- 원자료는.local/co-op/checks-runtime/chat-stream-20261115- 아래접두어의python-focused.log/python-recheck.log/extension-focused.log/webchat-focused.log/syntax-final.log/syntax.log/bootstrap-failure.json이다(디렉터리명아닌파일접두어). 설계가필요원로그를직접읽었다. 새제품push/PR/배포·EC2문서pull은없고S3미착수다. 기존문서PR #32승인과새기능공유/운영범위는구분한다. RAG/CSV/복구보류유지.

@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:32 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:46 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1228,3 +1228,15 @@
 - 사용자의EC2기동/진행지시로캡스톤-개발에단일운영담당을배정했다. 최신main/c15fb9eac62d3264b9fdb562d1bf25d953df4dd0이며설계는기존codex/fix-chat-stream을해당main으로ff-only맞춰문서4개만작성한다. 개발의EC2운영과로컬checkout/index쓰기를분리한다.
 - b82b391..main의서버변경은execution.py/qa.py/신규stream.py/main.py/ollama.py와검사1파일뿐이다. Dockerfile/의존성/Compose변경없음을확인했고worker처리경로불변이면backend만교체하도록배정했다. 기존runtime/영속인증/수집ON·모델/GPU·B11백업·데이터와기동pin/복구이미지를보존한다.
 - 준비도확인뒤공개HTTPS /api/v1/chat/stream에기초연금신청대상합성질문1건을600초/재시도0으로요청해accepted/첫비어있지않은draft/final의시각·상태를기록한다. 기존모델을사용하고정상공개연락처기록경로를유지한다. 시험을위한설정OFF/임의DB행쓰기·삭제는없다. RAG정확도평가재개·새모델/pgvector다운로드·worker/DB복구·재부팅·Chrome/음성은제외한다. 배포/실제추론결과는아직미확정이다.
+
+<a id="log-20261115-stream-deployed"></a>
+## 2026-11-15 16:46 KST · S3 backend 배포·실제 HTTPS 스트리밍 확인
+
+- EC2 main/b82b391 clean에서c15fb9eac62d3264b9fdb562d1bf25d953df4dd0으로ff-only동기화했다. backend만기존310f5c7a이미지위Git BackEnd COPY1레이어로교체했다. 실행/후보120파일SHA일치·전체Python구문·기존의존성층보존·runtime보존을확인했다. 새이미지는011029050c523f71dcfd7513bb928738b80088f45a9eda830916b2c89f6123c5이며약6.091초에healthy가됐다. worker처리/embedding변경이없어f36e1939이미지를유지하고Ollama/edge와함께ID/image/StartedAt불변을확인했다.
+- root전용새백업은EC2 .local/co-op/checks-runtime/ec2-chat-stream-c15fb9e-20261115다. 기존runtime/pin·소스hash·이전backend를welfare-backend-rollback-c15fb9e로보존했다. 기존B11patch/tar및이전rollback2개도보존했다. start-preserved.sh의backend ID1개만갱신했고pinSHA256은7450fde142bd80b793431e3ac743205c3dd19d98bf96c5dd5190b490db7395fa다. 복구스크립트는실행하지않았으며복구전진행중상담정상종료가필요하다.
+- 승인합성질문1건을WindowsPC에서공개HTTPS로전송했다. 시스템CA/IP검증유지·600초·재시도0·별도워밍업0이다. 16:39:13.072KST시작,HTTP200/application/x-ndjson,accepted0.125초/첫비어있지않은draft194.266초/마지막draft200.297초/final206.219초/EOF206.235초였다. accepted1/draft11/final1/error0이며draft11회의수신시각이모두달랐다. 첫draft→final11.953초로점진전달성공을확인했다. final은answer·본문330자·연락처1개이며DB실제기록행이나관리자조회성공으로확대하지않는다.
+- 모델사전상주0인cold단건이다. QA메타데이터는snapshot3.550초/context0.015초/retrieval19.191초/rerank12.900초/generation166.470초/validation2.360초·전체204.487초다. 모델loading/offload기록과완료후기존QwenGPU상주를관측했다. 주지연을생성/모델준비구간으로좁혔으나전체166초를순수모델로드시간으로단정하지않는다. 첫응답194초는기존빠른응답목표의성공이아니며warm성능/정확도평가는미실행이다.
+- 설계가원격candidate/rollout/deployment-verification/post-request-verification의명시필드와로컬stream-result/event-timings를직접읽었다. 원격JSON전체출력요청은민감설정포함가능성으로자동심사거절되어실행되지않았고권고대로비밀없는필드만선택조회했다. 비공개runtime/로그전체는출력하지않았다. 내부readiness/공개health정상,backend/worker/Ollamahealthy·edge running·restart0·Gitclean·pin/B11보존을확인했다.
+- 실제원자료는로컬동일이름의.local/co-op/checks-runtime/ec2-chat-stream-c15fb9e-20261115에stream-result.json/event-timings.jsonl/response.ndjson/실행표식으로보존했다. 공개합성본문은시험원자료에만두며일반로그/문서에복사하지않았다. 실제.env·인증/수집ON·모델/GPU/DB설정변경·다운로드·Chrome/음성·실재부팅·DB복구시험·추가질문은없다. 사용자확장재로드/실제UI표시·관리자기록조회는남으며RAG/CSV/복구보류유지다.
+
+- 최종운영담당이작성권을반환했고추가조작을종료했다. 비밀없는client-summary.json/server-review-fields.json도같은로컬원자료폴더에보존했다. 마지막원자료수집명령의shell exit1은저장성공뒤Get-Process에서시험Python잔여가없어반환된값이며저장/배포/추론실패가아니다. 단건요청은exit0·시험프로세스종료를확인했다. 이번착수/결과문서는로컬기능브랜치에커밋하고노트북main/c15fb9e로복귀하며후속기록은아직원격공유하지않았다.

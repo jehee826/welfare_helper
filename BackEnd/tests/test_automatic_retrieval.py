@@ -163,3 +163,70 @@ def test_automatic_database_provenance_roundtrip_preserves_every_block_and_rejec
     changed[0]["source_spans"][0]["end"] -= 1
     with pytest.raises(DocumentError, match="source_span_mismatch"):
         validate_document_vectors(published, job, changed)
+
+
+class _VectorCursor:
+    def __init__(self, documents, rows):
+        self.documents, self.rows, self.queries, self.result = documents, rows, [], []
+        self.connection = self
+
+    def cursor(self, **_kwargs):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def execute(self, query, params=None):
+        self.queries.append((query, params))
+        self.result = self.documents if "FROM public.rag_documents d JOIN" in query else self.rows
+
+    def fetchall(self):
+        return list(self.result)
+
+
+def test_active_document_vectors_are_reused_until_document_row_changes(monkeypatch):
+    from BackEnd.documents import retrieval
+
+    monkeypatch.setattr(retrieval, "_vector_cache", retrieval.OrderedDict())
+    chunk = automatic_chunks(["첫 문서의 신청 방법입니다."])[0]
+    validated = []
+
+    def validate(doc, job, rows):
+        validated.append([row["chunk_index"] for row in rows])
+        return [chunk], {chunk.chunk_id: [0.1] * 4}
+
+    monkeypatch.setattr(retrieval, "validate_document_vectors", validate)
+    document = {"document_id": DOCUMENT_ID, "job_id": "job-1", "embedding_model": "bge-m3", "embedding_digest": "d",
+                "chunk_config": {}, "service_id": RECORD.service_id, "updated_at": "2026-11-01", "markdown": "원문"}
+    cursor = _VectorCursor([document], [{"document_id": DOCUMENT_ID, "chunk_index": 0}])
+    first = retrieval.active_document_chunks(cursor, "bge-m3")
+    second = retrieval.active_document_chunks(cursor, "bge-m3")
+    assert first[:2] == second[:2] == ([chunk], {chunk.chunk_id: [0.1] * 4})
+    assert validated == [[0]] and sum("welfare_document_vectors" in q for q, _ in cursor.queries) == 1
+    cursor.documents = [{**document, "markdown": "바뀐 원문"}]
+    retrieval.active_document_chunks(cursor, "bge-m3")
+    assert len(validated) == 2 and sum("welfare_document_vectors" in q for q, _ in cursor.queries) == 2
+
+
+def test_invalid_document_vectors_are_not_cached(monkeypatch):
+    from BackEnd.documents import retrieval
+    from BackEnd.documents.contracts import DocumentError
+
+    monkeypatch.setattr(retrieval, "_vector_cache", retrieval.OrderedDict())
+    calls = []
+
+    def invalid(doc, job, rows):
+        calls.append(1)
+        raise DocumentError("document_provenance_mismatch")
+
+    monkeypatch.setattr(retrieval, "validate_document_vectors", invalid)
+    document = {"document_id": DOCUMENT_ID, "job_id": "job-1", "embedding_model": "bge-m3", "embedding_digest": "d",
+                "chunk_config": {}, "service_id": RECORD.service_id, "updated_at": "2026-11-01"}
+    cursor = _VectorCursor([document], [])
+    for _ in range(2):
+        chunks, _, unavailable, _, _ = retrieval.active_document_chunks(cursor, "bge-m3")
+        assert chunks == [] and unavailable == {RECORD.service_id: "invalid_document_provenance"}
+    assert len(calls) == 2

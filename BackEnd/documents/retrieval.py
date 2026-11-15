@@ -2,7 +2,9 @@
 
 import json
 from array import array
+from collections import OrderedDict
 from datetime import datetime
+from threading import Lock
 
 from psycopg2.extras import RealDictCursor
 from BackEnd.core.db import RequestCursor
@@ -11,6 +13,35 @@ from BackEnd.core.execution import checkpoint
 from BackEnd.documents.contracts import DocumentError, automatic_source_fingerprint, stable_hash, validate_review
 from BackEnd.rag.evidence import read_chunk, validate_version
 from BackEnd.rag.embeddings import validate_embeddings
+
+
+MAX_CACHED_VECTOR_CHUNKS = 20000
+_vector_cache: OrderedDict = OrderedDict()
+_vector_cache_lock = Lock()
+
+
+def _document_key(doc, model):
+    return stable_hash(json.dumps({key: str(value) for key, value in doc.items()}, ensure_ascii=False,
+                                  sort_keys=True).encode()) + ":" + model
+
+
+def _cached_documents(keys):
+    with _vector_cache_lock:
+        found = {}
+        for identifier, key in keys.items():
+            if key in _vector_cache:
+                _vector_cache.move_to_end(key)
+                found[identifier] = _vector_cache[key]
+        return found
+
+
+def _store_documents(entries):
+    with _vector_cache_lock:
+        for key, value in entries.items():
+            _vector_cache[key] = value
+            _vector_cache.move_to_end(key)
+        while len(_vector_cache) > 1 and sum(len(chunks) for chunks, _ in _vector_cache.values()) > MAX_CACHED_VECTOR_CHUNKS:
+            _vector_cache.popitem(last=False)
 
 
 def validate_document_vectors(doc, job, rows):
@@ -132,30 +163,42 @@ def active_document_chunks(cur, model, scope=None, *, include_local_documents=Fa
             raise DocumentError('document_catalog_size_limit')
         if not documents:
             return [], {}, {}, [], {}
-        rows_cur.execute('SELECT v.*,v.embedding::text AS vector_text FROM public.welfare_document_vectors v '
-                         'JOIN public.rag_documents d ON d.document_id=v.document_id AND d.active_job_id=v.job_id '
-                         'JOIN public.rag_document_jobs j ON j.job_id=v.job_id AND j.document_id=v.document_id '
-                         "WHERE v.job_id=ANY(%s::uuid[]) AND j.state='succeeded' AND v.embedding_model=%s "
-                         'ORDER BY v.document_id,v.chunk_index LIMIT 50001', ([str(d['job_id']) for d in documents],model))
-        rows = rows_cur.fetchall()
+        # 성공한 활성 작업의 벡터는 게시 뒤 바뀌지 않으므로 문서 행 전체가 같으면 검증된 결과를 재사용한다.
+        keys = {str(d['document_id']): _document_key(d, model) for d in documents if d['embedding_model'] == model}
+        cached = _cached_documents(keys)
+        missing = [str(d['job_id']) for d in documents if d['embedding_model'] == model and str(d['document_id']) not in cached]
+        rows = []
+        if missing:
+            rows_cur.execute('SELECT v.*,v.embedding::text AS vector_text FROM public.welfare_document_vectors v '
+                             'JOIN public.rag_documents d ON d.document_id=v.document_id AND d.active_job_id=v.job_id '
+                             'JOIN public.rag_document_jobs j ON j.job_id=v.job_id AND j.document_id=v.document_id '
+                             "WHERE v.job_id=ANY(%s::uuid[]) AND j.state='succeeded' AND v.embedding_model=%s "
+                             'ORDER BY v.document_id,v.chunk_index LIMIT 50001', (missing, model))
+            rows = rows_cur.fetchall()
     if len(rows)>50000:
         raise DocumentError('document_catalog_size_limit')
     grouped={}
     for row in rows:
         grouped.setdefault(str(row['document_id']),[]).append(row)
-    chunks, vectors, unavailable = [], {}, {}
+    chunks, vectors, unavailable, validated = [], {}, {}, {}
     for doc in documents:
         if doc['embedding_model'] != model:
             unavailable[doc['service_id']]='embedding_model_mismatch'
             continue
-        job={k:doc[k] for k in ('job_id','embedding_model','embedding_digest','chunk_config')}
-        try:
-            children, embeddings = validate_document_vectors(doc,job,grouped.get(str(doc['document_id']),[]))
-        except (DocumentError,ValueError,KeyError,TypeError,IndexError):
-            unavailable[doc['service_id']]='invalid_document_provenance'
-            continue
+        identifier = str(doc['document_id'])
+        if identifier in cached:
+            children, embeddings = cached[identifier]
+        else:
+            job={k:doc[k] for k in ('job_id','embedding_model','embedding_digest','chunk_config')}
+            try:
+                children, embeddings = validate_document_vectors(doc,job,grouped.get(identifier,[]))
+            except (DocumentError,ValueError,KeyError,TypeError,IndexError):
+                unavailable[doc['service_id']]='invalid_document_provenance'
+                continue
+            validated[keys[identifier]] = (children, embeddings)
         chunks.extend(children)
         vectors.update(embeddings)
+    _store_documents(validated)
     # 한 제도의 현재 문서 중 손상된 근거가 있으면 나머지만으로 완전한 조건이라고 답하지 않는다.
     rejected={c.chunk_id for c in chunks if c.service_id in unavailable}
     identities = [(str(d['document_id']),str(d['job_id']),str(d['updated_at'])) for d in documents]

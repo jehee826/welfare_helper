@@ -13,6 +13,7 @@ from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM, EMPTY_EVIDENCE_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
+from BackEnd.documents.stream import DraftStream
 from BackEnd.profile_context import ProfileContext
 
 MAX_CACHED_CHUNKS = 2000
@@ -82,7 +83,7 @@ def _validate_answer_selection(raw_answer, included, references, evidence, conta
 
 @diagnose_qa
 def answer_document(repo, service, query: str, *, profile=None, history=None, conversation_context=None,
-                    select_contacts=False, profile_context=None):
+                    select_contacts=False, profile_context=None, on_draft=None):
     consent = ProfileContext.model_validate(profile_context) if profile_context is not None else None
     qa_stage("snapshot")
     checkpoint()
@@ -270,7 +271,8 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
         schema['required'] = [*schema['required'], 'source_ids']
         if empty_evidence:
             schema['properties']['status']['enum'] = ['out_of_scope', 'no_evidence']
-        raw_answer = llm.chat(generation_system, prompt, schema=schema)
+        stream = {'on_content': DraftStream(on_draft).feed} if on_draft is not None else {}
+        raw_answer = llm.chat(generation_system, prompt, schema=schema, **stream)
         checkpoint()
         if not isinstance(raw_answer, dict) or not raw_answer:
             raise ValueError("빈 모델 응답입니다.")

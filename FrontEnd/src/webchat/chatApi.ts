@@ -148,36 +148,118 @@ function isSensitive(body: unknown): boolean {
   return Array.isArray(detail) && detail.some((item) => !!item && typeof item === "object" && (item as Record<string, unknown>).type === "sensitive_input");
 }
 
-/** 현재 질문 하나만 보낸다. 대화 기록·프로필·인증 정보는 포함하지 않는다. */
-export async function postChat(base: string, query: string, signal: AbortSignal): Promise<ChatResponse> {
-  let response: Response;
+function statusError(status: number, body: unknown): ApiError {
+  if (status === 422) return new ApiError(isSensitive(body) ? "sensitive" : "invalid", 422);
+  if (status === 429) return new ApiError("rate_limit", 429);
+  if (status === 503) return new ApiError("server", 503);
+  if (status === 504 || status === 408) return new ApiError("timeout", status);
+  return new ApiError("unknown", status);
+}
+
+const DRAFT_LIMIT = 3000;
+const STREAM_LIMIT = 2 * 1024 * 1024;
+
+async function readStream(response: Response, onDraft?: (text: string) => void): Promise<ChatResponse> {
+  if (!response.body) throw new ApiError("response", response.status);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = "";
+  let draft = "";
+  let size = 0;
+  let final: ChatResponse | null = null;
+  const readLine = (line: string) => {
+    if (!line.trim()) return;
+    let event: Record<string, unknown>;
+    try {
+      event = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      throw new ApiError("response", response.status);
+    }
+    if (final) throw new ApiError("response", response.status);
+    if (event?.type === "accepted") return;
+    if (event?.type === "draft") {
+      const next = typeof event.text === "string" ? event.text : typeof event.append === "string" ? draft + event.append : null;
+      if (next === null || next.length > DRAFT_LIMIT) throw new ApiError("response", response.status);
+      draft = next;
+      onDraft?.(draft);
+      return;
+    }
+    if (event?.type === "final") {
+      final = parseChatResponse(event.response);
+      return;
+    }
+    if (event?.type === "error" && typeof event.status === "number") throw statusError(event.status, { detail: event.detail });
+    throw new ApiError("response", response.status);
+  };
   try {
-    response = await fetch(`${base}/api/v1/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, timeout_seconds: TIMEOUT_SECONDS }),
-      credentials: "omit",
-      cache: "no-store",
-      redirect: "error",
-      signal,
-    });
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > STREAM_LIMIT) throw new ApiError("response", response.status);
+      buffered += decoder.decode(value, { stream: true });
+      let index: number;
+      while ((index = buffered.indexOf("\n")) >= 0) {
+        readLine(buffered.slice(0, index));
+        buffered = buffered.slice(index + 1);
+      }
+    }
+    readLine(buffered + decoder.decode());
+  } catch (error) {
+    if (isAbort(error) || error instanceof ApiError) throw error;
+    throw new ApiError("network");
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  if (!final) throw new ApiError("response", response.status);
+  return final;
+}
+
+/** 현재 질문 하나만 보낸다. 대화 기록·프로필·인증 정보는 포함하지 않는다.
+ *
+ * 스트리밍 경로의 초안은 onDraft로만 전달하며 검증된 final 응답이 항상 대체한다.
+ * 스트리밍 경로가 없는 서버는 기존 /api/v1/chat으로 한 번 다시 요청한다.
+ */
+export async function postChat(base: string, query: string, signal: AbortSignal,
+                               onDraft?: (text: string) => void): Promise<ChatResponse> {
+  const send = (path: string) => fetch(`${base}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, timeout_seconds: TIMEOUT_SECONDS }),
+    credentials: "omit",
+    cache: "no-store",
+    redirect: "error",
+    signal,
+  });
+  let response: Response;
+  let body: unknown = null;
+  try {
+    response = await send("/api/v1/chat/stream");
+    if (response.status === 404 || response.status === 405) {
+      body = await response.json().catch(() => null);
+      const detail = body && typeof body === "object" ? (body as Record<string, unknown>).detail : null;
+      if (detail === "Not Found" || detail === "Method Not Allowed") {
+        body = null;
+        response = await send("/api/v1/chat");
+      }
+    }
   } catch (error) {
     if (isAbort(error)) throw error;
     throw new ApiError("network");
   }
-  let body: unknown = null;
-  try {
-    body = await response.json();
-  } catch (error) {
-    if (isAbort(error)) throw error;
-    if (response.ok) throw new ApiError("response", response.status);
+  if (response.ok && (response.headers.get("content-type") ?? "").startsWith("application/x-ndjson")) {
+    return readStream(response, onDraft);
+  }
+  if (body === null) {
+    try {
+      body = await response.json();
+    } catch (error) {
+      if (isAbort(error)) throw error;
+      if (response.ok) throw new ApiError("response", response.status);
+    }
   }
   if (response.ok) return parseChatResponse(body);
-  if (response.status === 422) throw new ApiError(isSensitive(body) ? "sensitive" : "invalid", 422);
-  if (response.status === 429) throw new ApiError("rate_limit", 429);
-  if (response.status === 503) throw new ApiError("server", 503);
-  if (response.status === 504 || response.status === 408) throw new ApiError("timeout", response.status);
-  throw new ApiError("unknown", response.status);
+  throw statusError(response.status, body);
 }
 
 export const ERROR_MESSAGES: Record<ApiErrorCode, string> = {

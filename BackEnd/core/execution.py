@@ -20,6 +20,10 @@ class ExecutionCancelledError(RuntimeError):
     pass
 
 
+class GenerationStopped(Exception):
+    """스트림 소비자가 필요한 값을 확정해 나머지 생성을 멈출 때 올린다."""
+
+
 @dataclass(frozen=True)
 class RequestBudget:
     deadline: float

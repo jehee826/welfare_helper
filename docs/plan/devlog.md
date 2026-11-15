@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-12 02:50 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:12 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1149,3 +1149,75 @@
 - 8개 브랜치 삭제 범위가 명시 승인된 뒤 모든 로컬/원격head의 예상값 일치·main 포함·미커밋 변경 없음·단일checkout/main 사용을 재확인했다. codex/refactor-extension, refactor-webchat, refactor-admin-web, refactor-backend-core, refactor-document-worker, refactor-rag, refactor-desktop의7개를 로컬 branch -d와 원격 --delete로 정리했다. 강제 삭제·이력 재작성은 없다.
 - 승인된 마지막 codex/refactor-runtime-review는main/6c59068로ff-only 맞춰 이 실제 정리 결과와 인계 상태를 공유하는 데만 사용한다. 기록 PR 통합 뒤 main ff-only·최종 커밋 포함/후속 변경/사용 여부를 확인하고 이 브랜치도 로컬·원격에서 삭제한다. 최종8개 삭제/브랜치 목록과 SHA는 완료 보고에서 확인한다.
 - 제품·설정·시험·EC2·DB·서비스·보존B안·이미지는 변경하지 않았다. 실제.env를 읽지 않았고 기존 검사를 재실행하지 않았다. 앞선 자동 승인 거절은 과거 실패로 보존하며 현재 명시 승인으로 해당 정리 범위만 진행한다.
+
+<a id="log-20261112-0257-refactor-deploy"></a>
+## 2026-11-12 02:57 KST · 리팩토링 main EC2 배포 착수
+
+- 앞선 정리 기록 PR #31은 main/b82b391df978a627dfe06993136390bf57f6ce42로 병합됐고 마지막 기록 브랜치까지 기존8개를 로컬·원격에서 삭제했다. 이번 착수 시 로컬 main/origin/main b82b391 일치와 깨끗한 작업 트리를 확인했다. PR #31의 새 CI 결과를 이번에 확인한 것은 아니다.
+- EC2 배포 지시에 따라 개발 세션을 단일 운영 담당으로 지정했다. 설계는 로컬 codex/deploy-refactor-main에서 세 활성 문서와 읽기 리뷰만 맡고 개발은 로컬 checkout/index/공유 문서를 수정하지 않는다. 기준 main/b82b391, 제품0e54cd4이며 API/저장 계약·프롬프트·모델·의존성/Compose 변경은 없다.
+- EC2의 마지막 확인값 main/364cbb8+B11과 실행 backend f11e8af는 별개다. B11의 원본·binary patch·기준SHA·status를 검증 백업하고 배포 checkout에서 분리한 뒤 main을 ff-only 동기화한다. Grounded/items/strict_json 실험은 채택하지 않는다. 기존 backend/worker 이미지·설정과 부팅 pin을 대조해 필요한 서버 코드만 반영하며 복구 이미지를 보존한다.
+- 완료 기준은 EC2 소스/이미지/기동 pin의 일치, backend/worker 준비도와 HTTPS 응답, REFERRAL_RECORDS_ENABLED=true·기존 인증/볼륨/모델/GPU·DB·Caddy/Ollama 보존이다. 실제.env 읽기/편집·비밀 출력·새 모델/pgvector 다운로드·worker/DB 복구 자동시험·실제 상담 추론·재부팅은 하지 않는다. 착수 시점 배포 결과는 미확정이다.
+- 03:00 개발 사전 보고: EC2 main/364cbb8과 B11 diff SHA256 동일·빈 index/untracked, 원격 main/b82b391의 후손 관계를 확인했다. 현재 backend/worker healthy, Ollama/edge 정상이며 디스크 여유는 약12GB다. f11e8af..target의 Dockerfile/lock/Compose/pyproject 차이가 없어 현재 운영 이미지 위에 대상 main의 BackEnd만 복사하는 방식으로 의존성을 재사용한다. root 전용 .local/codex-runtime/start-preserved.sh는 기존 컨테이너 이미지ID를 검증해 시작하는 경로이며 systemd active/enabled다.
+- 최초 sandbox SSH Permission denied는 승인된 escalation으로 해결했다. root 전용 경로 읽기 PermissionError는 권한 변경 없이 필요한 sudo 읽기로 확인했다. 설계는 백업/patch 복구 해시·후보/실행 파일별 소스해시·진행 중 문서작업 종료 확인·기존 runtime 복제/보존 및 두 이미지 pin만 원자 갱신하는 실행 방식을 검토했다. 실제 교체 결과는 후속 기록으로 구분한다.
+
+<a id="log-20261112-0310-refactor-deployed"></a>
+## 2026-11-12 03:10 KST · 리팩토링 main EC2 배포 완료
+
+- EC2 main을364cbb8에서b82b391df978a627dfe06993136390bf57f6ce42로ff-only 동기화했다. 설계가 직접 SSH 읽기로 main/대상SHA·깨끗한 작업 트리를 확인했다. B11은 배포 checkout에서 분리했으며 원본tar·binary patch·기준SHA·파일hash·status와 기존 runtime/pin을 root 전용 .local/co-op/checks-runtime/ec2-main-b82b391-20261112에 보존했다. 별도 staging 복구검증과 diff SHA256 4ff7518bfb5505c4b0a106eb4217fd6808e7e096e492e5b5717860d8200b3bd4 동일을 확인했다. 백업 디렉터리 일반 읽기 Permission denied는 권한 변경 없이 sudo 읽기로 검토했다.
+- 현재 운영 backend595f3713…/worker5ae7df5…를 기반으로 대상 main의 BackEnd만 복사해 각각1레이어를 추가했다. 의존성 기존 레이어를 보존했고 빌드 exit0/1.315초·0.700초, 두 이미지의 BackEnd118파일 일치·전체 Python 구문 성공을 확인했다. 의존성/모델/pgvector 다운로드는 없었다. 새 이미지는 backend310f5c7a3a12fbe917f5a0c586f563ee34139a19d500ae4ffc4a03d678043a20, workerf36e1939db5bd56292430c21d3c97d23ea1b1a9651d1cefbdf9c4a54ab192172다.
+- worker 교체 직전 미완료 문서작업0을 읽기 확인했다. 기존 runtime 설정을 보존해 두 컨테이너만 직렬 교체했고 각각 약6.08초에healthy가 됐다. 현재 두 서비스 restart_count0, 환경/HostConfig·인증·볼륨·네트워크·GPU와 REFERRAL_RECORDS_ENABLED=true를 보존했다. Ollama/edge는 ID/image/StartedAt 불변이며 running이다. DB 쓰기·복구시험·서비스 전체 재기동은 하지 않았다.
+- 기존 .local/codex-runtime/start-preserved.sh의 backend/worker 이미지ID2개만 원자 갱신했고 나머지 내용 불변을 확인했다. 새pin SHA256은ed166b544c554b42caadaf9e8ec37a8c011c36d949d9761ffa52401ddc14d98e이며 systemd active/enabled다. 이전 컨테이너 welfare-backend-rollback-b82b391·welfare-document-worker-rollback-b82b391와 기존 이미지·start-preserved.sh.before를 복구용으로 남겼다. 실제 재부팅은 하지 않았다.
+- 설계가 manifest.json·candidate-checks.json·jobs-preflight.json·build-results.json·candidates.json·rollout-events.json·final-verification.json의 필요한 필드를 직접 읽기 검토했다. 최종 실행 소스 일치·B11 보존·runtime 보존·pin2개만 변경을 확인했다. 내부 readiness는HTTP200/database connected/models present/reranker cache_ready이고 worker heartbeat exit0이다. 공개HTTPS /health와 /api/v1/chat/capabilities는200이며 profile_context_supported/referral_records_enabled=true다. 공개 /health/ready의404는 기존Caddy 내부경로 차단 계약이며 내부 readiness200과 구분한다.
+- 실제 모델 추론·새 상담/기록 쓰기·Chrome/음성·DB 복구·재부팅은 미실측이다. 기존 모델/HTTPS/데이터/.env/제품설정은 변경하지 않았다. RAG 정확도/B안 채택·CSV/W03과 이미지다운로드·worker/DB복구 자동시험은 보류를 유지한다. 이번 문서 변경은 설계의 로컬 기록 브랜치에 선별 보존하며 원격공유/PR 통합은 실제 Git상태와 별도로 표시한다.
+- 최종 개발 보고와 로컬로 수집한 비밀 없는 postdeploy-verification.json·verification-notes.json을 추가 검토했다. 후보뿐 아니라 실행컨테이너의118파일도 각각main과 일치하며 시스템CA/IP SAN 검증을 유지한 HTTPS다. Config/HostConfig·mount/network 보존 대조에서 Docker의 OomKillDisable null→false 기본 정규화만 동등 처리했다. backend 교체로 메모리 관리자 세션은 다시 로그인해야 할 수 있다.
+- 문서작업 유휴·native 자식 없음 확인 후 worker→backend를 time=-1 정상 종료했으며 강제 종료하지 않았다. 원격 보호백업의 rollback.sh는 복구용 이전 컨테이너/부팅pin을 되살리는 방식이며 sh -n만 통과하고 실제 실행은 하지 않았다. 복구 실행 전 worker 유휴 확인이 필요하고 이미지 복구만으로 Git main/b82b391은 되돌아가지 않는다. B11 원본tar SHA256은248ffa913ccda8245c0142c354efd4bf987da4caf22684f5a77a4f7fa83920c2다.
+- 확인 명령의 추가 교정은 docker top의 PID컬럼 요구를 pid,comm으로 수정한 것과 잘못 가정한 내부CA 경로 대신 실제ACME 공개인증서의 시스템CA 검증을 적용한 것이다. TLS검증/설정을 약화하지 않았다. 배포 실패/rollback은 없고 개발 운영 담당은 추가실행 없이 종료했다. 비밀 포함 containers-private.json은 원격root 전용으로만 보존했고 로컬로 가져오지 않았다.
+
+<a id="log-20261115-final-plan"></a>
+## 2026-11-15 15:25 KST · 팀원 브랜치·문서 검토와 최종 잔여 계획
+
+- 앞선 배포 기록8a008bb/0556f38의 원격push는 완료됐고 main은b82b391 그대로다. 이번 fetch/원격heads 조회에서 새claude/feat-chat-stream c9abd74500921091c1ed707dce9ed19c25bd5cf6을 확인했다. main보다1커밋 앞서고 뒤처짐0,17파일+544/-54다. 조회된원격은main·문서·스트리밍3개, 열린PR0개이며 해당SHA의PR-triggered workflow조회도0개다. 다른기기미push·로컬시험결과는확인하지않았다.
+- 기존문서브랜치/clean에서 설계가 문서만 단독 작성했다. 추적 텍스트415개(복지원문368·지침/스킬16·archive12·현행19)의 목록/본문표시를 전수검색하고 현행계획·README·설계·관련일지/과거잔여를대조했다. 대형archive는 목차·잔여표시·후속해결추적이며 모든파일전문정독/원문정확도인증이아니다. 로컬과거후속계획2개도참고했고 개인시험/Word/비밀/DB는공유하지않았다. 문서집계의첫Python실행은WindowsApps alias접근실패로미실행돼PowerShell로대체했다. 제품시험실패가아니다.
+- 팀원제품diff와관련검사·기존실행수명/개인정보/Caddy/CI소스를읽었다. Ollama콜백→FastAPI NDJSON→확장/React초안표시·final대체구현은있다. test_chat_stream.py가명시CI목록에서빠졌고DraftStream은status미완성/부재에도text를보내므로text-first→out_of_scope순서의초안노출가능성이있다. 실행재현하지않았고취소/gate회수·초안저장차단·프록시실제분할은미검증으로분리했다.
+- README/architecture/admin의공개웹없음·프로필최종생성미사용·실행gate1설명이현재App.tsx/profile계약/실행gate3과다르다. rag의cutoff/TTL설명,refactor운영대기,Desktop옛인계링크도후속정정목록에넣었다. 과거W00~W16/F1~F8과후속성공을대조해완료기능을신규개발로되돌리지않았다. 추천F6의무효맥락후속형/본인조건삽입은미착수개선으로유지한다.
+- 사용자지정final-plan.md를만들고S0문서/Git→S1~S3스트리밍보완·검사/통합/배포→S4추천→S5실제잔여확인을상세화했다. RAG의실제의미실패/B안첫평가실패·CSV자료대기·복구/다운로드보류를별도로유지한다. .gitignore에는해당파일1개만명시허용하고목차/기존세문서에역할과링크를연결한다. 새문서는명시요청범위이며제품코드/운영/DB/모델/Chrome/테스트·상대브랜치수정/새push/PR/병합은없다.
+
+<a id="log-20261115-s0-start"></a>
+## 2026-11-15 15:35 KST · Codex 브랜치 정리 점검과 S0 문서 정정
+
+- 삭제 요청 뒤 fetch/원격heads/PR 조회로 main/b82b391·문서원격0556f38·로컬cf64785를 확인했다. 문서3커밋8a008bb/0556f38/cf64785는 전부main 미포함이고PR도없다. final-plan을포함한변경유실을막기위해브랜치를보존하고S0의통합내용을먼저준비했다. 강제삭제·main직접반영은없다.
+- 설계가현재문서브랜치에서README·architecture/admin/rag·DesktopREADME·refactor를정정했다. App.tsx의공개webchat/관리자3경로,QA의동의프로필최종생성·dense/BM25공통min_similarity,execution의gate3,확장7일TTL,credential파일우선검증을읽기대조했다. cutoff는현행rag설명이맞고README의하한없음설명을정정했다. 옛요약/인용숫자검증·확장관리자토큰/출처UI설명도현행계약에맞췄다.
+- 실제EC2반영은11월12일완료이므로refactor대기표기를완료일지로연결했다. Desktop의옛docs/log링크만현재인계로수정했고과거실행절차를재시험한것으로표시하지않았다. 제품·테스트·실제env·운영·DB·모델·상대브랜치는변경하지않았다. 다음은선별문서커밋·구체PR통합범위확인·main포함후승인된브랜치삭제이며S1제품작성권은아직배정하지않았다.
+
+<a id="log-20261115-s1-start"></a>
+## 2026-11-15 15:38 KST · 문서 PR 통합·브랜치 삭제와 S1 착수
+
+- 승인된 후속cf64785/74a7482를push하고문서4커밋PR #32를생성했다. head74a7482 고정·mergeable확인후PR경로로main/a497bb1b084fd5004d8b34b528508b9bb155809f에병합했다. 실제merged와로컬ff-only·4커밋포함을확인하고codex/deploy-refactor-main을로컬branch-d·원격delete로정리했다. 문서정적검토기준이며이번PR의신규CI완료를기다린것은아니다.
+- main/a497bb1에서codex/fix-chat-stream을만들고팀원원격claude/feat-chat-stream/c9abd74를merge해7f760ab098ca5a855a4051b9c8e879c1b169593f로준비했다. 충돌없음·제품17파일범위를확인했고상대브랜치/원격main은수정하지않았다. 설치확장재로드는하지않는다.
+- 기존캡스톤-개발연결에읽기검토를배정했다. wait_threads는도구내부오류로실패했으나list/read_thread로active와실제읽기명령을확인했다. 지원되지않는상태감시를진행중이라고표현하지않고필요시read_thread를최소사용한다. 설계문서작성/커밋후제품작성권을직렬인계한다.
+- S1의CI선정누락·JSON status순서·종료/취소검사공백을기존계약내최소수정하고S2직접영향검사만수행한다. 실제.env·모델/DB/EC2/Chrome·새제품push/PR/배포는이단계범위에없다. 결과/실패/검증은다음일지에기록한다.
+
+<a id="log-20261115-s1-result"></a>
+## 2026-11-15 15:53 KST · S1 스트리밍 보완·S2 로컬 집중검사 완료
+
+- 캡스톤-개발의작성권반환후설계가4파일diff/원로그·빈index·지정branch를확인하고7ec23c3a140ccfe63b6c1603ae8e00f2d7f6ff5e로선별커밋했다. stream.py+50/-8,main.py+7/-2,test_chat_stream.py+185/-1,ci_python.py+1/-1이며제품별도모듈/프레임워크·클라이언트추가변경은없다.
+- stream.py는정규식대신같은파일_member_start에서표준JSONDecoder.raw_decode로최상위키/완성값을건너뛰고status를확인한다. answer/clarify/no_evidence완성전에는초안을보류하며인용·중첩status/text를오인하지않는다. 기존escape해독·80자숫자보류/마스킹·0.1초throttle은유지한다. text-first는status까지표시가지연된다. CI명시목록에test_chat_stream.py를1회추가했다.
+- 최초Python6파일133사례는132통과/1실패·20.85초였다. 기한이지난native대역의늦은초안이전송되는실제결함을재현했다. main.draft에서기존checkpoint를확인하고기한/취소조각을버리는최소수정후직접영향5사례만재검사해5통과/skip0·7.81초다. 전체133사례를수정후일괄재실행하거나고유137건통과로표현하지않는다.
+- 서버검사대상은test_chat_stream/test_chat_http_recovery/test_request_execution/test_ollama/test_admin_referrals/test_document_qa다. 새17사례는text-first/status5·인용/중첩3·최상위text1·개인정보/Unicode3·final연락처1회1·accepted전단절1·초안중/최종직전단절/기한3이다. 기존loopback대역fixture를재사용해native종료전슬롯2/종료후3·늦은final/기록차단·watcher정리를확인했다. 새main가드는기존오류매핑/게이트프레임워크를변경하지않는다.
+- 확장기존8파일(mode/offscreen/document_timeout/remote_connection/timeout/profile_offscreen/conversations_content/answer_speech)120통과·24161.1587ms,React기존WebChatPage/chatApi/voice3파일37통과·23.67초다. 실패/skip0이며클라이언트수정은추가하지않았다. 최종4파일AST·CI선정1회/파일존재·diff--check도통과했다. 전체회귀/타입빌드/Chrome/청취/실제모델·DB·HTTPS는수행하지않았다.
+- 검증은개발이연결한Terra담당이기존Python3.12격리진입·Settings생성전env_file차단/상속설정정리·모델offline·DBconnect차단·httpx외부transport차단과허용loopback을사용했다. Node/React는기존fetch대역/환경파일없는진입이다. OS수준패킷계측으로외부접속0을독립인증한것은아니다. 시험Python/Node잔여없음을Get-Process로확인했고CIM조회권한거절은우회종료하지않았다.
+- 최초bootstrap의BackEnd.config오류는pytest수집전실패이며core.settings로교정했다. 담당이초기파일로그를교정실행으로덮어쓴사실과tool출력근거를bootstrap-failure.json에남겼다. 원본로그를재생성했다고하지않는다. 최초Python로그의한글일부는리디렉션인코딩으로깨졌으나수치/영문nodeid/assertion을대조했다. 통과검사를로그미관때문에반복하지않았다.
+- 원자료는.local/co-op/checks-runtime/chat-stream-20261115- 아래접두어의python-focused.log/python-recheck.log/extension-focused.log/webchat-focused.log/syntax-final.log/syntax.log/bootstrap-failure.json이다(디렉터리명아닌파일접두어). 설계가필요원로그를직접읽었다. 새제품push/PR/배포·EC2문서pull은없고S3미착수다. 기존문서PR #32승인과새기능공유/운영범위는구분한다. RAG/CSV/복구보류유지.
+
+<a id="log-20261115-stream-pr"></a>
+## 2026-11-15 16:09 KST · 스트리밍 기능 push·PR 생성
+
+- 사용자 진행지시로root/branch/clean·remote·범위를재확인하고codex/fix-chat-stream/c31d41d7b7e512b77b5962bd0a42c0c62a617baf를명시push했다. 팀원c9abd74·이력보존merge7f760ab·착수e081ad3·보완7ec23c3·결과c31d41d의5커밋/22파일이며PR #33을main/a497bb1대상으로생성했다.
+- 현재원격CI확인과head고정병합을진행중이다. 기존로컬집중검사와원격결과를구분한다. 기록후속커밋도같은승인된기능PR에포함하며추가제품변경은없다. EC2운영배포·실제모델·DB·Chrome·원격팀원브랜치삭제는수행하지않았다. 최종merge SHA/CI실제결과는후속기록또는완료보고에서확인한다.
+
+<a id="log-20261115-stream-merged"></a>
+## 2026-11-15 16:12 KST · 스트리밍 PR #33 main 통합 완료
+
+- c31d41d제품범위에진행기록56d7f2f를추가push한최종head56d7f2ffe647ed49375a66f6abf16ac14fd1b4e4의Actions43688624243을확인했다. web-extension·python backend/worker/dev4job전부success다. dev의scripts/ci_python.py tests실행성공과웹test/build·확장명시검사를확인했으며Vercelcommit status도success였다. 이는실제운영모델/Chrome/EC2성공을뜻하지않는다.
+- PR #33의head/mergeable을재확인하고expected_head_sha를고정해merge했다. 실제closed/merged와main/6e808d7ab59d3358ebf3fbe0d4bf71f7f51de617을확인했고현재기록브랜치를해당main으로ff-only맞췄다. 완료기록은같은기능후속문서로공유하고로컬main을ff-only동기화한다. 제품추가수정/테스트반복은없다.
+- S1보완·S2로컬/원격검사·PR통합완료, S3 EC2배포/기존HTTPS점진전달·실제모델·Chrome/음성·운영기록쓰기는미실행이다. EC2마지막확인소스는b82b391이고이번main과차이가난다. 팀원claude/feat-chat-stream은삭제하지않았다. RAG/CSV/복구보류유지.

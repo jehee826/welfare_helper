@@ -13,7 +13,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
-from BackEnd.core.execution import InferenceBodyLimit, inference_request
+from BackEnd.core.execution import (
+    InferenceBodyLimit, inference_request, checkpoint, ExecutionTimeoutError, ExecutionCancelledError,
+)
 from BackEnd.core.chat_rate import enforce_chat_rate_limit
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
@@ -273,7 +275,6 @@ def _answer_chat(request: "ChatRequest", http_request: Request, service: ChatSer
                                               **({'on_draft': on_draft} if on_draft is not None else {}))
             response = redact_document(response)
             if recording and response.get('kind') == 'answer' and response.get('contacts'):
-                from BackEnd.core.execution import checkpoint
                 checkpoint()
                 selected = trace.get('selected_contacts', [])
                 displayed = {(item.get('label'), item.get('phone'), item.get('source_url')) for item in response['contacts']}
@@ -319,6 +320,10 @@ async def chat_stream(request: ChatRequest, http_request: Request, service: Chat
     sent = [""]
 
     def draft(text):
+        try:
+            checkpoint()
+        except (ExecutionTimeoutError, ExecutionCancelledError):
+            return
         previous, sent[0] = sent[0], text
         put({"type": "draft", "append": text[len(previous):]} if previous and text.startswith(previous)
             else {"type": "draft", "text": text})

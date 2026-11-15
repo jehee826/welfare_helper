@@ -1,14 +1,18 @@
 # 개발 계획과 진행 현황
 
-작성: 2026-11-08. 최신 업데이트: 2026-11-12 02:50 KST
+작성: 2026-11-08. 최신 업데이트: 2026-11-15 16:12 KST
 
 이 문서는 계획·현재 상태·남은 조건과 [개발일지](devlog.md)의 진행 위치를 보여 준다. 상세 변경·검사·실패 이력은 일지에만 기록하고 지금 할 일과 환경은 [현재 인계](handoff.md)를 따른다.
 
 ## 1. 현재 완료 범위와 남은 순서
 
-- 구조 리팩토링 8섹터의 코드/검토 완료. 1~7번 제품은 PR #23~#29로 main/0e54cd4 통합 완료, 각 PR의 CI4job 성공. 8번은 정적 대조 후 코드 유지로 완료했고 최종 기록 PR #30도main/6c59068에 통합했다. 브랜치8개 삭제 범위의 명시 승인을 받아 제품7개를 정리했고 마지막 기록 브랜치는 기록 공유 후 안전 확인·삭제한다. 미완료 제품 구현은 없으며 별도 EC2 반영은 남는다. [전체 검토](devlog.md#log-20261112-0228-runtime-review) / [브랜치 정리](devlog.md#log-20261112-0249-refactor-cleanup)
+- final-plan S0 문서 정정·PR #32 main/a497bb1 통합과 기존Codex브랜치삭제완료. 현재codex/fix-chat-stream의7ec23c3에서S1최소보완·S2로컬집중검사완료. PR #33·main/6e808d7통합완료, head56d7f2f의원격CI4job성공. S3 EC2배포/실제전달은남았다. [검사·실패정정](devlog.md#log-20261115-s1-result) EC2문서pull/제품배포는미실행이다. [완료·착수](devlog.md#log-20261115-s1-start)
+- 후속 상세 계획은 사용자 요청으로 만든 [final-plan](final-plan.md)을 따른다. S0문서/Git 정합성→S1~S3팀원 스트리밍 보완·검사·통합/배포→S4추천질문 개선→S5남은 실제 사용자/관리자 확인 순서다. RAG/CSV/복구 보류는 자동 재개하지 않는다. 문서 작성 완료와 각 단계 실행 완료를 구분한다. [검토·계획 기록](devlog.md#log-20261115-final-plan)
+- 팀원 `claude/feat-chat-stream/c9abd74`는main/b82b391 위1커밋·17파일이며 미병합이다. 테스트 파일의 CI 선정 누락과 JSON status 순서에 따른 초안 노출 가능성은 수정/확인 대상이다. 새 코드의 CI/실제 전달 성공은 미확인이다. 배포 기록 `codex/deploy-refactor-main/0556f38`은원격push 완료·미병합이며 열린PR0개다.
+- 최신 main/b82b391 EC2 배포 완료. B11 원본·patch 복구와 해시 보존, 대상 소스118파일·실행 이미지·기동 pin 일치, backend/worker healthy·내부 readiness 200·공개 HTTPS health/capabilities 200을 확인했다. 기존 환경·인증·볼륨·모델/GPU·수집 ON을 유지하고 Ollama/edge는 미교체·미재기동이다. 실제 모델·Chrome·DB 복구·재부팅 시험은 미실측/보류를 유지한다. [배포 결과](devlog.md#log-20261112-0310-refactor-deployed)
+- 구조 리팩토링 8섹터의 코드/검토와 EC2 반영 완료. 1~7번 제품은 PR #23~#29로 main/0e54cd4 통합 완료, 각 PR의 CI4job 성공. 8번은 정적 대조 후 코드 유지로 완료했고 최종 기록 PR #30·정리 PR #31은main/b82b391까지 통합했다. 기존8개 브랜치는 로컬·원격 삭제 완료했다. 미완료 제품 구현은 없다. [전체 검토](devlog.md#log-20261112-0228-runtime-review) / [정리·배포 착수](devlog.md#log-20261112-0257-refactor-deploy)
 
-- Vercel 제품main/0e54cd4 production READY/운영alias 연결을 확인했다. EC2 소스는main/364cbb8+B안11파일 보존이며 서버 배포는 미진행이다. B안 겹침 보존·충돌/복구계획·운영이미지 대조 후 서버 반영 범위를 처리해야 한다. 실제Chrome/음성·모델품질·DB/운영종단과 이미지다운로드·worker/DB복구시험은 완료로 표시하지 않는다. [환경과 잔여](devlog.md#log-20261112-0228-runtime-review)
+- Vercel 제품main/0e54cd4 production READY/운영alias 연결을 확인했고 이번 EC2 배포와 구분한다. 실제Chrome/음성·모델품질·DB/운영종단과 이미지다운로드·worker/DB복구시험은 완료로 표시하지 않는다. [기존 환경과 잔여](devlog.md#log-20261112-0228-runtime-review)
 
 - 11/10 기능통합 기록: PR #20 뒤 기존 팀원 PR #19를 병합했고 당시 제품main은3c18f4f였다. 병합 전 head76f9c51의 자동 CI4job 성공과 확장 기대값2건의 실패·정정 이력을 보존한다. [당시 근거](devlog.md#log-20261110-1603-pr19-complete)
 - 11/10 당시 welfare7의 main3c18f4f production READY/운영alias 연결과 본계정 중복 연결 해제를 확인했다. 최신 리팩토링 배포 상태는 위 현재현황을 따른다. 배포 READY는 실제 웹/API 종단·음성 확인을 대신하지 않는다. [당시 배포 근거](devlog.md#log-20261110-1603-pr19-complete)

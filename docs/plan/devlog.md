@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:35 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:38 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1188,3 +1188,11 @@
 - 삭제 요청 뒤 fetch/원격heads/PR 조회로 main/b82b391·문서원격0556f38·로컬cf64785를 확인했다. 문서3커밋8a008bb/0556f38/cf64785는 전부main 미포함이고PR도없다. final-plan을포함한변경유실을막기위해브랜치를보존하고S0의통합내용을먼저준비했다. 강제삭제·main직접반영은없다.
 - 설계가현재문서브랜치에서README·architecture/admin/rag·DesktopREADME·refactor를정정했다. App.tsx의공개webchat/관리자3경로,QA의동의프로필최종생성·dense/BM25공통min_similarity,execution의gate3,확장7일TTL,credential파일우선검증을읽기대조했다. cutoff는현행rag설명이맞고README의하한없음설명을정정했다. 옛요약/인용숫자검증·확장관리자토큰/출처UI설명도현행계약에맞췄다.
 - 실제EC2반영은11월12일완료이므로refactor대기표기를완료일지로연결했다. Desktop의옛docs/log링크만현재인계로수정했고과거실행절차를재시험한것으로표시하지않았다. 제품·테스트·실제env·운영·DB·모델·상대브랜치는변경하지않았다. 다음은선별문서커밋·구체PR통합범위확인·main포함후승인된브랜치삭제이며S1제품작성권은아직배정하지않았다.
+
+<a id="log-20261115-s1-start"></a>
+## 2026-11-15 15:38 KST · 문서 PR 통합·브랜치 삭제와 S1 착수
+
+- 승인된 후속cf64785/74a7482를push하고문서4커밋PR #32를생성했다. head74a7482 고정·mergeable확인후PR경로로main/a497bb1b084fd5004d8b34b528508b9bb155809f에병합했다. 실제merged와로컬ff-only·4커밋포함을확인하고codex/deploy-refactor-main을로컬branch-d·원격delete로정리했다. 문서정적검토기준이며이번PR의신규CI완료를기다린것은아니다.
+- main/a497bb1에서codex/fix-chat-stream을만들고팀원원격claude/feat-chat-stream/c9abd74를merge해7f760ab098ca5a855a4051b9c8e879c1b169593f로준비했다. 충돌없음·제품17파일범위를확인했고상대브랜치/원격main은수정하지않았다. 설치확장재로드는하지않는다.
+- 기존캡스톤-개발연결에읽기검토를배정했다. wait_threads는도구내부오류로실패했으나list/read_thread로active와실제읽기명령을확인했다. 지원되지않는상태감시를진행중이라고표현하지않고필요시read_thread를최소사용한다. 설계문서작성/커밋후제품작성권을직렬인계한다.
+- S1의CI선정누락·JSON status순서·종료/취소검사공백을기존계약내최소수정하고S2직접영향검사만수행한다. 실제.env·모델/DB/EC2/Chrome·새제품push/PR/배포는이단계범위에없다. 결과/실패/검증은다음일지에기록한다.

@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:12 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:32 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1221,3 +1221,10 @@
 - c31d41d제품범위에진행기록56d7f2f를추가push한최종head56d7f2ffe647ed49375a66f6abf16ac14fd1b4e4의Actions43688624243을확인했다. web-extension·python backend/worker/dev4job전부success다. dev의scripts/ci_python.py tests실행성공과웹test/build·확장명시검사를확인했으며Vercelcommit status도success였다. 이는실제운영모델/Chrome/EC2성공을뜻하지않는다.
 - PR #33의head/mergeable을재확인하고expected_head_sha를고정해merge했다. 실제closed/merged와main/6e808d7ab59d3358ebf3fbe0d4bf71f7f51de617을확인했고현재기록브랜치를해당main으로ff-only맞췄다. 완료기록은같은기능후속문서로공유하고로컬main을ff-only동기화한다. 제품추가수정/테스트반복은없다.
 - S1보완·S2로컬/원격검사·PR통합완료, S3 EC2배포/기존HTTPS점진전달·실제모델·Chrome/음성·운영기록쓰기는미실행이다. EC2마지막확인소스는b82b391이고이번main과차이가난다. 팀원claude/feat-chat-stream은삭제하지않았다. RAG/CSV/복구보류유지.
+
+<a id="log-20261115-stream-deploy-start"></a>
+## 2026-11-15 16:32 KST · S3 EC2 배포·실제 스트리밍 확인 착수
+
+- 사용자의EC2기동/진행지시로캡스톤-개발에단일운영담당을배정했다. 최신main/c15fb9eac62d3264b9fdb562d1bf25d953df4dd0이며설계는기존codex/fix-chat-stream을해당main으로ff-only맞춰문서4개만작성한다. 개발의EC2운영과로컬checkout/index쓰기를분리한다.
+- b82b391..main의서버변경은execution.py/qa.py/신규stream.py/main.py/ollama.py와검사1파일뿐이다. Dockerfile/의존성/Compose변경없음을확인했고worker처리경로불변이면backend만교체하도록배정했다. 기존runtime/영속인증/수집ON·모델/GPU·B11백업·데이터와기동pin/복구이미지를보존한다.
+- 준비도확인뒤공개HTTPS /api/v1/chat/stream에기초연금신청대상합성질문1건을600초/재시도0으로요청해accepted/첫비어있지않은draft/final의시각·상태를기록한다. 기존모델을사용하고정상공개연락처기록경로를유지한다. 시험을위한설정OFF/임의DB행쓰기·삭제는없다. RAG정확도평가재개·새모델/pgvector다운로드·worker/DB복구·재부팅·Chrome/음성은제외한다. 배포/실제추론결과는아직미확정이다.

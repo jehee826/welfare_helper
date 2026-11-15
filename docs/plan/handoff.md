@@ -1,16 +1,15 @@
 # 현재 작업 인계
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:12 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:32 KST
 
 전체 계획/완료/잔여는 [merge_plan](merge_plan.md), 상세 진행·실패·검사는 [devlog](devlog.md)를 읽는다.
 
 ## 지금 상태
 
-- 문서 PR #32는 main/a497bb1로 병합됐고 codex/deploy-refactor-main은 로컬·원격 삭제 완료했다. 문서 정정 S0의 로컬/main 반영은 완료이며 EC2의 문서-only pull은 이번에 하지 않았다.
-- 현재 노트북 root는 C:/Users/jehee/vscode-workspace/welfare_helper, Git디렉터리는 .git, 작업 브랜치는 codex/fix-chat-stream이다. main/a497bb1에서 생성하고 팀원 claude/feat-chat-stream/c9abd74를 이력 보존 merge한 기준은7f760ab이다. 상대 원격 브랜치는 유지한다.
-- final-plan S1 최소 보완과 S2 로컬 집중검사를 완료했다. 개발이 작성권을 반환한 뒤 설계가4파일diff·원로그를검토해7ec23c3으로선별커밋했다. 제품은PR #33으로main/6e808d7에병합완료했다. 최종head56d7f2f의CI4job과Vercel상태success를확인했다. 현재codex/fix-chat-stream은완료기록공유용이며기록통합후로컬main으로복귀한다. EC2배포는아직없다. 설계가문서4개·리뷰·Git을맡는다. [결과](devlog.md#log-20261115-s1-result)
-- 기존 NDJSON accepted/draft/final/error·final-only 저장/기록 계약과 main의 공개/관리자·프로필/문서버전·취소/gate를 유지한다. 새 서버 검사의 CI 선정, JSON status 순서, 스트림 종료 경계가 우선 범위다. 실제 모델/DB/EC2·Chrome·운영 배포는 이번 단계에서 실행하지 않는다.
-- 상세 작업·완료 기준은 [final-plan](final-plan.md), 실제 진행은 [S0 완료·S1 착수](devlog.md#log-20261115-s1-start)를 따른다.
+- PR #33 제품·PR #34 완료 기록은 main/c15fb9e에 통합됐고 노트북 main도 동기화했다. 현재 final-plan S3의 EC2 배포와 실제 HTTPS 점진 전달 확인을 진행한다.
+- 단일 EC2 운영 담당은 연결된 캡스톤-개발이다. 설계는 노트북 C:/Users/jehee/vscode-workspace/welfare_helper의 codex/fix-chat-stream을 main/c15fb9e로ff-only맞춰 문서4개만 작성한다. 개발은로컬checkout/Git/index/문서를수정하지않는다.
+- 배포기준 c15fb9e, 기존EC2확인기준b82b391이다. API/chat경로에만 변경이 있어worker처리경로불변이면backend만교체한다. 기존모델·GPU·runtime·인증·수집ON·데이터·Caddy/Ollama·B11백업과rollback수단을보존한다.
+- 준비도 확인 뒤 민감정보 없는 합성 공개질문1건·600초상한·재시도0으로 accepted/첫draft/final 시각을 확인한다. 실제RAG정확도평가/Chrome/음성·DB복구/새다운로드/재부팅은실행하지않는다. [착수 기록](devlog.md#log-20261115-stream-deploy-start)
 
 ## 구현·배포 기준과 보존할 변경
 

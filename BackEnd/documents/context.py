@@ -9,13 +9,13 @@ from pydantic_core import PydanticCustomError
 
 from BackEnd.core.execution import checkpoint, ExecutionTimeoutError, ExecutionCancelledError, GenerationStopped
 from BackEnd.core.privacy import sensitive_input
+from BackEnd.documents.stream import member_value
 from BackEnd.rag.chat import HOUSEHOLD_LABELS, INCOME_LABELS
 
 
 MESSAGE_ID = r"^[A-F0-9]{20}:(?:user|assistant)$"
 PREPARE_OUTPUT = 512
 ASSISTANT_CONTEXT_CHARS = 400
-INDEPENDENT_START = re.compile(r'\s*\{\s*"relation"\s*:\s*"independent"')
 UNSAFE = re.compile(r"<[^>]*>|\bBearer\s+\S+|(?:password|비밀번호|api[_ -]?key|access[_ -]?token)\s*[:=：]\s*\S+", re.I)
 
 
@@ -218,12 +218,17 @@ def prepare_context(llm, query, profile, history, context, capacity, output, *, 
                         schema["properties"][key]["items"]["enum"] = [item["id"] for item in values]
                     else:
                         schema["properties"][key]["maxItems"] = 0
-                streamed = []
+                streamed, decided = [], []
 
                 def settle(piece):
                     streamed.append(piece)
-                    if INDEPENDENT_START.match("".join(streamed)):
-                        raise GenerationStopped()
+                    if decided:
+                        return
+                    found, relation = member_value("".join(streamed), "relation")
+                    if found:
+                        decided.append(relation)
+                        if relation == "independent":
+                            raise GenerationStopped()
 
                 try:
                     raw = llm.chat(PREPARE_SYSTEM, prompt, schema=schema, on_content=settle, num_predict=PREPARE_OUTPUT)

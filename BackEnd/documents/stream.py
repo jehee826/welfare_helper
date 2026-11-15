@@ -49,6 +49,17 @@ def _member_start(raw: str, name: str) -> int | None:
     return None
 
 
+def member_value(raw: str, name: str) -> tuple[bool, object]:
+    """최상위 키의 값이 완성됐을 때만 (True, 값)을 돌려준다. 키가 없거나 값이 미완성이면 (False, None)이다."""
+    start = _member_start(raw, name)
+    if start is None:
+        return False, None
+    try:
+        return True, json.JSONDecoder().raw_decode(raw, start)[0]
+    except ValueError:
+        return False, None
+
+
 def partial_text(raw: str) -> tuple[str | None, bool]:
     """완성된 JSON 문자열 조각까지만 해독한다. 끝이 잘린 escape는 다음 조각을 기다린다."""
     start = _member_start(raw, "text")

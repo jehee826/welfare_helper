@@ -562,3 +562,17 @@ def test_followup_preparation_reads_whole_answer_and_trims_long_assistant_turns(
     assert search == "기초연금 신청 서류" and "preparation_stopped_early" not in trace
     assistant = [m["content"] for m in llm.calls[0]["payload"]["dialogue"] if m["role"] == "assistant"]
     assert assistant == ["가" * 400 + "…"]
+
+
+@pytest.mark.parametrize("pieces, stopped", [
+    (['{"search_query":"\\"relation\\":\\"independent\\"",', '"relation":"followup","source_ids":[],',
+      '"document_ids":[],"needs_clarification":false}'], False),
+    (['{"needs_clarification":false,"relation":"indep', 'endent"', ',"search_query":"재작성","source_ids":[],"document_ids":[]}'], True),
+])
+def test_early_stop_reads_only_complete_top_level_relation(pieces, stopped):
+    history = [{"role": "user", "content": "기초연금 신청처"}, {"role": "assistant", "content": "주민센터입니다."}]
+    llm = StreamingPreparer(pieces)
+    _, _, _, trace = prepare_context(llm, "현재 질문", None, history, None, 16384, 512)
+    assert trace.get("preparation_stopped_early", False) is stopped
+    assert len(llm.sent) == (2 if stopped else len(pieces))
+    assert trace["topic_relation"] == ("independent" if stopped else "followup")

@@ -1,5 +1,8 @@
 import json
 import os
+import socket
+import threading
+import time
 from types import SimpleNamespace
 
 import httpx
@@ -10,6 +13,9 @@ from BackEnd.core import chat_rate, execution
 from BackEnd.core.settings import Settings
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.stream import DraftStream, partial_text, stable_draft
+from BackEnd.tests.test_chat_http_recovery import (  # noqa: F401
+    server, assert_available_slots, assert_no_disconnect_watcher,
+)
 
 
 def test_partial_text_decodes_only_complete_escapes():
@@ -38,6 +44,55 @@ def test_draft_stream_throttles_and_skips_out_of_scope():
     out = DraftStream(blocked.append)
     out.feed('{"status":"out_of_scope","text":"범위 밖 내용"')
     assert blocked == []
+
+
+@pytest.mark.parametrize('status', ['answer', 'clarify', 'no_evidence', 'out_of_scope', 'unknown'])
+def test_text_first_waits_for_complete_top_level_status(status):
+    sent = []
+    stream = DraftStream(sent.append, interval=0)
+    stream.feed('{"text":"먼저 생성된 초안", "status":"')
+    assert sent == []
+    stream.feed(status)
+    assert sent == []
+    stream.feed('"}')
+    assert sent == (['먼저 생성된 초안'] if status in {'answer', 'clarify', 'no_evidence'} else [])
+
+
+@pytest.mark.parametrize('prefix', [
+    '{"text":"인용 \\"status\\":\\"answer\\"",',
+    '{"nested":{"status":"answer","text":"중첩 초안"},"text":"현재 초안",',
+    '{"source_ids":["status",{"status":"answer"}],"text":"현재 초안",',
+])
+def test_quoted_or_nested_status_cannot_allow_an_out_of_scope_draft(prefix):
+    sent = []
+    stream = DraftStream(sent.append, interval=0)
+    stream.feed(prefix)
+    assert sent == []
+    stream.feed('"status":"out_of_')
+    assert sent == []
+    stream.feed('scope"}')
+    assert sent == []
+
+
+def test_text_member_ignores_nested_and_quoted_keys():
+    raw = json.dumps({'nested': {'text': '숨긴 초안'}, 'source_ids': ['"text":"가짜"'],
+                      'text': '실제 초안'}, ensure_ascii=False)
+    assert partial_text(raw) == ('실제 초안', True)
+    sent = []
+    stream = DraftStream(sent.append, interval=0)
+    stream.feed('{"status":"answer","text":"인용 \\"status\\":\\"out_of_scope\\""}')
+    assert sent == ['인용 "status":"out_of_scope"']
+
+
+@pytest.mark.parametrize('text', ['본인 연락처 010-1234-5678 입니다',
+                                 '주민번호 900101-1234567 입니다', '계좌번호 123456789 입니다'])
+def test_stream_masks_private_numbers_across_character_and_unicode_escape_boundaries(text):
+    sent = []
+    stream = DraftStream(sent.append, interval=0)
+    for char in json.dumps({'status': 'answer', 'text': text}, ensure_ascii=True):
+        stream.feed(char)
+    assert sent and '[개인정보 가림]' in sent[-1]
+    assert all(not any(char.isdigit() for char in draft) for draft in sent)
 
 
 def test_ollama_chat_reports_stream_pieces(monkeypatch):
@@ -88,7 +143,7 @@ def api(monkeypatch):
         return answer, {}
     monkeypatch.setattr(main, "answer_document", qa)
     with TestClient(main.app) as client:
-        yield SimpleNamespace(client=client, calls=calls)
+        yield SimpleNamespace(client=client, calls=calls, settings=settings)
 
 
 def events(response):
@@ -129,3 +184,132 @@ def test_stream_rejects_busy_and_invalid_requests_before_streaming(api):
     assert busy.status_code == 429 and busy.headers["retry-after"] == "1"
     invalid = api.client.post("/api/v1/chat/stream", json={"query": "주민번호 900101-1234567"})
     assert invalid.status_code == 422 and invalid.json() == {"detail": "sensitive_input"}
+
+
+def test_stream_records_contacts_once_only_for_the_final_answer(api, monkeypatch):
+    from BackEnd import main
+    api.settings.referral_records_enabled = True
+    contact = {'label': '합성 부서', 'phone': '02-123-4567', 'source_url': 'https://example.go.kr/contact'}
+    recorded = []
+    monkeypatch.setattr(main, 'record_public', lambda identifier, contacts: recorded.append((identifier, contacts)))
+
+    def qa(*args, **options):
+        assert options['select_contacts'] is True
+        options['on_draft']('초안')
+        options['on_draft']('초안 계속')
+        assert recorded == []
+        return {'kind': 'answer', 'text': '최종 안내', 'contacts': [contact]}, {'selected_contacts': [contact]}
+
+    monkeypatch.setattr(main, 'answer_document', qa)
+    with api.client.stream('POST', '/api/v1/chat/stream', json={'query': '합성 문의'}) as response:
+        received = events(response)
+    assert [item['type'] for item in received] == ['accepted', 'draft', 'draft', 'final']
+    assert len(recorded) == 1 and recorded[0][1] == [contact]
+
+
+def _stream_socket(server, *, timeout_seconds=None):
+    sock = socket.create_connection(('127.0.0.1', server.port), timeout=3)
+    payload = {'query': '합성 질문'}
+    if timeout_seconds is not None:
+        payload['timeout_seconds'] = timeout_seconds
+    data = json.dumps(payload).encode()
+    sock.sendall(b'POST /api/v1/chat/stream HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '
+                 + str(len(data)).encode() + b'\r\n\r\n' + data)
+    return sock
+
+
+def test_disconnect_before_acceptance_does_not_enter_qa_or_leak_slots(server, monkeypatch):
+    from BackEnd import main
+    original = main._answer_chat
+    finished, disconnected = threading.Event(), []
+
+    def delayed(*args, **kwargs):
+        disconnected.append(args[1].scope['state']['inference_disconnected'])
+        server.entered.set()
+        try:
+            assert server.release.wait(3)
+            return original(*args, **kwargs)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(main, '_answer_chat', delayed)
+    sock = _stream_socket(server)
+    peer = sock.getsockname()[1]
+    try:
+        assert server.entered.wait(3)
+        sock.close()
+        assert disconnected[0].wait(3)
+        assert_available_slots(3)
+    finally:
+        sock.close()
+        server.release.set()
+    assert finished.wait(3) and server.completed[peer].wait(3)
+    assert server.calls == [] and 200 not in server.statuses[peer]
+    assert_available_slots(3)
+    assert_no_disconnect_watcher(server)
+
+
+@pytest.mark.parametrize('phase', ['draft', 'before_final', 'deadline'])
+def test_stream_cancellation_keeps_slot_until_worker_exits_and_never_records(server, monkeypatch, phase):
+    from BackEnd import main
+    server.settings.referral_records_enabled = True
+    original, redact, line = main._answer_chat, main.redact_document, main._stream_line
+    finished, encoded, recorded, budgets = threading.Event(), [], [], []
+    contact = {'label': '합성 부서', 'phone': '02-123-4567', 'source_url': 'https://example.go.kr/contact'}
+
+    def block():
+        server.entered.set()
+        while not server.release.wait(.01):
+            if budgets[0].cancelled.is_set():
+                server.cancelled.set()
+
+    def qa(*args, **options):
+        budgets.append(execution.current_budget())
+        options['on_draft']('합성 초안')
+        if phase != 'before_final':
+            block()
+            options['on_draft']('취소 뒤 늦은 초안')
+        return {'kind': 'answer', 'text': '최종 안내', 'contacts': [contact]}, {'selected_contacts': [contact]}
+
+    def before_final(response):
+        if phase == 'before_final':
+            block()
+        return redact(response)
+
+    def observe(*args, **kwargs):
+        try:
+            return original(*args, **kwargs)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(main, 'answer_document', qa)
+    monkeypatch.setattr(main, 'redact_document', before_final)
+    monkeypatch.setattr(main, '_answer_chat', observe)
+    monkeypatch.setattr(main, '_stream_line', lambda event: (encoded.append(event), line(event))[1])
+    monkeypatch.setattr(main, 'record_public', lambda *args: recorded.append(args))
+    sock = _stream_socket(server, timeout_seconds=1 if phase == 'deadline' else None)
+    peer = sock.getsockname()[1]
+    try:
+        assert server.entered.wait(3)
+        data = b''
+        while b'"type": "draft"' not in data:
+            data += sock.recv(8192)
+        if phase == 'deadline':
+            time.sleep(1.15)
+        else:
+            sock.close()
+            assert server.cancelled.wait(3)
+        assert_available_slots(2)
+        assert not finished.is_set()
+    finally:
+        server.release.set()
+    try:
+        assert finished.wait(3) and server.completed[peer].wait(3)
+        assert recorded == [] and not any(event['type'] == 'final' for event in encoded)
+        assert not any(event.get('text') == '취소 뒤 늦은 초안' for event in encoded)
+        if phase == 'deadline':
+            assert encoded[-1]['type'] == 'error' and encoded[-1]['status'] == 504
+        assert_available_slots(3)
+        assert_no_disconnect_watcher(server)
+    finally:
+        sock.close()

@@ -76,3 +76,74 @@ def test_real_korean_reranker_orders_relevant_service_and_rejects_unrelated_quer
     assert scores[0] == max(scores)
     assert scores[0] >= settings.min_rerank_score
     assert max(reranker.score("우주여행 항공권과 반려동물 미용 예약", passages)) < settings.min_rerank_score
+
+
+class _Encoded:
+    def __init__(self, ids):
+        self.ids, self.attention_mask, self.type_ids = ids, [1] * len(ids), [0] * len(ids)
+
+
+class _Tokenizer:
+    def encode(self, first, second=None, add_special_tokens=True):
+        size = len(first.split()) + (len((second or "").split()) if second is not None else 0)
+        return _Encoded(list(range(size + (2 if add_special_tokens else 0))))
+
+
+class _Session:
+    def __init__(self, fail_on=None):
+        import threading
+
+        self.fail_on, self.threads, self.lock = fail_on, set(), threading.Lock()
+
+    def get_inputs(self):
+        from types import SimpleNamespace
+
+        return [SimpleNamespace(name=name) for name in ("input_ids", "attention_mask", "token_type_ids")]
+
+    def run(self, _outputs, inputs):
+        import threading
+
+        import numpy as np
+
+        with self.lock:
+            self.threads.add(threading.get_ident())
+        assert inputs["input_ids"].shape[0] == 1
+        size = inputs["input_ids"].shape[1]
+        if size == self.fail_on:
+            raise RuntimeError("실패")
+        return [np.asarray([[size / 10 - 2]], dtype=np.float32)]
+
+
+def _fake(threads, session):
+    reranker = LocalReranker("model", "revision", "cache", threads=threads)
+    reranker._session, reranker._tokenizer, reranker._count_tokenizer = session, _Tokenizer(), _Tokenizer()
+    return reranker
+
+
+def test_parallel_pairs_keep_sequential_scores_and_order():
+    passages = ["가 " * 5, "가 " * 30, "가 " * 12, "가"]
+    sequential = _fake(1, _Session()).score_with_diagnostics("질문 하나", passages)
+    session = _Session()
+    parallel = _fake(4, session).score_with_diagnostics("질문 하나", passages)
+    assert parallel == sequential
+    assert sequential[0].index(max(sequential[0])) == 1
+
+
+def test_parallel_pair_failure_becomes_reranker_error():
+    with pytest.raises(RerankerError):
+        _fake(4, _Session(fail_on=16)).score("질문 하나", ["가 " * 5, "가 " * 12])
+
+
+def test_parallel_pairs_keep_request_deadline(monkeypatch):
+    from BackEnd.core import execution
+
+    calls = []
+
+    def expired():
+        calls.append(True)
+        if len(calls) > 3:
+            raise execution.ExecutionTimeoutError("시간 초과")
+
+    monkeypatch.setattr("BackEnd.rag.reranker.checkpoint", expired)
+    with pytest.raises(execution.ExecutionTimeoutError):
+        _fake(4, _Session()).score("질문 하나", ["가 " * 5, "가 " * 12, "가 " * 8])

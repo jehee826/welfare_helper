@@ -197,18 +197,21 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             rerank_started = time.monotonic()
             passages = [f"문서: {c.document_name}\n{c.heading_context}\n{c.text}" for c in candidates]
             try:
-                scores = service.reranker.score(search_query, passages)
+                if hasattr(service.reranker, "score_with_diagnostics"):
+                    scores, windows = service.reranker.score_with_diagnostics(search_query, passages)
+                else:
+                    scores, windows = service.reranker.score(search_query, passages), [{} for _ in passages]
                 checkpoint()
-                if len(scores) != len(candidates) or any(not math.isfinite(score) for score in scores):
+                if len(scores) != len(candidates) or len(windows) != len(candidates)                         or any(not math.isfinite(score) for score in scores):
                     raise ValueError("리랭커 응답 형식이 올바르지 않습니다.")
             except (ExecutionTimeoutError, ExecutionCancelledError):
                 raise
             except Exception:
                 raise DocumentError("document_reranker_failed") from None
-            ordered = sorted(zip(candidates, scores), key=lambda row: -row[1])
-            selected = [chunk for chunk, _ in ordered[:service.core_k]]
-            trace["rerank"] = [{"chunk_id": c.chunk_id, "score": score, "selected": i < service.core_k}
-                               for i, (c, score) in enumerate(ordered)]
+            ordered = sorted(zip(candidates, scores, windows), key=lambda row: -row[1])
+            selected = [chunk for chunk, _, _ in ordered[:service.core_k]]
+            trace["rerank"] = [{"chunk_id": c.chunk_id, "score": score, "selected": i < service.core_k, **window}
+                               for i, (c, score, window) in enumerate(ordered)]
             trace["timings_ms"]["rerank"] = round((time.monotonic() - rerank_started) * 1000, 2)
             core_ids = {chunk.chunk_id for chunk in selected}
             selected = complete_sources(snapshot, selected, query+' '+conversation['search_intent'])

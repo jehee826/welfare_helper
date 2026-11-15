@@ -29,7 +29,7 @@ def context(*, batch=True, previous=False):
 class SourceSelector:
     def __init__(self, choose): self.choose=choose;self.calls=[]
     def input_cost(self,system,user): return len((system+user).encode())+256
-    def chat(self,system,user,*,schema):
+    def chat(self,system,user,*,schema,**_options):
         payload=json.loads(user);self.calls.append((payload,schema));result=self.choose(payload)
         if isinstance(result,dict) and 'search_query' not in result:
             result={'search_query':payload['current_question'],**result}
@@ -523,3 +523,56 @@ def test_bad_context_is_rejected_before_qa_and_without_echo(api, change):
     assert response.status_code == 422 and response.json()["detail"] in {"invalid_document_request","sensitive_input"}
     api.rag.assert_not_called()
     assert "private" not in response.text and "010-1234" not in response.text
+
+
+class StreamingPreparer:
+    def __init__(self, pieces):
+        self.pieces, self.calls, self.sent = pieces, [], []
+
+    def input_cost(self, system, user):
+        return len((system + user).encode()) + 256
+
+    def chat(self, system, user, *, schema, on_content=None, num_predict=None):
+        self.calls.append({"payload": json.loads(user), "num_predict": num_predict})
+        for piece in self.pieces:
+            self.sent.append(piece)
+            on_content(piece)
+        return json.loads("".join(self.pieces))
+
+
+def test_independent_relation_stops_preparation_early():
+    history = [{"role": "user", "content": "기초연금 신청처"}, {"role": "assistant", "content": "주민센터입니다."}]
+    llm = StreamingPreparer(['{"relation":', '"independent"', ',"search_query":"옛 주제 재작성"', ',"source_ids":[]',
+                             ',"document_ids":[],"needs_clarification":false}'])
+    search, result, _, trace = prepare_context(llm, "아동수당 금액", None, history, None, 16384, 512)
+    assert llm.sent == ['{"relation":', '"independent"']
+    assert search == "아동수당 금액" and result["search_intent"] == "아동수당 금액"
+    assert trace["preparation"] == "used" and trace["topic_relation"] == "independent"
+    assert trace["preparation_stopped_early"] is True and llm.calls[0]["num_predict"] == 512
+
+
+def test_followup_preparation_reads_whole_answer_and_trims_long_assistant_turns():
+    long_answer = "가" * 1000
+    history = [{"role": "user", "content": "기초연금 신청처"}, {"role": "assistant", "content": long_answer}]
+    answer = {"relation": "followup", "search_query": "기초연금 신청 서류", "source_ids": [], "document_ids": [],
+              "needs_clarification": False}
+    text = json.dumps(answer, ensure_ascii=False)
+    llm = StreamingPreparer([text[:15], text[15:]])
+    search, _, _, trace = prepare_context(llm, "서류는요?", None, history, None, 16384, 512)
+    assert search == "기초연금 신청 서류" and "preparation_stopped_early" not in trace
+    assistant = [m["content"] for m in llm.calls[0]["payload"]["dialogue"] if m["role"] == "assistant"]
+    assert assistant == ["가" * 400 + "…"]
+
+
+@pytest.mark.parametrize("pieces, stopped", [
+    (['{"search_query":"\\"relation\\":\\"independent\\"",', '"relation":"followup","source_ids":[],',
+      '"document_ids":[],"needs_clarification":false}'], False),
+    (['{"needs_clarification":false,"relation":"indep', 'endent"', ',"search_query":"재작성","source_ids":[],"document_ids":[]}'], True),
+])
+def test_early_stop_reads_only_complete_top_level_relation(pieces, stopped):
+    history = [{"role": "user", "content": "기초연금 신청처"}, {"role": "assistant", "content": "주민센터입니다."}]
+    llm = StreamingPreparer(pieces)
+    _, _, _, trace = prepare_context(llm, "현재 질문", None, history, None, 16384, 512)
+    assert trace.get("preparation_stopped_early", False) is stopped
+    assert len(llm.sent) == (2 if stopped else len(pieces))
+    assert trace["topic_relation"] == ("independent" if stopped else "followup")

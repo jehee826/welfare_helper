@@ -7,12 +7,15 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
-from BackEnd.core.execution import checkpoint, ExecutionTimeoutError, ExecutionCancelledError
+from BackEnd.core.execution import checkpoint, ExecutionTimeoutError, ExecutionCancelledError, GenerationStopped
 from BackEnd.core.privacy import sensitive_input
+from BackEnd.documents.stream import member_value
 from BackEnd.rag.chat import HOUSEHOLD_LABELS, INCOME_LABELS
 
 
 MESSAGE_ID = r"^[A-F0-9]{20}:(?:user|assistant)$"
+PREPARE_OUTPUT = 512
+ASSISTANT_CONTEXT_CHARS = 400
 UNSAFE = re.compile(r"<[^>]*>|\bBearer\s+\S+|(?:password|비밀번호|api[_ -]?key|access[_ -]?token)\s*[:=：]\s*\S+", re.I)
 
 
@@ -174,6 +177,8 @@ def prepare_context(llm, query, profile, history, context, capacity, output, *, 
             content = safe_context_text(message["content"])
             if message["role"] not in {"user", "assistant"} or not content.strip():
                 raise ValueError("대화 역할과 원문을 확인하지 못했습니다.")
+            if message["role"] == "assistant" and len(content) > ASSISTANT_CONTEXT_CHARS:
+                content = content[:ASSISTANT_CONTEXT_CHARS] + "…"
             dialogue.append({"role": message["role"], "content": content})
         except ValueError:
             trace["context_omitted"] = True
@@ -213,7 +218,25 @@ def prepare_context(llm, query, profile, history, context, capacity, output, *, 
                         schema["properties"][key]["items"]["enum"] = [item["id"] for item in values]
                     else:
                         schema["properties"][key]["maxItems"] = 0
-                raw = llm.chat(PREPARE_SYSTEM, prompt, schema=schema)
+                streamed, decided = [], []
+
+                def settle(piece):
+                    streamed.append(piece)
+                    if decided:
+                        return
+                    found, relation = member_value("".join(streamed), "relation")
+                    if found:
+                        decided.append(relation)
+                        if relation == "independent":
+                            raise GenerationStopped()
+
+                try:
+                    raw = llm.chat(PREPARE_SYSTEM, prompt, schema=schema, on_content=settle, num_predict=PREPARE_OUTPUT)
+                except GenerationStopped:
+                    # independent는 나머지 필드를 쓰지 않으므로 관계가 확정되면 생성을 멈춘다.
+                    raw = {"relation": "independent", "search_query": query, "source_ids": [], "document_ids": [],
+                           "needs_clarification": False}
+                    trace["preparation_stopped_early"] = True
                 checkpoint()
                 if not isinstance(raw, dict) or len(json.dumps(raw, ensure_ascii=False)) > 10000:
                     raise ValueError("준비 응답 한도 초과")

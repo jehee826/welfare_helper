@@ -57,7 +57,7 @@ def main():
         "test_admin_password_rotation.py", "test_admin_auth_runtime.py", "test_admin_peer_limit.py",
         "test_admin_referrals.py", "test_admin_referrals_db.py",
         "test_admin_programs.py", "test_document_bm25_cache.py", "test_document_rag_diagnostics.py",
-        "test_conversation_summary.py",
+        "test_conversation_summary.py", "test_chat_stream.py",
         "test_profile_context.py",
     ]
     raise SystemExit(pytest.main(["-q", *["BackEnd/tests/" + name for name in files]]))

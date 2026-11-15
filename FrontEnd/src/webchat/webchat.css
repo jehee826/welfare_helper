@@ -255,6 +255,10 @@
   font-weight: 700;
 }
 
+.wc-draft {
+  margin-top: var(--space-2);
+}
+
 .wc-elapsed {
   font-size: 0.9em;
   font-variant-numeric: tabular-nums;

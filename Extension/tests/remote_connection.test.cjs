@@ -38,7 +38,7 @@ test('원격 공개 질문은 연결 JSON·화면 토큰 없이 같은 서버에
   const context={text:'합성 상담 요약',coveredThroughMessageId:'B'.repeat(20)+':assistant',profileRevision:1,batch:[],omitted:false};
   const payload={query:'합성 후속 질문',profile:{age:70},history:[{role:'user',content:'이전 질문'},{role:'assistant',content:'이전 답변'}],conversation_context:context};
   const f=offscreen();await f.run({payload,profileRevision:1});assert.equal(f.sent[0].type,'result');assert.equal(f.calls.length,1);
-  const {url,options}=f.calls[0];assert.equal(url,origin+'/api/v1/chat');assert.equal(options.headers.Authorization,undefined);assert.equal(options.credentials,'omit');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');
+  const {url,options}=f.calls[0];assert.equal(url,origin+'/api/v1/chat/stream');assert.equal(options.headers.Authorization,undefined);assert.equal(options.credentials,'omit');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');
   const body=JSON.parse(options.body);assert.equal(Object.hasOwn(payload,'profile'),true);assert.equal(Object.hasOwn(body,'profile'),false);assert.deepEqual(body.history,payload.history);assert.deepEqual(body.conversation_context,context);assert.ok(body.timeout_seconds>0&&body.timeout_seconds<=600);assert.ok(!f.messages.some(message=>message.type==='gyeote:connection'));
 });
 

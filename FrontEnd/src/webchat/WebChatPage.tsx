@@ -20,7 +20,7 @@ import "./webchat.css";
 
 type Phase =
   | { kind: "idle" }
-  | { kind: "loading"; question: string; stage: "check" | "answer" }
+  | { kind: "loading"; question: string; stage: "check" | "answer"; preview?: string }
   | { kind: "done"; question: string; response: ChatResponse }
   | { kind: "error"; question: string; code: ApiErrorCode }
   | { kind: "canceled"; question: string };
@@ -166,7 +166,10 @@ export function WebChatPage({ baseUrl = apiBase() }: { baseUrl?: string | null }
       if (active.current?.id !== id) return;
       setReferral(enabled ? "enabled" : "disabled");
       setPhase({ kind: "loading", question: query, stage: "answer" });
-      const response = await postChat(baseUrl, query, controller.signal);
+      const response = await postChat(baseUrl, query, controller.signal, (text) => {
+        if (active.current?.id !== id) return;
+        setPhase((current) => (current.kind === "loading" ? { ...current, preview: text } : current));
+      });
       if (active.current?.id !== id) return;
       releaseActive();
       setPhase({ kind: "done", question: query, response });
@@ -293,9 +296,16 @@ export function WebChatPage({ baseUrl = apiBase() }: { baseUrl?: string | null }
             <div className="wc-panel">
               <Asked question={phase.question} />
               <div role="status" className="wc-loading">
-                <p className="wc-loading-title">{phase.stage === "check" ? "연결을 확인하고 있습니다." : "답변을 준비하고 있습니다."}</p>
-                <p>몇 분 걸릴 수 있습니다. 기다리는 동안 '요청 취소'를 누를 수 있습니다.</p>
+                <p className="wc-loading-title">
+                  {phase.stage === "check" ? "연결을 확인하고 있습니다." : phase.preview ? "답변을 작성하고 있습니다." : "답변을 준비하고 있습니다."}
+                </p>
+                {phase.preview ? null : <p>몇 분 걸릴 수 있습니다. 기다리는 동안 '요청 취소'를 누를 수 있습니다.</p>}
               </div>
+              {phase.preview ? (
+                <div className="wc-answer-text wc-draft" aria-live="off" aria-busy="true" data-testid="wc-draft">
+                  {phase.preview}
+                </div>
+              ) : null}
               <p className="wc-elapsed" aria-hidden="true">
                 {elapsed}초 지남
               </p>

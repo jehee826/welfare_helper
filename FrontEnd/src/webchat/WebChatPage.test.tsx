@@ -36,7 +36,7 @@ function installFetch(chat: Reply[], capability: Reply | Reply[] = { status: 200
 }
 
 function chatCalls(fetchMock: ReturnType<typeof installFetch>) {
-  return fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/api/v1/chat"));
+  return fetchMock.mock.calls.filter(([url]) => /\/api\/v1\/chat(\/stream)?$/.test(String(url)));
 }
 
 const answer = (text: string, extra: Record<string, unknown> = {}) => ({ status: 200, body: { kind: "answer", text, ...extra } });
@@ -327,5 +327,53 @@ describe("저장하지 않음", () => {
     await waitFor(() => expect(next).toHaveBeenCalledTimes(1));
     expect(screen.queryByText("답")).not.toBeInTheDocument();
     expect(screen.getByLabelText("질문")).toHaveValue("");
+  });
+});
+
+describe("답변 스트리밍", () => {
+  function ndjson(lines: string[], gate?: Promise<void>) {
+    const encoder = new TextEncoder();
+    return new Response(new ReadableStream({
+      async start(controller) {
+        controller.enqueue(encoder.encode(lines[0]));
+        await gate;
+        for (const line of lines.slice(1)) controller.enqueue(encoder.encode(line));
+        controller.close();
+      },
+    }), { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
+  }
+
+  it("초안을 먼저 보여 주고 검증된 최종 답변으로 대체한다", async () => {
+    const gate = deferred<void>();
+    const fetchMock = installFetch([() => Promise.resolve(ndjson([
+      '{"type":"accepted"}\n{"type":"draft","text":"기초연금은 "}\n{"type":"draft","append":"만 65세"}\n',
+      '{"type":"final","response":{"kind":"answer","text":"최종 검증 답변","contacts":[]}}\n',
+    ], gate.promise))]);
+    const user = userEvent.setup();
+    render(<WebChatPage baseUrl={BASE} />);
+    await ask(user, "기초연금");
+    expect(await screen.findByTestId("wc-draft")).toHaveTextContent("기초연금은 만 65세");
+    expect(screen.getByText("답변을 작성하고 있습니다.")).toBeInTheDocument();
+    gate.resolve();
+    await screen.findByText("최종 검증 답변");
+    expect(screen.queryByTestId("wc-draft")).not.toBeInTheDocument();
+    expect(String(chatCalls(fetchMock)[0][0])).toBe(`${BASE}/api/v1/chat/stream`);
+  });
+
+  it("스트림 error 이벤트는 기존 오류 문구로 보여 준다", async () => {
+    installFetch([() => Promise.resolve(ndjson(['{"type":"accepted"}\n{"type":"error","status":503,"detail":"document_generation_failed"}\n']))]);
+    const user = userEvent.setup();
+    render(<WebChatPage baseUrl={BASE} />);
+    await ask(user, "기초연금");
+    expect(await screen.findByText(/서버에서 답변을 만들지 못했습니다/)).toBeInTheDocument();
+  });
+
+  it("스트림 경로가 없는 서버는 기존 경로로 한 번 다시 요청한다", async () => {
+    const fetchMock = installFetch([{ status: 404, body: { detail: "Not Found" } }, answer("기존 경로 답변")]);
+    const user = userEvent.setup();
+    render(<WebChatPage baseUrl={BASE} />);
+    await ask(user, "기초연금");
+    await screen.findByText("기존 경로 답변");
+    expect(chatCalls(fetchMock).map(([url]) => String(url))).toEqual([`${BASE}/api/v1/chat/stream`, `${BASE}/api/v1/chat`]);
   });
 });

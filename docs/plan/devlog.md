@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-15 15:35 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-15 16:09 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1188,3 +1188,29 @@
 - 삭제 요청 뒤 fetch/원격heads/PR 조회로 main/b82b391·문서원격0556f38·로컬cf64785를 확인했다. 문서3커밋8a008bb/0556f38/cf64785는 전부main 미포함이고PR도없다. final-plan을포함한변경유실을막기위해브랜치를보존하고S0의통합내용을먼저준비했다. 강제삭제·main직접반영은없다.
 - 설계가현재문서브랜치에서README·architecture/admin/rag·DesktopREADME·refactor를정정했다. App.tsx의공개webchat/관리자3경로,QA의동의프로필최종생성·dense/BM25공통min_similarity,execution의gate3,확장7일TTL,credential파일우선검증을읽기대조했다. cutoff는현행rag설명이맞고README의하한없음설명을정정했다. 옛요약/인용숫자검증·확장관리자토큰/출처UI설명도현행계약에맞췄다.
 - 실제EC2반영은11월12일완료이므로refactor대기표기를완료일지로연결했다. Desktop의옛docs/log링크만현재인계로수정했고과거실행절차를재시험한것으로표시하지않았다. 제품·테스트·실제env·운영·DB·모델·상대브랜치는변경하지않았다. 다음은선별문서커밋·구체PR통합범위확인·main포함후승인된브랜치삭제이며S1제품작성권은아직배정하지않았다.
+
+<a id="log-20261115-s1-start"></a>
+## 2026-11-15 15:38 KST · 문서 PR 통합·브랜치 삭제와 S1 착수
+
+- 승인된 후속cf64785/74a7482를push하고문서4커밋PR #32를생성했다. head74a7482 고정·mergeable확인후PR경로로main/a497bb1b084fd5004d8b34b528508b9bb155809f에병합했다. 실제merged와로컬ff-only·4커밋포함을확인하고codex/deploy-refactor-main을로컬branch-d·원격delete로정리했다. 문서정적검토기준이며이번PR의신규CI완료를기다린것은아니다.
+- main/a497bb1에서codex/fix-chat-stream을만들고팀원원격claude/feat-chat-stream/c9abd74를merge해7f760ab098ca5a855a4051b9c8e879c1b169593f로준비했다. 충돌없음·제품17파일범위를확인했고상대브랜치/원격main은수정하지않았다. 설치확장재로드는하지않는다.
+- 기존캡스톤-개발연결에읽기검토를배정했다. wait_threads는도구내부오류로실패했으나list/read_thread로active와실제읽기명령을확인했다. 지원되지않는상태감시를진행중이라고표현하지않고필요시read_thread를최소사용한다. 설계문서작성/커밋후제품작성권을직렬인계한다.
+- S1의CI선정누락·JSON status순서·종료/취소검사공백을기존계약내최소수정하고S2직접영향검사만수행한다. 실제.env·모델/DB/EC2/Chrome·새제품push/PR/배포는이단계범위에없다. 결과/실패/검증은다음일지에기록한다.
+
+<a id="log-20261115-s1-result"></a>
+## 2026-11-15 15:53 KST · S1 스트리밍 보완·S2 로컬 집중검사 완료
+
+- 캡스톤-개발의작성권반환후설계가4파일diff/원로그·빈index·지정branch를확인하고7ec23c3a140ccfe63b6c1603ae8e00f2d7f6ff5e로선별커밋했다. stream.py+50/-8,main.py+7/-2,test_chat_stream.py+185/-1,ci_python.py+1/-1이며제품별도모듈/프레임워크·클라이언트추가변경은없다.
+- stream.py는정규식대신같은파일_member_start에서표준JSONDecoder.raw_decode로최상위키/완성값을건너뛰고status를확인한다. answer/clarify/no_evidence완성전에는초안을보류하며인용·중첩status/text를오인하지않는다. 기존escape해독·80자숫자보류/마스킹·0.1초throttle은유지한다. text-first는status까지표시가지연된다. CI명시목록에test_chat_stream.py를1회추가했다.
+- 최초Python6파일133사례는132통과/1실패·20.85초였다. 기한이지난native대역의늦은초안이전송되는실제결함을재현했다. main.draft에서기존checkpoint를확인하고기한/취소조각을버리는최소수정후직접영향5사례만재검사해5통과/skip0·7.81초다. 전체133사례를수정후일괄재실행하거나고유137건통과로표현하지않는다.
+- 서버검사대상은test_chat_stream/test_chat_http_recovery/test_request_execution/test_ollama/test_admin_referrals/test_document_qa다. 새17사례는text-first/status5·인용/중첩3·최상위text1·개인정보/Unicode3·final연락처1회1·accepted전단절1·초안중/최종직전단절/기한3이다. 기존loopback대역fixture를재사용해native종료전슬롯2/종료후3·늦은final/기록차단·watcher정리를확인했다. 새main가드는기존오류매핑/게이트프레임워크를변경하지않는다.
+- 확장기존8파일(mode/offscreen/document_timeout/remote_connection/timeout/profile_offscreen/conversations_content/answer_speech)120통과·24161.1587ms,React기존WebChatPage/chatApi/voice3파일37통과·23.67초다. 실패/skip0이며클라이언트수정은추가하지않았다. 최종4파일AST·CI선정1회/파일존재·diff--check도통과했다. 전체회귀/타입빌드/Chrome/청취/실제모델·DB·HTTPS는수행하지않았다.
+- 검증은개발이연결한Terra담당이기존Python3.12격리진입·Settings생성전env_file차단/상속설정정리·모델offline·DBconnect차단·httpx외부transport차단과허용loopback을사용했다. Node/React는기존fetch대역/환경파일없는진입이다. OS수준패킷계측으로외부접속0을독립인증한것은아니다. 시험Python/Node잔여없음을Get-Process로확인했고CIM조회권한거절은우회종료하지않았다.
+- 최초bootstrap의BackEnd.config오류는pytest수집전실패이며core.settings로교정했다. 담당이초기파일로그를교정실행으로덮어쓴사실과tool출력근거를bootstrap-failure.json에남겼다. 원본로그를재생성했다고하지않는다. 최초Python로그의한글일부는리디렉션인코딩으로깨졌으나수치/영문nodeid/assertion을대조했다. 통과검사를로그미관때문에반복하지않았다.
+- 원자료는.local/co-op/checks-runtime/chat-stream-20261115- 아래접두어의python-focused.log/python-recheck.log/extension-focused.log/webchat-focused.log/syntax-final.log/syntax.log/bootstrap-failure.json이다(디렉터리명아닌파일접두어). 설계가필요원로그를직접읽었다. 새제품push/PR/배포·EC2문서pull은없고S3미착수다. 기존문서PR #32승인과새기능공유/운영범위는구분한다. RAG/CSV/복구보류유지.
+
+<a id="log-20261115-stream-pr"></a>
+## 2026-11-15 16:09 KST · 스트리밍 기능 push·PR 생성
+
+- 사용자 진행지시로root/branch/clean·remote·범위를재확인하고codex/fix-chat-stream/c31d41d7b7e512b77b5962bd0a42c0c62a617baf를명시push했다. 팀원c9abd74·이력보존merge7f760ab·착수e081ad3·보완7ec23c3·결과c31d41d의5커밋/22파일이며PR #33을main/a497bb1대상으로생성했다.
+- 현재원격CI확인과head고정병합을진행중이다. 기존로컬집중검사와원격결과를구분한다. 기록후속커밋도같은승인된기능PR에포함하며추가제품변경은없다. EC2운영배포·실제모델·DB·Chrome·원격팀원브랜치삭제는수행하지않았다. 최종merge SHA/CI실제결과는후속기록또는완료보고에서확인한다.

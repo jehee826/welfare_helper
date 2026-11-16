@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage
 
 from BackEnd.rag.embeddings import validate_embeddings
 from BackEnd.core.execution import ExecutionTimeoutError, ExecutionCancelledError, GenerationStopped
+from BackEnd.core.qa_diagnostics import model_call, model_content
 
 
 class OllamaError(RuntimeError):
@@ -196,39 +197,42 @@ class OllamaClient:
             if not isinstance(content, str):
                 raise OllamaError("생성 스트림의 텍스트 형식이 올바르지 않습니다.")
             parts.append(content)
+            model_content(content)
             if on_content is not None and content:
                 on_content(content)
             if data.get("done") is True:
                 metadata = {key: data[key] for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated",
                     "total_duration", "load_duration", "prompt_eval_duration", "eval_duration") if key in data}
+                timing.update(metadata)
                 return True
             return False
 
         # read timeout과 달리 토큰이 계속 와도 전체 예산에 도달하면 소켓 스트림을 닫는다.
         remaining = self.remaining_timeout()
-        async with self._request_window(remaining):
-            async with httpx.AsyncClient(timeout=remaining) as client:
-                async with client.stream("POST", f"{self.base_url}/api/chat", json=payload,
-                                         headers={"Accept-Encoding": "identity"}) as response:
-                    response.raise_for_status()
-                    buffer, total = b"", 0
-                    async for chunk in response.aiter_bytes():
-                        self.remaining_timeout()
-                        total += len(chunk)
-                        if total > 2 * 1024 * 1024:
-                            raise OllamaError("생성 스트림의 크기 한도를 넘었습니다.")
-                        buffer += chunk
-                        while b"\n" in buffer:
-                            line, buffer = buffer.split(b"\n", 1)
-                            if consume(line):
-                                done = True
+        with model_call(self.llm_model) as timing:
+            async with self._request_window(remaining):
+                async with httpx.AsyncClient(timeout=remaining) as client:
+                    async with client.stream("POST", f"{self.base_url}/api/chat", json=payload,
+                                             headers={"Accept-Encoding": "identity"}) as response:
+                        response.raise_for_status()
+                        buffer, total = b"", 0
+                        async for chunk in response.aiter_bytes():
+                            self.remaining_timeout()
+                            total += len(chunk)
+                            if total > 2 * 1024 * 1024:
+                                raise OllamaError("생성 스트림의 크기 한도를 넘었습니다.")
+                            buffer += chunk
+                            while b"\n" in buffer:
+                                line, buffer = buffer.split(b"\n", 1)
+                                if consume(line):
+                                    done = True
+                                    break
+                            if done:
                                 break
-                        if done:
-                            break
-                    if not done and buffer:
-                        done = consume(buffer)
-                    if not done:
-                        raise OllamaError("생성 스트림이 완료 전에 끊겼습니다.")
+                        if not done and buffer:
+                            done = consume(buffer)
+                        if not done:
+                            raise OllamaError("생성 스트림이 완료 전에 끊겼습니다.")
         return AIMessage(content="".join(parts), response_metadata=metadata)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -238,16 +242,14 @@ class OllamaClient:
         if self.embed_cpu_only:
             # 작은 임베딩 모델이 생성 모델의 GPU 메모리를 축출하지 않도록 분리한다.
             payload["options"] = {"num_gpu": 0}
-        data = self._post(
-            "/api/embed",
-            payload,
-            timeout=self.timeout,
-        )
-        embeddings = data.get("embeddings")
-        try:
-            validate_embeddings(embeddings, len(texts), self.embed_dim)
-        except ValueError as exc:
-            raise OllamaError(str(exc)) from exc
+        with model_call(self.embed_model, input_count=len(texts)) as timing:
+            data = self._post("/api/embed", payload, timeout=self.timeout)
+            timing.update(data)
+            embeddings = data.get("embeddings")
+            try:
+                validate_embeddings(embeddings, len(texts), self.embed_dim)
+            except ValueError as exc:
+                raise OllamaError(str(exc)) from exc
         return embeddings
 
     def chat_text(self, system: str, user: str) -> str:
@@ -261,7 +263,9 @@ class OllamaClient:
                 prompt = ChatPromptTemplate.from_messages([("system", "{system}"), ("human", "{user}")])
                 model = ChatOllama(model=self.llm_model, base_url=self.base_url,
                                    client_kwargs={"timeout": self.timeout}, **self.llm_options)
-                message = (prompt | model).invoke({"system": system, "user": user})
+                with model_call(self.llm_model) as timing:
+                    message = (prompt | model).invoke({"system": system, "user": user})
+                    timing.update(message.response_metadata)
             self.last_chat_diagnostics = {key: message.response_metadata[key]
                 for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated", "total_duration",
                             "load_duration", "prompt_eval_duration", "eval_duration")
@@ -306,10 +310,13 @@ class OllamaClient:
             else:
                 chain = self._chat_chain
             if self.request_deadline is None:
-                message = chain.invoke({"system": system, "user": user})
+                with model_call(self.llm_model) as timing:
+                    message = chain.invoke({"system": system, "user": user})
+                    timing.update(message.response_metadata)
             self.remaining_timeout()
             self.last_chat_diagnostics = {key: message.response_metadata[key]
-                                          for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated")
+                                          for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated",
+                                                      "total_duration", "load_duration", "prompt_eval_duration", "eval_duration")
                                           if key in message.response_metadata}
             if message.response_metadata.get("done_reason") == "length":
                 raise ContextBudgetError("모델 출력이 잘렸습니다.")

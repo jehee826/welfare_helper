@@ -1,6 +1,7 @@
 """문서 QA 단계와 허용된 메타데이터만 기록한다. HTTP 전송 완료나 원문은 기록하지 않는다."""
 
 from contextvars import ContextVar
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import wraps
 import json
@@ -8,7 +9,7 @@ import logging
 from time import monotonic
 from uuid import uuid4
 
-from BackEnd.core.execution import ExecutionCancelledError, ExecutionTimeoutError
+from BackEnd.core.execution import ExecutionCancelledError, ExecutionTimeoutError, GenerationStopped
 from BackEnd.documents.contracts import DocumentError
 
 
@@ -27,6 +28,7 @@ CODES = frozenset({
     "document_scope_mismatch", "embedding_digest_changed", "document_embedding_failed",
     "document_reranker_failed", "document_generation_failed", "document_changed_during_search",
     "document_evidence_version_mismatch", "document_evidence_incomplete", "timeout", "cancelled", "error",
+    "early_stop", "skipped",
 })
 ANSWER_VALIDATION_CODES = frozenset({
     "accepted", "invalid_schema", "empty_answer", "invalid_answer",
@@ -40,9 +42,94 @@ class Diagnostic:
     stage: str | None = None
     stage_started: float = 0
     seen: set[str] = field(default_factory=set)
+    call_index: int = 0
 
 
 _current: ContextVar[Diagnostic | None] = ContextVar("qa_diagnostic", default=None)
+_purpose: ContextVar[str] = ContextVar("model_purpose", default="answer")
+_model_call: ContextVar[dict | None] = ContextVar("model_call", default=None)
+NATIVE_DURATIONS = ("total_duration", "load_duration", "prompt_eval_duration", "eval_duration")
+
+
+def native_metadata(metadata):
+    """Ollama ns와 토큰 수만 허용하며 미제공·잘못된 값은 채우지 않는다."""
+    result = {}
+    for key in (*NATIVE_DURATIONS, "prompt_eval_count", "eval_count"):
+        value = metadata.get(key)
+        if type(value) is int and value >= 0:
+            result[key.removesuffix("_duration") + "_ms" if key in NATIVE_DURATIONS else key] = (
+                round(value / 1_000_000, 6) if key in NATIVE_DURATIONS else value)
+    if type(metadata.get("done_reason")) is str and metadata["done_reason"] in {"stop", "length"}:
+        result["done_reason"] = metadata["done_reason"]
+    durations = sum(key.removesuffix("_duration") + "_ms" in result for key in NATIVE_DURATIONS)
+    result["native_timing"] = "complete" if durations == 4 else "partial" if durations else "missing"
+    return result
+
+
+@contextmanager
+def model_purpose(purpose):
+    token = _purpose.set(purpose if purpose in {"context", "answer"} else "answer")
+    try:
+        yield
+    finally:
+        _purpose.reset(token)
+
+
+@contextmanager
+def model_call(model, *, input_count=None):
+    state = _current.get()
+    started, metadata = monotonic(), {}
+    fields = {"purpose": "embedding" if input_count is not None else _purpose.get(), "model": model}
+    if state is not None:
+        state.call_index += 1
+        fields["call_index"] = state.call_index
+        if input_count is not None:
+            fields["input_count"] = input_count
+        _emit(state, "model_start", "ok", completion=fields)
+    active = {"state": state, "fields": fields, "first_content": False, "started": started}
+    token = _model_call.set(active)
+    code = "ok"
+    try:
+        yield metadata
+    except GenerationStopped:
+        code = "early_stop"
+        raise
+    except ExecutionTimeoutError:
+        code = "timeout"
+        raise
+    except ExecutionCancelledError:
+        code = "cancelled"
+        raise
+    except BaseException:
+        code = "error"
+        raise
+    finally:
+        _model_call.reset(token)
+        if state is not None:
+            _emit(state, "model_end", code, started=started,
+                  completion={**fields, **native_metadata(metadata),
+                              "wall_ms": round((monotonic() - started) * 1000, 2)})
+
+
+def model_content(content):
+    active = _model_call.get()
+    if active is not None and not active["first_content"] and content.strip():
+        active["first_content"] = True
+        if active["state"] is not None:
+            _emit(active["state"], "first_model_content", "ok", completion=active["fields"])
+
+
+def context_preparation(trace):
+    state = _current.get()
+    if state is not None:
+        status = trace.get("preparation")
+        if status not in {"used", "skipped", "input_budget", "failed"}:
+            return
+        _emit(state, "context_preparation", "skipped" if status == "skipped" else "ok" if status == "used" else "error",
+              completion={"purpose": "context", "preparation": status,
+                          "reason": {"skipped": "no_context", "input_budget": "input_budget",
+                                     "failed": "preparation_failed", "used": "prepared"}[status],
+                          "early_stop": trace.get("preparation_stopped_early") is True})
 
 
 def current_diagnostic():
@@ -55,6 +142,7 @@ def _safe_code(value):
 
 def _emit(state, event, code, *, stage=None, started=None, completion=None):
     record = {"request_id": state.request_id, "event": event,
+              "request_elapsed_ms": round(max(0, monotonic() - state.started) * 1000, 2),
               "elapsed_ms": round(max(0, monotonic() - (state.started if started is None else started)) * 1000, 2),
               "code": _safe_code(code)}
     if stage is not None:
@@ -109,10 +197,7 @@ def diagnose_qa(function):
                 reason = metadata.get("done_reason")
                 if type(reason) is str and reason in {"stop", "length"}:
                     completion["done_reason"] = reason
-                for key in ("prompt_eval_count", "eval_count"):
-                    value = metadata.get(key)
-                    if type(value) is int and value >= 0:
-                        completion[key] = value
+                completion.update(native_metadata(metadata))
             return result
         except ExecutionTimeoutError:
             code = "timeout"

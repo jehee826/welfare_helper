@@ -9,7 +9,7 @@ from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.contacts import (fallback_contacts, contact_candidates, ContactSelectionAnswer,
                                        CONTACT_SELECTION_SYSTEM)
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
-from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
+from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage, context_preparation
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM, EMPTY_EVIDENCE_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
@@ -116,6 +116,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     context_documents = [{"id": identifier, "name": names[identifier]} for identifier in requested_documents if identifier in names]
     search_query, conversation, context_update, context_trace = prepare_context(
         llm, query, profile, history, submitted_context, capacity, output, documents=context_documents)
+    context_preparation(context_trace)
     if len(context_documents) < len(requested_documents):
         context_trace["context_omitted"] = True
         if context_update and context_update["status"] == "unchanged":

@@ -37,12 +37,16 @@ def test_success_logs_six_stages_to_default_handler_and_clears_scope(stream):
     output,rows=records(stream)
     assert result['kind']=='answer' and trace['reason']=='answer'
     assert calls['embeddings']==1 and len(calls['prompts'])==1
-    assert len(rows)==14 and rows[0]['event']=='qa_start' and rows[-1]['event']=='qa_end'
+    assert len([r for r in rows if r['event'] in {'qa_start','qa_end','stage_start','stage_end'}])==14
+    assert rows[0]['event']=='qa_start' and rows[-1]['event']=='qa_end'
     assert [r['stage'] for r in rows if r['event']=='stage_start']==['snapshot','context','retrieval','rerank','generation','validation']
     assert [r['stage'] for r in rows if r['event']=='stage_end']==['snapshot','context','retrieval','rerank','generation','validation']
     assert len({r['request_id'] for r in rows})==1 and re.fullmatch(r'[0-9a-f]{32}',rows[0]['request_id'])
     assert all(r['code'] in CODES and isinstance(r['elapsed_ms'],(int,float)) and r['elapsed_ms']>=0 for r in rows)
-    assert all(set(r)<= {'request_id','event','elapsed_ms','code','stage'} | ({'answer_validation','done_reason','prompt_eval_count','eval_count'} if r['event']=='qa_end' else set()) for r in rows)
+    assert all(set(r)<= {'request_id','event','elapsed_ms','request_elapsed_ms','code','stage',
+        'answer_validation','done_reason','prompt_eval_count','eval_count','native_timing',
+        'purpose','preparation','reason','early_stop'} for r in rows)
+    assert next(r for r in rows if r['event']=='context_preparation')['preparation']=='skipped'
     assert 'MAE' not in output and current_diagnostic() is None
 
 
@@ -63,7 +67,7 @@ def test_reranker_query_budget_failure_records_only_token_counts(stream, monkeyp
     assert len(budget) == int(token_count > 128)
     if budget:
         assert budget[0]['query_tokens'] == token_count and budget[0]['query_limit'] == 128
-        assert set(budget[0]) == {'request_id', 'event', 'elapsed_ms', 'code', 'stage', 'query_tokens', 'query_limit'}
+        assert set(budget[0]) == {'request_id', 'event', 'elapsed_ms', 'request_elapsed_ms', 'code', 'stage', 'query_tokens', 'query_limit'}
         files.assert_not_called()
     else:
         files.assert_called_once()
@@ -118,3 +122,58 @@ def test_cancelled_scope_is_cleared_without_logging_exception_text(stream):
     output,rows=records(stream)
     assert rows[-1]['code']=='cancelled' and 'SYNTHETIC_PRIVATE' not in output
     assert current_diagnostic() is None
+
+
+def test_purpose_native_timings_and_first_content_are_per_call(stream, monkeypatch):
+    import time
+    import httpx
+    from BackEnd.rag import ollama
+    from BackEnd.core.qa_diagnostics import model_purpose
+    lines = [{'message': {'content': '{"text":"SYNTHETIC_PRIVATE"}'}},
+             {'message': {'content': ''}, 'done': True, 'done_reason': 'stop',
+              'total_duration': 9_000_000, 'load_duration': 0,
+              'prompt_eval_duration': 2_000_000, 'eval_duration': 6_000_000,
+              'prompt_eval_count': 10, 'eval_count': 3}]
+    original = httpx.AsyncClient
+    def handler(request):
+        return httpx.Response(200, content=''.join(json.dumps(x)+'\n' for x in lines).encode())
+    monkeypatch.setattr(ollama.httpx, 'AsyncClient', lambda **kw: original(
+        transport=httpx.MockTransport(handler), **kw))
+    client = ollama.OllamaClient('http://private.invalid', 'embed', 'configured-model',
+        llm_options={'num_ctx':8192,'num_predict':64}, request_deadline=time.monotonic()+10)
+    client._effective_context = 8192
+    @diagnose_qa
+    def request():
+        with model_purpose('context'):
+            client.chat('SYNTHETIC_PRIVATE', 'SYNTHETIC_PRIVATE')
+        client.chat('SYNTHETIC_PRIVATE', 'SYNTHETIC_PRIVATE')
+        return {}, {'reason':'answer', 'generation_metadata':client.last_chat_diagnostics}
+    request()
+    output, rows = records(stream)
+    ends = [r for r in rows if r['event']=='model_end']
+    assert [(r['purpose'],r['call_index']) for r in ends] == [('context',1),('answer',2)]
+    assert len([r for r in rows if r['event']=='first_model_content']) == 2
+    assert all(r['total_ms']==9 and r['load_ms']==0 and r['eval_ms']==6 and r['native_timing']=='complete' for r in ends)
+    assert len({r['request_id'] for r in rows}) == 1
+    assert 'SYNTHETIC_PRIVATE' not in output and 'private.invalid' not in output
+
+
+@pytest.mark.parametrize('error,code', [(None,'ok'), ('stop','early_stop'), ('timeout','timeout'), ('error','error')])
+def test_missing_native_metadata_is_not_filled_with_zero(stream,error,code):
+    from BackEnd.core.execution import GenerationStopped, ExecutionTimeoutError
+    from BackEnd.core.qa_diagnostics import model_call
+    @diagnose_qa
+    def request():
+        with model_call('configured-model'):
+            if error=='stop': raise GenerationStopped()
+            if error=='timeout': raise ExecutionTimeoutError('SYNTHETIC_PRIVATE')
+            if error=='error': raise ValueError('SYNTHETIC_PRIVATE')
+        return {}, {'reason':'answer'}
+    if error:
+        with pytest.raises(Exception):request()
+    else:request()
+    output, rows = records(stream)
+    end = next(r for r in rows if r['event']=='model_end')
+    assert end['code']==code and end['native_timing']=='missing'
+    assert not {'total_ms','load_ms','prompt_eval_ms','eval_ms'} & end.keys()
+    assert 'SYNTHETIC_PRIVATE' not in output

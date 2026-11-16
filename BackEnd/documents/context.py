@@ -9,6 +9,7 @@ from pydantic_core import PydanticCustomError
 
 from BackEnd.core.execution import checkpoint, ExecutionTimeoutError, ExecutionCancelledError, GenerationStopped
 from BackEnd.core.privacy import sensitive_input
+from BackEnd.core.qa_diagnostics import model_purpose
 from BackEnd.documents.stream import member_value
 from BackEnd.rag.chat import HOUSEHOLD_LABELS, INCOME_LABELS
 
@@ -231,7 +232,8 @@ def prepare_context(llm, query, profile, history, context, capacity, output, *, 
                             raise GenerationStopped()
 
                 try:
-                    raw = llm.chat(PREPARE_SYSTEM, prompt, schema=schema, on_content=settle, num_predict=PREPARE_OUTPUT)
+                    with model_purpose("context"):
+                        raw = llm.chat(PREPARE_SYSTEM, prompt, schema=schema, on_content=settle, num_predict=PREPARE_OUTPUT)
                 except GenerationStopped:
                     # independent는 나머지 필드를 쓰지 않으므로 관계가 확정되면 생성을 멈춘다.
                     raw = {"relation": "independent", "search_query": query, "source_ids": [], "document_ids": [],

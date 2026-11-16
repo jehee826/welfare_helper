@@ -10,7 +10,7 @@ import os
 
 from BackEnd.rag.chunking import split_ranges
 from BackEnd.core.execution import checkpoint, ExecutionTimeoutError, ExecutionCancelledError
-from BackEnd.core.qa_diagnostics import record_rerank_input_budget
+from BackEnd.core.qa_diagnostics import record_rerank_input_budget, timed_rerank_lock
 
 
 class RerankerError(RuntimeError):
@@ -46,7 +46,7 @@ class LocalReranker:
 
     def count_tokens(self, text: str) -> int:
         checkpoint()
-        with self._lock:
+        with timed_rerank_lock(self._lock, "count_tokens", threads=self.threads):
             if self._count_tokenizer is None:
                 from tokenizers import Tokenizer
 
@@ -93,7 +93,7 @@ class LocalReranker:
             record_rerank_input_budget(query_tokens, 128)
             raise RerankerInputError("질문이 128토큰을 넘습니다. 의도별로 범위를 좁혀 주세요.")
         # 첫 요청의 중복 모델 로딩과 동시 추론에 따른 메모리 급증을 막는다.
-        with self._lock:
+        with timed_rerank_lock(self._lock, "score", threads=self.threads, candidate_count=len(passages)) as timing:
             try:
                 checkpoint()
                 if self._session is None:
@@ -145,6 +145,7 @@ class LocalReranker:
                         pairs.append((index, encoded))
                     diagnostics.append({"windows": len(windows), "pair_tokens": lengths, "truncated": False})
                 scores = [-math.inf] * len(passages)
+                timing["pair_count"] = len(pairs)
                 for (index, _), probability in zip(pairs, self._run_pairs([encoded for _, encoded in pairs])):
                     scores[index] = max(scores[index], probability)
                 if any(score == -math.inf for score in scores):

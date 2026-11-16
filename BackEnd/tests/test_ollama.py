@@ -152,3 +152,13 @@ def test_chat_rejects_removed_images_argument_before_inference(client, monkeypat
     monkeypatch.setattr(ChatOllama, 'invoke', lambda *a, **k: pytest.fail('이미지 추론 금지'))
     with pytest.raises(TypeError):
         client.chat('규칙', '질문', images=['synthetic'])
+
+
+def test_structured_chat_preserves_native_timings_without_changing_answer(client, monkeypatch):
+    metadata = {'done_reason': 'stop', 'total_duration': 9_000_000, 'load_duration': 0,
+                'prompt_eval_duration': 2_000_000, 'eval_duration': 6_000_000,
+                'prompt_eval_count': 10, 'eval_count': 3}
+    monkeypatch.setattr(ChatOllama, 'invoke', lambda *a, **k: AIMessage(
+        content='{"text":"합성 답변"}', response_metadata=metadata))
+    assert client.chat('규칙', '질문') == {'text': '합성 답변'}
+    assert client.last_chat_diagnostics == metadata

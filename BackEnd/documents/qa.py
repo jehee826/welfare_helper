@@ -9,7 +9,7 @@ from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.contacts import (fallback_contacts, contact_candidates, ContactSelectionAnswer,
                                        CONTACT_SELECTION_SYSTEM)
 from BackEnd.core.execution import checkpoint, current_budget, ExecutionTimeoutError, ExecutionCancelledError
-from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage
+from BackEnd.core.qa_diagnostics import diagnose_qa, qa_stage, context_preparation, qa_step
 from BackEnd.rag.search import BM25Index, reciprocal_ranks
 from BackEnd.documents.context import ConversationContext, prepare_context, fit_answer, ANSWER_SYSTEM, EMPTY_EVIDENCE_SYSTEM
 from BackEnd.documents.welfare import WelfareAnswer, complete_sources, validate_answer
@@ -116,6 +116,7 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
     context_documents = [{"id": identifier, "name": names[identifier]} for identifier in requested_documents if identifier in names]
     search_query, conversation, context_update, context_trace = prepare_context(
         llm, query, profile, history, submitted_context, capacity, output, documents=context_documents)
+    context_preparation(context_trace)
     if len(context_documents) < len(requested_documents):
         context_trace["context_omitted"] = True
         if context_update and context_update["status"] == "unchanged":
@@ -149,7 +150,9 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             vector = llm.embed([search_query])[0]
             checkpoint()
             # 저장소가 이미 계산한 전체 코사인을 받아 BM25 전용 후보에도 재사용한다.
-            scored = repo.dense_search(vector, len(allowed), sorted(allowed), snapshot=snapshot)
+            with qa_step("dense", eligible_count=len(allowed)) as timing:
+                scored = repo.dense_search(vector, len(allowed), sorted(allowed), snapshot=snapshot)
+                timing["candidate_count"] = len(scored)
             checkpoint()
         except (ExecutionTimeoutError, ExecutionCancelledError):
             raise
@@ -157,26 +160,32 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
             raise
         except Exception:
             raise DocumentError("document_embedding_failed") from None
-        index, pending_index = _document_keyword_index(repo, service, snapshot, digest)
+        with qa_step("bm25_index", input_count=len(snapshot.chunks)):
+            index, pending_index = _document_keyword_index(repo, service, snapshot, digest)
         checkpoint()
-        keyword = index.search(search_query, service.keyword_k, allowed)
+        with qa_step("bm25_search", eligible_count=len(allowed)) as timing:
+            keyword = index.search(search_query, service.keyword_k, allowed)
+            timing["candidate_count"] = len(keyword)
         checkpoint()
-        by_id = {chunk.chunk_id: chunk for chunk in snapshot.chunks if chunk.chunk_id in allowed}
-        if (len({c.chunk_id for c in scored}) != len(scored)
-                or any(c.chunk_id not in by_id or type(c.score) not in (int, float)
-                       or not math.isfinite(c.score) or not -1 <= c.score <= 1 for c in scored)):
-            raise DocumentError("document_embedding_failed")
-        cosines = {c.chunk_id: c.score for c in scored}
-        dense = [replace(by_id[c.chunk_id], score=c.score) for c in scored[:service.dense_k]]
-        keyword = [(by_id[c.chunk_id], score) for c, score in keyword if c.chunk_id in by_id]
-        union = {c.chunk_id: c for c in [*dense, *(c for c, _ in keyword)]}
-        if any(identifier not in cosines for identifier in union):
-            raise DocumentError("document_embedding_failed")
-        passing = {identifier for identifier in union if cosines[identifier] >= service.min_similarity}
-        filtered_dense = [c for c in dense if c.chunk_id in passing]
-        filtered_keyword = [c for c, _ in keyword if c.chunk_id in passing]
-        fused = reciprocal_ranks([filtered_dense, filtered_keyword])
-        candidates = [chunk for chunk, _ in fused[:service.top_n]]
+        with qa_step("rrf") as timing:
+            by_id = {chunk.chunk_id: chunk for chunk in snapshot.chunks if chunk.chunk_id in allowed}
+            if (len({c.chunk_id for c in scored}) != len(scored)
+                    or any(c.chunk_id not in by_id or type(c.score) not in (int, float)
+                           or not math.isfinite(c.score) or not -1 <= c.score <= 1 for c in scored)):
+                raise DocumentError("document_embedding_failed")
+            cosines = {c.chunk_id: c.score for c in scored}
+            dense = [replace(by_id[c.chunk_id], score=c.score) for c in scored[:service.dense_k]]
+            keyword = [(by_id[c.chunk_id], score) for c, score in keyword if c.chunk_id in by_id]
+            union = {c.chunk_id: c for c in [*dense, *(c for c, _ in keyword)]}
+            if any(identifier not in cosines for identifier in union):
+                raise DocumentError("document_embedding_failed")
+            passing = {identifier for identifier in union if cosines[identifier] >= service.min_similarity}
+            filtered_dense = [c for c in dense if c.chunk_id in passing]
+            filtered_keyword = [c for c, _ in keyword if c.chunk_id in passing]
+            fused = reciprocal_ranks([filtered_dense, filtered_keyword])
+            candidates = [chunk for chunk, _ in fused[:service.top_n]]
+            timing.update(dense_count=len(dense), keyword_count=len(keyword), union_count=len(union),
+                          passing_count=len(passing), candidate_count=len(candidates))
         dense_ids = {c.chunk_id for c in dense}
         keyword_ids = {c.chunk_id for c, _ in keyword}
         trace["retrieval"] = [{"intent_id": "document",
@@ -240,12 +249,15 @@ def answer_document(repo, service, query: str, *, profile=None, history=None, co
                 for candidate in contact_options if candidate['document_id'] == document['document_id']
                 and candidate['document_version'] == document['version']]
     qa_stage("generation")
-    prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output, system=generation_system,
-                                                 saved_profile=consent.profile.model_dump() if consent else None)
-    trace["context"]["context_omitted"] |= omitted
-    trace["budget"] = {"context_limit": capacity, "reserved_output": output,
-                       "estimated_input": llm.input_cost(generation_system, prompt) if prompt else None,
-                       "evidence_omitted": len(documents)-len(included)}
+    with qa_step("prompt_prepare", evidence_count=len(documents),
+                 document_count=len({d['document_id'] for d in documents})) as timing:
+        prompt, included, fitted, omitted = fit_answer(llm, query, conversation, documents, capacity, output, system=generation_system,
+                                                     saved_profile=consent.profile.model_dump() if consent else None)
+        trace["context"]["context_omitted"] |= omitted
+        trace["budget"] = {"context_limit": capacity, "reserved_output": output,
+                           "estimated_input": llm.input_cost(generation_system, prompt) if prompt else None,
+                           "evidence_omitted": len(documents)-len(included)}
+        timing.update(trace["budget"], included_evidence_count=len(included))
     if not prompt:
         trace["reason"] = "document_input_budget"
         trace["timings_ms"]["total"] = round((time.monotonic()-started)*1000, 2)

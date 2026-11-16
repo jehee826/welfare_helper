@@ -43,6 +43,8 @@ class Diagnostic:
     stage_started: float = 0
     seen: set[str] = field(default_factory=set)
     call_index: int = 0
+    rerank_wait_ms: float | None = None
+    rerank_process_ms: float = 0
 
 
 _current: ContextVar[Diagnostic | None] = ContextVar("qa_diagnostic", default=None)
@@ -132,6 +134,67 @@ def context_preparation(trace):
                           "early_stop": trace.get("preparation_stopped_early") is True})
 
 
+COUNT_FIELDS = frozenset({"input_count", "candidate_count", "eligible_count", "dense_count", "keyword_count",
+    "union_count", "passing_count", "evidence_count", "document_count", "included_evidence_count",
+    "evidence_omitted", "context_limit", "reserved_output", "estimated_input", "threads", "pair_count"})
+
+
+def _counts(values):
+    return {k: v for k, v in values.items() if k in COUNT_FIELDS and type(v) is int and v >= 0}
+
+
+@contextmanager
+def qa_step(name, **counts):
+    state, started, code = _current.get(), monotonic(), "ok"
+    if state is not None:
+        _emit(state, "step_start", code, completion={"step": name, **_counts(counts)})
+    try:
+        yield counts
+    except ExecutionTimeoutError:
+        code = "timeout"
+        raise
+    except ExecutionCancelledError:
+        code = "cancelled"
+        raise
+    except BaseException:
+        code = "error"
+        raise
+    finally:
+        if state is not None:
+            _emit(state, "step_end", code, started=started, completion={"step": name, **_counts(counts)})
+
+
+@contextmanager
+def timed_rerank_lock(lock, site, **counts):
+    """기존 잠금 범위를 유지한다. 처리 시간에는 토큰화·병렬 평가가 함께 들어간다."""
+    state, waiting, code = _current.get(), monotonic(), "ok"
+    acquired = finished = None
+    try:
+        with lock:
+            acquired = monotonic()
+            try:
+                yield counts
+            finally:
+                finished = monotonic()
+    except ExecutionTimeoutError:
+        code = "timeout"
+        raise
+    except ExecutionCancelledError:
+        code = "cancelled"
+        raise
+    except BaseException:
+        code = "error"
+        raise
+    finally:
+        if state is not None and acquired is not None and finished is not None:
+            wait_ms, process_ms = (acquired - waiting) * 1000, (finished - acquired) * 1000
+            state.rerank_wait_ms = (state.rerank_wait_ms or 0) + wait_ms
+            state.rerank_process_ms += process_ms
+            _emit(state, "rerank_lock", code, started=waiting,
+                  completion={"site": site, "wait_ms": round(wait_ms, 2),
+                              "process_ms": round(process_ms, 2), **_counts(counts)})
+
+
 def current_diagnostic():
     return _current.get()
 
@@ -154,7 +217,11 @@ def _emit(state, event, code, *, stage=None, started=None, completion=None):
 
 def _finish_stage(state, code):
     if state.stage is not None:
-        _emit(state, "stage_end", code, stage=state.stage, started=state.stage_started)
+        completion = {}
+        if state.stage == "rerank" and state.rerank_wait_ms is not None:
+            completion = {"lock_wait_ms": round(state.rerank_wait_ms, 2),
+                          "lock_process_ms": round(state.rerank_process_ms, 2)}
+        _emit(state, "stage_end", code, stage=state.stage, started=state.stage_started, completion=completion)
         state.stage = None
 
 

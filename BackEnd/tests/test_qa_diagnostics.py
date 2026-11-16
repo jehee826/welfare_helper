@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from BackEnd.core.qa_diagnostics import CODES, current_diagnostic, diagnose_qa, logger
+from BackEnd.core.qa_diagnostics import CODES, COUNT_FIELDS, current_diagnostic, diagnose_qa, logger
 from BackEnd.core.execution import ExecutionCancelledError
 from BackEnd.documents.contracts import DocumentError
 from BackEnd.documents.qa import answer_document
@@ -45,7 +45,11 @@ def test_success_logs_six_stages_to_default_handler_and_clears_scope(stream):
     assert all(r['code'] in CODES and isinstance(r['elapsed_ms'],(int,float)) and r['elapsed_ms']>=0 for r in rows)
     assert all(set(r)<= {'request_id','event','elapsed_ms','request_elapsed_ms','code','stage',
         'answer_validation','done_reason','prompt_eval_count','eval_count','native_timing',
-        'purpose','preparation','reason','early_stop'} for r in rows)
+        'purpose','preparation','reason','early_stop','step'} | COUNT_FIELDS for r in rows)
+    steps = {r['step']:r for r in rows if r['event']=='step_end'}
+    assert set(steps)=={'dense','bm25_index','bm25_search','rrf','prompt_prepare'}
+    assert steps['rrf']['candidate_count'] <= service.top_n
+    assert steps['prompt_prepare']['included_evidence_count'] <= steps['prompt_prepare']['evidence_count']
     assert next(r for r in rows if r['event']=='context_preparation')['preparation']=='skipped'
     assert 'MAE' not in output and current_diagnostic() is None
 
@@ -176,4 +180,66 @@ def test_missing_native_metadata_is_not_filled_with_zero(stream,error,code):
     end = next(r for r in rows if r['event']=='model_end')
     assert end['code']==code and end['native_timing']=='missing'
     assert not {'total_ms','load_ms','prompt_eval_ms','eval_ms'} & end.keys()
+    assert 'SYNTHETIC_PRIVATE' not in output
+
+
+def test_rerank_lock_wait_and_processing_are_measured_separately_and_summed(stream,monkeypatch):
+    from BackEnd.core import qa_diagnostics as diagnostic
+    clock=[0.0]
+    monkeypatch.setattr(diagnostic,'monotonic',lambda:clock[0])
+    class Lock:
+        def __enter__(self):clock[0]+=.002
+        def __exit__(self,*args):pass
+    @diagnose_qa
+    def request():
+        diagnostic.qa_stage('rerank')
+        for site in ('count_tokens','score'):
+            with diagnostic.timed_rerank_lock(Lock(),site,threads=4) as counts:
+                clock[0]+=.003
+                counts['pair_count']=2
+                counts['SYNTHETIC_PRIVATE']='SYNTHETIC_PRIVATE'
+        return {},{'reason':'answer'}
+    request()
+    output,rows=records(stream)
+    locks=[r for r in rows if r['event']=='rerank_lock']
+    assert [r['site'] for r in locks]==['count_tokens','score']
+    assert all(r['wait_ms']==2 and r['process_ms']==3 and r['threads']==4 for r in locks)
+    end=next(r for r in rows if r['event']=='stage_end')
+    assert end['lock_wait_ms']==4 and end['lock_process_ms']==6
+    assert 'SYNTHETIC_PRIVATE' not in output
+
+
+def test_failed_step_and_lock_preserve_error_and_release(stream):
+    from threading import Lock
+    from BackEnd.core.qa_diagnostics import qa_step,timed_rerank_lock
+    lock=Lock()
+    @diagnose_qa
+    def request():
+        with qa_step('dense'):
+            with timed_rerank_lock(lock,'score',threads=4):
+                raise ExecutionCancelledError('SYNTHETIC_PRIVATE')
+    with pytest.raises(ExecutionCancelledError):request()
+    assert lock.acquire(blocking=False)
+    lock.release()
+    output,rows=records(stream)
+    assert [r['code'] for r in rows if r['event'] in {'step_end','rerank_lock'}]==['cancelled','cancelled']
+    assert 'SYNTHETIC_PRIVATE' not in output
+
+
+def test_local_reranker_connects_both_lock_sites_to_one_stage(stream):
+    from BackEnd.tests.test_reranker import _fake,_Session
+    from BackEnd.core.qa_diagnostics import qa_stage
+    @diagnose_qa
+    def request():
+        qa_stage('rerank')
+        scores,_=_fake(4,_Session()).score_with_diagnostics('SYNTHETIC_PRIVATE',['자료 하나','자료 둘'])
+        assert len(scores)==2
+        return {},{'reason':'answer'}
+    request()
+    output,rows=records(stream)
+    locks=[r for r in rows if r['event']=='rerank_lock']
+    assert [r['site'] for r in locks]==['count_tokens','score']
+    assert locks[1]['candidate_count']==2 and locks[1]['pair_count']==2
+    end=next(r for r in rows if r['event']=='stage_end')
+    assert abs(end['lock_wait_ms']-sum(r['wait_ms'] for r in locks))<=.02
     assert 'SYNTHETIC_PRIVATE' not in output

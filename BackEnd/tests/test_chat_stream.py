@@ -16,6 +16,7 @@ from BackEnd.documents.stream import DraftStream, partial_text, stable_draft
 from BackEnd.tests.test_chat_http_recovery import (  # noqa: F401
     server, assert_available_slots, assert_no_disconnect_watcher,
 )
+from BackEnd.tests.test_request_execution import timing_records  # noqa: F401
 
 
 def test_partial_text_decodes_only_complete_escapes():
@@ -186,6 +187,35 @@ def test_stream_rejects_busy_and_invalid_requests_before_streaming(api):
     assert invalid.status_code == 422 and invalid.json() == {"detail": "sensitive_input"}
 
 
+def test_concurrent_http_worker_qa_and_response_share_separate_ids(api,monkeypatch,timing_records):
+    from concurrent.futures import ThreadPoolExecutor
+    from BackEnd import main
+    from BackEnd.core.qa_diagnostics import diagnose_qa,current_diagnostic,model_call
+    seen=[]
+    @diagnose_qa
+    def qa(*args,**options):
+        seen.append(current_diagnostic().request_id)
+        with model_call('configured-model'):
+            options['on_draft']('SYNTHETIC_PRIVATE')
+            options['on_draft']('SYNTHETIC_PRIVATE 계속')
+        return {'kind':'answer','text':'SYNTHETIC_PRIVATE','contacts':[]}, {'reason':'answer'}
+    monkeypatch.setattr(main,'answer_document',qa)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses=list(pool.map(lambda n:api.client.post('/api/v1/chat/stream',
+            json={'query':'SYNTHETIC_PRIVATE'+str(n)},headers={'X-Request-ID':'SYNTHETIC_PRIVATE'}),range(2)))
+    assert all(r.status_code==200 and events(r)[-1]['type']=='final' for r in responses)
+    rows=timing_records()
+    assert len(set(seen))==2 and set(seen)=={r['request_id'] for r in rows}
+    for identifier in seen:
+        names=[r['event'] for r in rows if r['request_id']==identifier]
+        for name in ('request_start','qa_start','qa_end','model_start','model_end','first_public_draft','final_ready','response_end'):
+            assert names.count(name)==1
+        assert names[0]=='request_start' and names[-1]=='response_end'
+        assert names.index('qa_end')<names.index('final_ready')<names.index('response_end')
+    assert 'SYNTHETIC_PRIVATE' not in json.dumps(rows)
+    assert current_diagnostic() is None
+
+
 def test_ollama_chat_stops_stream_and_applies_call_output_limit(monkeypatch):
     from BackEnd.core.execution import GenerationStopped
     from BackEnd.rag import ollama
@@ -278,7 +308,7 @@ def test_disconnect_before_acceptance_does_not_enter_qa_or_leak_slots(server, mo
 
 
 @pytest.mark.parametrize('phase', ['draft', 'before_final', 'deadline'])
-def test_stream_cancellation_keeps_slot_until_worker_exits_and_never_records(server, monkeypatch, phase):
+def test_stream_cancellation_keeps_slot_until_worker_exits_and_never_records(server, monkeypatch, phase, timing_records):
     from BackEnd import main
     server.settings.referral_records_enabled = True
     original, redact, line = main._answer_chat, main.redact_document, main._stream_line
@@ -339,5 +369,9 @@ def test_stream_cancellation_keeps_slot_until_worker_exits_and_never_records(ser
             assert encoded[-1]['type'] == 'error' and encoded[-1]['status'] == 504
         assert_available_slots(3)
         assert_no_disconnect_watcher(server)
+        ends=[r for r in timing_records() if r['event']=='response_end']
+        assert len(ends)==1
+        assert ends[0]['code']==('timeout' if phase=='deadline' else 'cancelled')
+        if phase!='deadline':assert ends[0]['transport_status']!='complete'
     finally:
         sock.close()

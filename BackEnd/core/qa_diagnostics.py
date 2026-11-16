@@ -1,4 +1,4 @@
-"""문서 QA 단계와 허용된 메타데이터만 기록한다. HTTP 전송 완료나 원문은 기록하지 않는다."""
+"""요청·QA·모델·서버 전송의 시간과 허용된 수치만 기록한다."""
 
 from contextvars import ContextVar
 from contextlib import contextmanager
@@ -8,6 +8,8 @@ import json
 import logging
 from time import monotonic
 from uuid import uuid4
+from asyncio import CancelledError
+from httpx import TimeoutException
 
 from BackEnd.core.execution import ExecutionCancelledError, ExecutionTimeoutError, GenerationStopped
 from BackEnd.documents.contracts import DocumentError
@@ -29,6 +31,7 @@ CODES = frozenset({
     "document_reranker_failed", "document_generation_failed", "document_changed_during_search",
     "document_evidence_version_mismatch", "document_evidence_incomplete", "timeout", "cancelled", "error",
     "early_stop", "skipped",
+    "inference_busy", "send_error", "response_incomplete",
 })
 ANSWER_VALIDATION_CODES = frozenset({
     "accepted", "invalid_schema", "empty_answer", "invalid_answer",
@@ -45,6 +48,8 @@ class Diagnostic:
     call_index: int = 0
     rerank_wait_ms: float | None = None
     rerank_process_ms: float = 0
+    outcome_code: str = "ok"
+    marks: set[str] = field(default_factory=set)
 
 
 _current: ContextVar[Diagnostic | None] = ContextVar("qa_diagnostic", default=None)
@@ -96,10 +101,10 @@ def model_call(model, *, input_count=None):
     except GenerationStopped:
         code = "early_stop"
         raise
-    except ExecutionTimeoutError:
+    except (ExecutionTimeoutError, TimeoutError, TimeoutException):
         code = "timeout"
         raise
-    except ExecutionCancelledError:
+    except (ExecutionCancelledError, CancelledError):
         code = "cancelled"
         raise
     except BaseException:
@@ -199,6 +204,40 @@ def current_diagnostic():
     return _current.get()
 
 
+@contextmanager
+def diagnostic_scope(state):
+    token = _current.set(state)
+    try:
+        yield state
+    finally:
+        _current.reset(token)
+
+
+def mark_response(event, state=None):
+    state = state or _current.get()
+    if state is None or event not in {"request_start", "first_public_draft", "final_ready"} or event in state.marks:
+        return
+    state.marks.add(event)
+    _emit(state, event, state.outcome_code)
+
+
+def record_request_error(status):
+    state = _current.get()
+    if state is not None:
+        state.outcome_code = {429: "inference_busy", 499: "cancelled", 504: "timeout"}.get(status, "error")
+
+
+def finish_response(state, status, transport_status, finished):
+    code = state.outcome_code
+    if transport_status != "complete":
+        code = {"disconnected": "cancelled", "send_error": "send_error", "cancelled": "cancelled"}.get(
+            transport_status, "response_incomplete")
+    elif status is not None and status >= 400:
+        code = {429: "inference_busy", 499: "cancelled", 504: "timeout"}.get(status, "error")
+    _emit(state, "response_end", code, completion={"http_status": status, "transport_status": transport_status,
+          "response_total_ms": round(max(0, finished - state.started) * 1000, 2)})
+
+
 def _safe_code(value):
     return value if type(value) is str and value in CODES else "error"
 
@@ -247,12 +286,13 @@ def record_rerank_input_budget(token_count: int, token_limit: int):
 def diagnose_qa(function):
     @wraps(function)
     def wrapped(*args, **kwargs):
-        state = Diagnostic()
+        state = _current.get() or Diagnostic()
         token = _current.set(state)
+        qa_started = monotonic()
         code = "error"
         completion = {}
         try:
-            _emit(state, "qa_start", "ok")
+            _emit(state, "qa_start", "ok", started=qa_started)
             result = function(*args, **kwargs)
             code = _safe_code(result[1].get("reason"))
             # 원문이 섞인 trace 전체 대신 허용된 값만 완료 로그에 전달한다.
@@ -278,7 +318,8 @@ def diagnose_qa(function):
         finally:
             try:
                 _finish_stage(state, code)
-                _emit(state, "qa_end", code, completion=completion)
+                _emit(state, "qa_end", code, started=qa_started, completion=completion)
+                state.outcome_code = code
             finally:
                 _current.reset(token)
     return wrapped

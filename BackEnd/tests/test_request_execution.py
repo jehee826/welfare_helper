@@ -20,6 +20,85 @@ PATHS = ["/api/v1/chat", "/debug/rag", f"/api/v1/admin/documents/{DOC}/query",
          f"/api/v1/admin/documents/{DOC}/search", "/api/v1/desktop/guide"]
 
 
+@pytest.fixture
+def timing_records(caplog):
+    from BackEnd.core.qa_diagnostics import logger
+    logger.addHandler(caplog.handler)
+    try:
+        yield lambda: [json.loads(r.getMessage()) for r in caplog.records if r.name==logger.name]
+    finally:
+        logger.removeHandler(caplog.handler)
+
+
+@pytest.mark.parametrize('mode,transport,code', [
+    ('normal','complete','ok'), ('late_disconnect','complete','ok'), ('late_flag','complete','ok'),
+    ('early_disconnect','disconnected','cancelled'), ('send_error','send_error','send_error'),
+    ('cancel','cancelled','cancelled'), ('incomplete','incomplete','response_incomplete'),
+])
+def test_response_timing_distinguishes_send_completion_and_disconnect(mode,transport,code,timing_records):
+    from BackEnd.core.qa_diagnostics import current_diagnostic
+    async def run():
+        async def receive():return {'type':'http.disconnect'}
+        async def send(message):
+            if message['type']=='http.response.body':
+                if mode=='send_error':raise OSError('SYNTHETIC_PRIVATE')
+                if mode=='cancel':raise asyncio.CancelledError()
+        async def app(scope,receive,send):
+            scope['state']['inference_disconnected']=Event()
+            assert current_diagnostic() is scope['state']['timing_diagnostic']
+            await send({'type':'http.response.start','status':200,'headers':[]})
+            if mode=='incomplete':return
+            if mode=='early_disconnect':await receive()
+            await send({'type':'http.response.body','body':b'SYNTHETIC_PRIVATE','more_body':False})
+            if mode=='late_disconnect':await receive()
+            if mode=='late_flag':scope['state']['inference_disconnected'].set()
+        call=execution.InferenceTiming(app)({'type':'http','method':'POST','path':'/api/v1/chat'},receive,send)
+        if mode in {'send_error','cancel'}:
+            with pytest.raises(OSError if mode=='send_error' else asyncio.CancelledError):await call
+        else:await call
+        assert current_diagnostic() is None
+    asyncio.run(run())
+    rows=timing_records()
+    assert [r['event'] for r in rows]==['request_start','response_end']
+    assert len({r['request_id'] for r in rows})==1
+    assert rows[-1]['transport_status']==transport and rows[-1]['code']==code
+    assert rows[-1]['response_total_ms']>=0
+    assert 'SYNTHETIC_PRIVATE' not in json.dumps(rows)
+
+
+def test_response_end_waits_until_final_send_returns(timing_records):
+    async def run():
+        entered,release=asyncio.Event(),asyncio.Event()
+        async def app(scope,receive,send):
+            await send({'type':'http.response.start','status':200,'headers':[]})
+            await send({'type':'http.response.body','body':b'','more_body':False})
+        async def receive():await asyncio.Event().wait()
+        async def send(message):
+            if message['type']=='http.response.body':
+                entered.set();await release.wait()
+        task=asyncio.create_task(execution.InferenceTiming(app)(
+            {'type':'http','method':'POST','path':'/api/v1/chat'},receive,send))
+        await entered.wait()
+        assert not any(r['event']=='response_end' for r in timing_records())
+        release.set();await task
+    asyncio.run(run())
+    assert timing_records()[-1]['transport_status']=='complete'
+
+
+def test_body_rejection_keeps_http_id_without_entering_application(timing_records):
+    async def run():
+        app=Mock()
+        async def receive():return {'type':'http.request','body':b'x'*65537,'more_body':False}
+        async def send(message):pass
+        await execution.InferenceTiming(execution.InferenceBodyLimit(app))(
+            {'type':'http','method':'POST','path':'/api/v1/chat'},receive,send)
+        app.assert_not_called()
+    asyncio.run(run())
+    rows=timing_records()
+    assert len(rows)==2 and len({r['request_id'] for r in rows})==1
+    assert rows[-1]['http_status']==413 and rows[-1]['code']=='error'
+
+
 class Exchange:
     def __init__(self, app, path, body):
         self.queue = asyncio.Queue()

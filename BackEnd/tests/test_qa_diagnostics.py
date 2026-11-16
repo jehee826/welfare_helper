@@ -243,3 +243,60 @@ def test_local_reranker_connects_both_lock_sites_to_one_stage(stream):
     end=next(r for r in rows if r['event']=='stage_end')
     assert abs(end['lock_wait_ms']-sum(r['wait_ms'] for r in locks))<=.02
     assert 'SYNTHETIC_PRIVATE' not in output
+
+
+@pytest.mark.parametrize('native_complete',[False,True])
+def test_context_early_stop_has_separate_answer_call_and_native_metadata(stream,monkeypatch,native_complete):
+    import time,httpx
+    from BackEnd.rag import ollama
+    from BackEnd.documents.context import prepare_context
+    from BackEnd.core.qa_diagnostics import context_preparation
+    calls=[]
+    native={'done':True,'total_duration':9_000_000,'load_duration':0,
+            'prompt_eval_duration':2_000_000,'eval_duration':6_000_000}
+    def handler(request):
+        calls.append(1)
+        lines=([{'message':{'content':'{"relation":"independent",'},**(native if native_complete else {})}] if len(calls)==1 else [
+            {'message':{'content':'{"text":"SYNTHETIC_PRIVATE"}'}},
+            {'message':{'content':''},'done':True,'done_reason':'stop','total_duration':9_000_000,
+             'load_duration':0,'prompt_eval_duration':2_000_000,'eval_duration':6_000_000,'eval_count':3}])
+        return httpx.Response(200,content=''.join(json.dumps(x)+'\n' for x in lines).encode())
+    original=httpx.AsyncClient
+    monkeypatch.setattr(ollama.httpx,'AsyncClient',lambda **kw:original(transport=httpx.MockTransport(handler),**kw))
+    client=ollama.OllamaClient('http://private.invalid','embed','configured-model',
+        llm_options={'num_ctx':16384,'num_predict':1024},request_deadline=time.monotonic()+10)
+    client._effective_context=16384
+    @diagnose_qa
+    def request():
+        _,_,_,trace=prepare_context(client,'SYNTHETIC_PRIVATE',None,
+            [{'role':'user','content':'이전 합성 질문'}],None,16384,1024)
+        context_preparation(trace)
+        assert trace['preparation_stopped_early'] is True and client.last_chat_diagnostics=={}
+        client.chat('규칙','SYNTHETIC_PRIVATE')
+        return {},{'reason':'answer','generation_metadata':client.last_chat_diagnostics}
+    request()
+    output,rows=records(stream)
+    ends=[r for r in rows if r['event']=='model_end']
+    assert len(calls)==2
+    assert [(r['purpose'],r['call_index'],r['code']) for r in ends]==[('context',1,'early_stop'),('answer',2,'ok')]
+    assert ends[0]['native_timing']==('complete' if native_complete else 'missing')
+    assert ('total_ms' in ends[0]) is native_complete
+    assert ends[1]['native_timing']=='complete' and ends[1]['total_ms']==9
+    assert next(r for r in rows if r['event']=='context_preparation')['early_stop'] is True
+    assert 'SYNTHETIC_PRIVATE' not in output and 'private.invalid' not in output
+
+
+@pytest.mark.parametrize('exception', ['http_timeout','budget_timeout','task_cancel'])
+def test_model_transport_failures_have_specific_status_without_private_text(stream,exception):
+    import asyncio,httpx
+    from BackEnd.core.qa_diagnostics import model_call
+    errors={'http_timeout':httpx.ReadTimeout,'budget_timeout':TimeoutError,'task_cancel':asyncio.CancelledError}
+    @diagnose_qa
+    def request():
+        with model_call('configured-model'):
+            raise errors[exception]('SYNTHETIC_PRIVATE')
+    with pytest.raises(errors[exception]):request()
+    output,rows=records(stream)
+    end=next(r for r in rows if r['event']=='model_end')
+    assert end['code']==('cancelled' if exception=='task_cancel' else 'timeout')
+    assert end['native_timing']=='missing' and 'SYNTHETIC_PRIVATE' not in output

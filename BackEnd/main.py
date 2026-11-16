@@ -14,8 +14,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from BackEnd.core.execution import (
-    InferenceBodyLimit, inference_request, checkpoint, ExecutionTimeoutError, ExecutionCancelledError,
+    InferenceBodyLimit, InferenceTiming, inference_request, checkpoint, ExecutionTimeoutError, ExecutionCancelledError,
 )
+from BackEnd.core.qa_diagnostics import diagnostic_scope, mark_response, record_request_error
 from BackEnd.core.chat_rate import enforce_chat_rate_limit
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials
@@ -280,7 +281,8 @@ def _answer_chat(request: "ChatRequest", http_request: Request, service: ChatSer
                 displayed = {(item.get('label'), item.get('phone'), item.get('source_url')) for item in response['contacts']}
                 if selected and {(item.get('label'), item.get('phone'), item.get('source_url')) for item in selected} == displayed:
                     record_public(str(uuid4()), selected)
-            return response
+        mark_response("final_ready", http_request.scope.get("state", {}).get("timing_diagnostic"))
+        return response
     except HTTPException:
         raise
     except DocumentError as exc:
@@ -310,10 +312,15 @@ async def chat_stream(request: ChatRequest, http_request: Request, service: Chat
     """
     loop = asyncio.get_running_loop()
     events: asyncio.Queue = asyncio.Queue()
+    diagnostic = http_request.scope.get("state", {}).get("timing_diagnostic")
 
     def put(event):
+        def enqueue():
+            events.put_nowait(event)
+            if event["type"] == "draft" and (event.get("text") or event.get("append", "")).strip():
+                mark_response("first_public_draft", diagnostic)
         try:
-            loop.call_soon_threadsafe(events.put_nowait, event)
+            loop.call_soon_threadsafe(enqueue)
         except RuntimeError:
             pass
 
@@ -329,16 +336,19 @@ async def chat_stream(request: ChatRequest, http_request: Request, service: Chat
             else {"type": "draft", "text": text})
 
     def run():
-        try:
-            response = _answer_chat(request, http_request, service, credentials,
-                                    ready=lambda: put({"type": "accepted"}), on_draft=draft)
-            put({"type": "final", "response": response})
-        except HTTPException as exc:
-            put({"type": "error", "status": exc.status_code, "detail": exc.detail,
-                 "headers": dict(exc.headers or {})})
-        except Exception as exc:
-            logger.error("chat stream failed (%s)", type(exc).__name__)
-            put({"type": "error", "status": 503, "detail": CHAT_FAILURE, "headers": {}})
+        with diagnostic_scope(diagnostic):
+            try:
+                response = _answer_chat(request, http_request, service, credentials,
+                                        ready=lambda: put({"type": "accepted"}), on_draft=draft)
+                put({"type": "final", "response": response})
+            except HTTPException as exc:
+                record_request_error(exc.status_code)
+                put({"type": "error", "status": exc.status_code, "detail": exc.detail,
+                     "headers": dict(exc.headers or {})})
+            except Exception as exc:
+                record_request_error(503)
+                logger.error("chat stream failed (%s)", type(exc).__name__)
+                put({"type": "error", "status": 503, "detail": CHAT_FAILURE, "headers": {}})
 
     threading.Thread(target=run, name="chat-stream", daemon=True).start()
     first = await events.get()
@@ -372,6 +382,10 @@ async def private_responses(request: Request, call_next):
     if request.url.path.startswith(("/api/v1/admin", "/api/v1/desktop", "/api/v1/screen")) or request.url.path in {"/api/v1/chat", "/api/v1/chat/stream", "/debug/rag", "/api/v1/conversation/summary"}:
         response.headers["Cache-Control"] = "no-store"
     return response
+
+
+# BaseHTTPMiddleware의 내부 채널이 아닌 실제 ASGI send 반환을 감싼다.
+app.add_middleware(InferenceTiming)
 
 
 def require_rag_diagnostics(x_rag_debug_token: str = Header(default="")) -> None:

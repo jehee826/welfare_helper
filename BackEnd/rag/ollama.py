@@ -198,14 +198,13 @@ class OllamaClient:
                 raise OllamaError("생성 스트림의 텍스트 형식이 올바르지 않습니다.")
             parts.append(content)
             model_content(content)
-            if on_content is not None and content:
-                on_content(content)
             if data.get("done") is True:
                 metadata = {key: data[key] for key in ("done_reason", "prompt_eval_count", "eval_count", "truncated",
                     "total_duration", "load_duration", "prompt_eval_duration", "eval_duration") if key in data}
                 timing.update(metadata)
-                return True
-            return False
+            if on_content is not None and content:
+                on_content(content)
+            return data.get("done") is True
 
         # read timeout과 달리 토큰이 계속 와도 전체 예산에 도달하면 소켓 스트림을 닫는다.
         remaining = self.remaining_timeout()

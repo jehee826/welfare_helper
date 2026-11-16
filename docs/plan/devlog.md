@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-16 09:30 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-16 09:35 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1355,3 +1355,45 @@
 - 이전 단건의 snapshot1.355/retrieval0.379/rerank3.579/generation14.144/validation1.148초와 대조했다. 검색·문서 준비도 동시성에서 다소 늘었으나 주된 누적 지연은 리랭킹·생성 구간이다. API 슬롯만 늘리면 이 직렬 구간을 없애지 못하며 단건 계산을 직접 빠르게 하지 않는다. 임베딩의 앱별 별도 슬롯은 없지만 Ollama 실행·CPU 자원 제약이 있으므로 무제한 병렬로 취급하지 않는다.
 - 단일 자원 표본은 backend CPU99.95%, Ollama CPU608.20%, GPU사용률48%/메모리13765MiB였다. 한 시점 표본이므로 GPU/CPU 포화나 평균 사용률의 근거로 쓰지 않는다. 세 측정 자식프로세스 모두exit0, 답변3회·재시도0이며 추가실행은 중단했다. 현재 누락/정확도 수정은 보류 유지다.
 - 원자료는 로컬 .local/co-op/checks-runtime/concurrency-ec658f0-20261116의 preflight.json/batch-summary.json/server-review-fields.json/resource-sample.json 및 request1~3의 스트림 첫응답·이벤트다. 설계가 클라이언트 완료값·서버 단계/시각·모델상주 및 단일 자원표본을 직접 대조했다. 다음 변경 판단에는 리랭커 잠금과 LLM 대기/연산을 구분하는 최소 관측이 도움이 되지만 이번에는 계측·제품·운영 설정을 수정하지 않았다.
+
+<a id="log-20261116-llm-timing-plan"></a>
+## 2026-11-16 09:35 KST · 요청·모델별 내부 시간 로그 설계
+
+### 현재 구조 검토
+
+- 공개 상담은 main._answer_chat→요청 gate/기한→answer_document→선택적 prepare_context→임베딩/유사도·키워드 검색→리랭킹→최종 llm.chat→검증→전송 흐름이다. 이력 없는 질문은 최종 생성1회, 맥락이 있으면 준비 생성과 최종 생성이 직렬로 이어질 수 있다. 준비 호출을 무조건 중복으로 보거나 삭제하지 않는다.
+- OllamaClient는 기한 있는 공개 요청의 직접 HTTP/NDJSON 경로와 기한 없는 ChatOllama 경로가 섞여 있다. 공개 상담이 LangChain과 HTTP로 같은 생성을 두 번 수행하는 것은 아니다. HTTP마다 asyncio.run/새 AsyncClient가 생기는 부분은 정리 후보지만 현재 수초~수십초 지연의 원인으로 실측하지 않았다.
+- _chat_before_deadline은 total_duration/load_duration/prompt_eval_duration/eval_duration을 이미 받지만 chat.last_chat_diagnostics에 옮길 때 버린다. qa_diagnostics도 token count만 허용한다. 새 프레임워크보다 이 누락을 복구하는 것이 첫 변경이다. 조기종료/실패는 완료 메타데이터가 없을 수 있으므로 0초로 채우지 않는다.
+- 현재 retrieval은 임베딩·코사인·BM25·후보결합을 합치고, qa_stage(generation)는 fit_answer부터 시작하지만 trace.timings_ms.generation은 뒤쪽 schema/llm.chat 직전부터 시작한다. 같은 이름의 측정 범위가 다르며 qa_end는 HTTP 전송 완료도 아니다. 단계 의미와 시작/끝을 명확히 해야 한다.
+
+### 목표·공유 계약
+
+- 기존 welfare_helper.qa_steps 구조화 logger를 확장한다. 요청 공통 request_id를 HTTP 수명에서 만들고 작업 스레드·QA·모델 호출·응답 종료까지 명시 전달해 같은 요청을 연결한다. 기존 QA 직접 호출/검사에는 독립ID fallback을 유지한다. thread 경계에서 ContextVar가 자동 전달된다고 가정하지 않는다.
+- 공통 허용 필드는 request_id, event, stage/purpose, call_index, model, elapsed_ms, status/error_code 및 아래 수치다. raw 질문·대화·프로필·프롬프트·답변·벡터·토큰/비밀번호는 기록하지 않는다. 모델명은 설정된 모델 식별자만 사용한다. 공개 응답 DTO·NDJSON event 내용·권한·문서 버전·동의 계약을 바꾸지 않는다.
+- 경과시간은 monotonic으로 ms 단위에 통일하고 원본 Ollama ns 값은 단위를 명시해 ms로 변환한다. request 총시간, 단계시간, 그 안의 모델시간은 포함 관계이므로 합산해 중복 계산하지 않는다. 동시 요청도 개별ID로 독립 기록한다.
+
+### 측정 항목과 정확한 경계
+
+1. 요청 수명: HTTP 접수부터 최종 ASGI body send가 정상 반환한 시점까지 response_total_ms. gate 거절429·오류·timeout·cancel/disconnect도 원인을 기록한다. send 실패/단절은 정상 완료로 표시하지 않는다. 이 값은 서버 전송 처리 기준이며 Chrome 화면 표시/클라이언트 수신 완료를 뜻하지 않는다.
+2. 문서 준비 snapshot: 기존 DB/활성 문서 snapshot 준비시간을 유지한다. 맥락 판단 전 준비 비용이 모델 시간에 섞이지 않게 한다.
+3. 맥락 파악 context: 전체 준비 단계와 purpose=context의 실제 LLM HTTP 호출을 분리한다. 이력이 없어 미호출이면 skipped/reason으로 기록한다. independent 확정 조기종료는 early_stop으로 남기고 native 완료 메타데이터 없음과 실패를 구분한다. 기존 준비 호출과 최종 생성의 diagnostics가 서로 덮이지 않도록 각 호출 종료 시 목적별 기록을 남긴다.
+4. 임베딩 embedding: query embedding HTTP 요청 시작부터 응답 확인까지 wall_ms. 임베딩 모델명·입력개수와 응답이 실제 제공하는 허용 duration/count만 기록한다. 벡터 내용은 제외하며 이후 유사도 계산시간을 포함하지 않는다. 없는 native 필드는 미제공으로 남긴다.
+5. 유사도·검색: dense_search의 코사인 계산/정렬, BM25 인덱스 준비·검색, 필터/RRF 결합을 개별 duration으로 기록한다. 기존 retrieval 전체도 호환을 위해 유지하되 포함 관계를 명시한다. 검색 후보 수는 수치만 기록하며 검색어/본문은 넣지 않는다.
+6. 리랭킹 rerank: 전체시간과 기존 두 잠금 지점의 획득대기 합계를 분리한다. 잠금 안 처리시간은 토큰화·병렬 평가를 포함하는 값이며 순수 ONNX kernel 시간이라고 부르지 않는다. 후보/문서 구간 수·threads만 수치로 남기고 기존 잠금 범위/계산 순서는 변경하지 않는다.
+7. 최종 질의 answer: fit_answer/프롬프트 구성의 준비시간과 purpose=answer의 HTTP 호출 wall_ms를 구분한다. Ollama가 제공한 total/load/prompt_eval/eval duration과 token count를 각 호출에 보존한다. 최초 비어 있지 않은 모델 content 도착시간도 요청 시작 대비 기록한다. native total과 wall의 차이나 native 세부 합의 잔여를 정확한 FIFO 큐 대기라고 단정하지 않는다.
+8. 답변 전달: 최초 표시 가능한 draft enqueue 시점·final 준비 시점·서버 응답 종료를 같은 request_id에 기록한다. 최초 모델 조각과 공개 draft는 JSON 상태/숫자 마스킹 때문에 다를 수 있다. 토큰별 로그를 쌓지 않고 첫 시각과 종료 요약만 남긴다. validation·연락처 기록 등 final 직전 기존 처리는 총시간에 포함하되 모델 계산으로 부르지 않는다.
+
+### 변경 범위·담당·진행 순서
+
+- 기준 브랜치는 fix/rag-speed, 제품 기준은 main/ec658f0의 backend359c004c다. 설계는 계획·검토·기존3문서 작성, 구현/집중검사는 착수 시 캡스톤-개발 단일 작성자에게 배정한다. 현재는 계획만 확정하며 실행 담당이 구현 중이라고 표시하지 않는다.
+- 1차는 BackEnd/rag/ollama.py와 core/qa_diagnostics.py에서 기존 native timing 보존·모델 목적/호출별 scalar 로그부터 구현한다. 필요한 호출 목적 표시는 documents/context.py·qa.py의 호출부에서 정한다. 별도 서비스/DB 테이블/진단 문서/대시보드는 만들지 않는다.
+- 2차는 documents/qa.py의 임베딩/검색/프롬프트 준비 경계를 분리하고 rag/reranker.py에서 기존 lock 대기와 처리를 측정한다. 검색/재정렬 결과와 원문 예산은 그대로 유지한다.
+- 3차는 main.py·기존 core/execution.py의 요청/ASGI 경계에서 request_id 전달·초안/final/서버전송종료를 연결한다. 기존 스트림 생성기 yield만으로 전송완료라고 기록하지 않는다. 공유 로그 계약과 직접호출 fallback을 먼저 합의해 중복ID/중복종료를 막는다.
+- 기존 test_ollama.py/test_document_rag_diagnostics.py/test_chat_stream.py/test_reranker.py의 관련 대역 검사만 보완한다. 정상·준비skipped/early_stop·모델메타데이터 미제공·동시 요청ID분리·timeout/cancel/error·단절종료와 민감본문 미기록을 확인한다. 로그를 만들기 위한 추가 모델 호출이나 응답 본문 변화가 없어야 한다.
+- 집중검사·설계검토 후 승인된 운영 반영 범위에서 기존 질문의 warm 단건 및 동시3건을 한 차례씩 비교한다. 현재 요청은 계획 승인 범위이므로 추가 운영 시험/배포는 실행하지 않는다. 느린 응답을 원하는 수치가 나올 때까지 반복하지 않는다.
+
+### 완료 기준과 이후 판단
+
+- 단일 request_id로 맥락 LLM→임베딩→유사도/BM25→리랭킹→최종 LLM→서버 응답종료를 추적할 수 있어야 한다. 모든 단계가 항상 실행된다고 가정하지 않고 skipped/early_stop/실패·단절을 구분한다.
+- 수집 가능한 native 모델 시간이 보존되고 빠진 값은 미제공으로 드러나야 한다. 겹친 단계·대기를 순수 연산으로 오해하지 않으며 내부 모델토큰 속도는 eval_count/eval_duration으로 후속 분석할 수 있어야 한다.
+- 이 단계는 관측 보완이다. 실제 느린 구간이 확인된 뒤 연결 재사용·프롬프트 중복·리랭커 잠금·모델 병렬 설정 중 한 가지만 별도 후보로 선택한다. 전면 async 리팩토링이나 LangChain 삭제, 슬롯 상향을 먼저 하지 않는다. 누락/정확도 수정은 사용자 보류를 유지한다.

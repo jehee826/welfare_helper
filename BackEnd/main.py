@@ -281,7 +281,7 @@ def _answer_chat(request: "ChatRequest", http_request: Request, service: ChatSer
                 displayed = {(item.get('label'), item.get('phone'), item.get('source_url')) for item in response['contacts']}
                 if selected and {(item.get('label'), item.get('phone'), item.get('source_url')) for item in selected} == displayed:
                     record_public(str(uuid4()), selected)
-        mark_response("final_ready", http_request.scope.get("state", {}).get("timing_diagnostic"))
+        mark_response("final_ready", getattr(http_request, "scope", {}).get("state", {}).get("timing_diagnostic"))
         return response
     except HTTPException:
         raise

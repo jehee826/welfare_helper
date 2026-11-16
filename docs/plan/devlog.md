@@ -1,6 +1,6 @@
 # 개발일지
 
-작성: 2026-11-09. 최신 업데이트: 2026-11-16 16:33 KST
+작성: 2026-11-09. 최신 업데이트: 2026-11-16 17:32 KST
 
 현재 작업은 [인계](handoff.md), 요구사항·완료 기준은 [실행 계획](merge_plan.md)을 따른다. 아래 기록은 실제 수행한 변경·실패·검증만 날짜별로 누적하며 과거 실패를 수정 후 성공으로 덮지 않는다.
 
@@ -1418,3 +1418,48 @@
 - 3차후 맥락early_stop·native제공/미제공·timeout/cancel 분리 추가5건은 phase3-context-tail-pytest.log에서5 passed/0.99초, 전송종료 분기7건은 phase3-send-tail-pytest.log에서7 passed/0.42초를 직접 확인했다. 앞선49/130/99건과 중복이 있으므로 고유 총검사수로 합산하지 않는다. 실제 모델 skip1과 초기 Windows 실행 실패는 이전 기록대로 유지한다.
 - 설계가 최종 native보존/검색분해/리랭커잠금/요청스레드ID/첫draft enqueue/final 준비/최종ASGI send 코드와 관련 검사 원자료를 대조했다. 별도 지적한 정상 전송 후 disconnect 오분류는 수정·확인됐다. 현재 추가 코드 수정 요청은 없다. 이 검토는 대역·코드 검토이며 운영 타이밍 로그 성공을 뜻하지 않는다.
 - 시험 전담1명은 .local/co-op/checks-runtime/query-timing-preparation-20261116.json에 단건1+동시3+합성후속1·최대5회 목록을 준비했다. 후보SHA/대상/시점 전달 전 실제질의는0회다. 새 로그 수집은 후보 배포 이후에만 가능하며 다음 범위는 fix/rag-speed의 확정커밋 push·PR통합·EC2 backend반영·최대5회 질의이다. 현재 push/PR/운영변경은 수행하지 않았고 사용자에게 검토 가능한 범위를 제시해 확인한다.
+
+<a id="log-20261116-timing-rollout"></a>
+## 2026-11-16 16:46 KST · 내부 시간 로깅 원격 통합·운영 검증 착수
+
+- 사용자가 후보30b1040의 push·PR생성/병합·EC2backend반영·최대5회측정 전체를 승인했다. fix/rag-speed를 명시 push하고 PR #39를 main/ec658f0 대상으로 생성했다. 제품/검사11파일과 이전 측정 기록을 포함한 문서4개 총15파일이다. 이전 승인 카드의문서3개는 이번 신규기록범위였으며 PR에는이미보존한final-plan도포함됨을보고했다.
+- 원격 CI43826289917의 python(dev)에서 직접호출 계약1건이 실패했다(747 passed/14 skipped/2 subtests). test_conversation_context의 main.chat(dto,object(),...) 대역은scope가없는데 final_ready 계측에서scope를직접참조해 AttributeError→503이됐다. 로컬집중검사범위에없던기존계약이며실패원인은코드호환성이다. 병합·배포를멈추고개발에최소호환수정·직접영향재검사만배정했다. 테스트삭제/기대값완화로우회하지않는다.
+- CI원자료는GitHub Actions해당run/job에보존했다. gh명령이없어GitHub커넥터로전환했고첫커넥터인자이름오류는스키마에맞게교정했다. 운영은사전확인만수행하며최종mergeSHA전재생성/재시작/실제질의는없다. 시험전담은대기한다.
+
+- CI수정: main.py의final_ready scope참조1줄을getattr(http_request,'scope',{})로바꾼23216eb를선별커밋·같은기능브랜치에push했다. 기존직접호출성공과동시streamID검사2건은ci-direct-call-fix-pytest.log에서2 passed/1.82초를직접확인했다. 테스트삭제/기대값완화는없다. 새원격CI확인전병합·배포를하지않는다.
+
+- 수정head23216eb의CI43826797789에서web-extension·python(dev/worker/backend)4job전부success를확인했다. PR #39를expected_head고정으로병합한main은e89ed02c9d5078ac11d0b8214bcbc104be708d6d다. 개발에이SHA를배포기준으로전달했고backend만교체·기존runtime/worker/Ollama/edge/pin/데이터보존후전담최대5회질의를진행하도록했다. 실제배포/추론결과는아직확인전이다.
+
+- 배포 중간 실패·복구: 허용경로검사에서 이전보존docs/plan/final-plan.md가빠져최초스크립트가pull/교체전중단했다. 실제15경로가승인후보와동일함을대조해문서범위만보완했다. 이후코드전용후보31b1f524의120파일/import를검증했으나Docker create 후HostConfig의OomKillDisable이null→false로정규화되어start전guard가중단했다. 이전backend22b8dd41를즉시running으로복구했고worker/Ollama/edge/pin은불변이었다. 정확히1필드의미지정/기본false표현차이만검증정규화하고나머지Config/HostConfig/Env완전일치검증을유지해동일후보로재개한다. 실패후보·guard/rollback원자료는보존하며실제질의는아직0회다.
+
+- 두번째운영중단은후보healthy·/health200후배포검사의URL을/ready로잘못지정한운영스크립트실수였다. 현행경로/health/ready로교정해같은후보를재사용한다. 제품오류/설정차이가아니며다시이전backend복구·질의0·다른서비스/pin불변을개발이보고했다. 최초/재개실패원자료는덮지않는다. 불필요한복구를유발한검사경로실수도후속성공으로숨기지않는다.
+
+- 17:20 배포완료검토: EC2 main/e89ed02 clean, backend31b1f5245278ab1e4ff0930f82a50af572c927c4b72ecedc1b39dafdc421323c·containered7abae11829b697ea20f59d985d5da7ac68d4a802290874fee5096c9a73cb67, 17:18기동healthy·소스120일치를확인했다. 내부/health·/health/ready200,PC공개HTTPS/health200·CA/IP검증이다. 기존runtime/인증stat/기록ON/threads4/모델·임베딩CPU·worker/Ollama/edge는유지했다. pin은backend이미지만갱신한cb2b60d6cfc4f17f414e7ce2454a525bbc92226a428c60290ac92c3fb95aa761,systemdactive/enabled다. 기존backend는welfare-backend-before-timing-e89ed02로중지보존했다. 개발은질의/워밍업0이며상주Qwen·BGE를확인해전담에고정후보/실행시점을넘겼다. 시험중운영변경은멈춘다. 원자료는EC2/로컬동명의.local/co-op/checks-runtime/ec2-timing-e89ed02-20261116이며비공개runtime사본은원격root전용이다.
+
+<a id="log-20261116-timing-result"></a>
+## 2026-11-16 17:32 KST · 시간 로그 실제 5회 결과·설계 검토 완료
+
+### 실행 범위와 종료
+
+- 시험 전담 Terra1명이 main/e89ed02·backend31b1f524에서 단건1+동시3+합성후속1, 총5답변·재시도0·워밍업0으로 종료했다. 개발과 설계는 추가 추론을 하지 않았다. 기초연금 대상 질문4회와 합성 대화이력2메시지를 포함한 신청 장소 후속1회다. 준비 당시 Qwen/BGE 상주를 확인했지만 새 backend의 앱 캐시는 warm을 보장하지 않는다.
+- 5건 모두 answer·정상 전송 종료였다. 원자료의 최초 응답·이벤트·시각·안전 필드 로그는 로컬 .local/co-op/checks-runtime/timing-candidate-e89ed02-20261116의 single/concurrent1~3/followup, server-safe.json, summary.json에 보존했다. 설계가 클라이언트 결과와 서버5ID를 직접 대조했다. 실제 질문 원문은 민감정보 없는 허용 평가 원자료 안에만 둔다.
+- postflight는 HEAD·backend ID/StartedAt 불변, 4서비스 running·시험 프로세스 종료였다. 개발은 제품/공유문서/Git/index/운영 작성권을 반환했다. 추가 질의·재기동·반복검사를 하지 않고 설계가 기존3문서만 마감한다.
+
+### 클라이언트 시간과 모델별 구간
+
+- 단건: 첫 draft21.093초, final/EOF29.765초. 답변194자·근거2·연락처1. 서버 snapshot3.668초, retrieval9.236초 중 BM25 최초 인덱스8.802초, dense0.347초·BM25검색0.005초·RRF0.002초였다. 리랭커 잠금 대기0·처리합6.464초, 임베딩 wall0.065초, 최종 LLM wall7.657초(native total7.645초·prompt0.042초·eval7.582초, prompt3044/eval243토큰)다. 모델 cold와 별개인 앱 초기화 비용을 관측했다.
+- 동시3건: 완료 순서의 첫 draft16.594/24.312/32.906초, final25.125/33.218/42.250초. 모두194자·근거2·연락처1, 최종 생성 prompt3044/eval243토큰이다. 서버 완료 순서의 리랭커 두 Lock 대기 합0/3.502/8.538초, 처리합3.831/5.041/4.411초였다. 임베딩 wall0.071/0.201/0.230초, dense0.708/0.922/0.893초, 캐시된 BM25 인덱스는0.006초 이하였다.
+- 동시3건 최종 LLM wall은 서버 완료 순서로15.355/18.545/23.558초, native total15.334/18.495/23.544초, eval14.691/8.158/9.364초다. 반복 입력의 prompt는0.606/0.031/0.031초였다. 직접 측정한 리랭커 대기와 LLM 호출 구간을 분리했지만 LLM wall이나 native 세부 합의 잔여를 정확한 FIFO 큐 대기로 단정하지 않는다.
+- 합성후속: 첫 draft15.110초, final/EOF21.516초, 답변66자·근거2·연락처1. context call1 wall3.320초(native total3.309초·prompt1.086초·eval1.908초, prompt626/eval57토큰), embedding call2 wall0.141초, answer call3 wall11.349초(native total11.338초·prompt6.670초·eval4.535초, prompt3056/eval147토큰)였다. context preparation used·early_stop false, 리랭커 대기0·처리합2.507초다. 다른 후속 프롬프트의 prefill 비용은 반복 같은 입력의 캐시 관측과 구분한다.
+
+### 로그 계약 확인과 해석 한계
+
+- 단건28bcc7ba1269450d8fffe710c7d789d4, 동시 서버 완료 순서a8568990e2cd4efe92db286ea430fb2c/2a50abd1b5314027bd7ac1e84509dec4/7328e025b7ae49fface1250891fe82aa, 후속3ca419dd0f44492e99a824c49bc19719의 request_start→QA/model/검색→첫 모델content/첫 공개draft→final_ready→response_end가 각각 같은ID이고 종료는 각1개였다. 동시 클라이언트에 내부ID가 노출되지 않아 client↔server 직접 매핑은 확정하지 않는다. 단순 완료 순서 유사성을 ID 확정으로 바꾸지 않는다.
+- context/answer native timing은 complete, embedding은 API가 제공한 total/load/count만 partial이다. 없는 native 시간을0으로 채우지 않았다. 첫 모델 조각과 공개 가능한 draft는 다르며, ASGI send 종료는 클라이언트 수신 완료·Chrome 표시 확인이 아니다. 단계 전체와 그 안의 모델/잠금 시간을 합쳐 중복 계산하지 않는다.
+- 직전 warm 단건22.328초는 eval307토큰, 이번은 eval243토큰과 앱 인덱스 최초 준비를 포함하므로29.765초를 계측 회귀로 판정하지 않는다. 직전 동시26.375/35.297/44.297초와 이번25.125/33.218/42.250초도 각각 한 번의 관측이며 프롬프트 캐시·출력량·자원 조건 차이가 있다. 이번 제품 변경은 로그 보완이므로 속도 개선 효과나 일반 평균으로 확대하지 않는다.
+- 모두 answer였다는 사실은 50대 누락 해결·RAG 전체 정확도나 실제 Chrome 종단 통과를 뜻하지 않는다. early_stop/timeout/cancel/단절 분기는 앞선 관련 대역검사 범위이며 이번 실측으로 반복하지 않았다. 최초 CI 실패·배포 중 두 차례 복구와 실제 모델 skip1도 위 이력 그대로 보존한다.
+
+### 완료와 다음 판단
+
+- 승인된 내부 시간 관측 구현·원격 통합·EC2 반영·실제5회 확인을 완료했다. 설계의 세 문서 마감은 같은 작업 결과 범위로 통합하고 로컬/EC2는 문서만 ff-only 동기화한다. 제품/설정/모델을 추가 변경하지 않는다.
+- 다음 개선 후보는 리랭커 호출간 Lock 대기와 최종 LLM 실제 연산/대기다. 단건 앱 인덱스 초기화8.802초도 별도 비용으로 확인됐다. 한 병목씩 최소 변경하며 모델 상주·앱 캐시·입력/출력 토큰 조건을 분리해 비교한다. 이번에 임베딩은0.065~0.230초로 주요 생성/잠금 구간보다 작았다. 후보/근거를 줄이거나 no_evidence로 끝내 속도 향상으로 표시하지 않는다. 누락/정확도·별도 CSV 등 기존 보류는 자동 재개하지 않는다.

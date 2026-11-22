@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path');
 const {validateDocumentOrigin,validateDocumentTimeout}=require('./protocol.js');
-const runtimeFiles=Object.freeze(['manifest.json','protocol.js','worker.js','offscreen.html','offscreen.js','options.html','options.js','options.css','dom.js','profile.js','conversations.js','conversation-store.js','conversation-panel.js','input-assist.js','content.js']);
+const runtimeFiles=Object.freeze(['manifest.json','protocol.js','worker.js','offscreen.html','offscreen.js','options.html','options.js','options.css','dom.js','profile.js','conversations.js','conversation-store.js','conversation-panel.js','input-assist.js','answer-format.js','content.js']);
 
 function packageExtension({origin,name,timeoutSeconds=600,...extra}){
   origin=validateDocumentOrigin(origin);

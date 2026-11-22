@@ -41,15 +41,44 @@
     if(pendingQuestion.isConnected)pendingQuestion.append(notice);pendingQuestion=null;
   }
   function removePending(){pendingReply?.remove();pendingReply=null;}
+  let typing=null;
+  function reducedMotion(){try{return typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;}catch{return false;}}
+  function commonPrefix(left,right){let index=0;const limit=Math.min(left.length,right.length);while(index<limit&&left[index]===right[index])index++;return index;}
+  function finishTyping(){
+    const current=typing;typing=null;if(!current)return;
+    if(current.frame)cancelAnimationFrame(current.frame);
+    GyeoteAnswerFormat.render(current.node,current.text);
+  }
+  function stepTyping(){
+    const current=typing;if(!current)return;current.frame=0;
+    if(!current.node.isConnected){finishTyping();return;}
+    const backlog=current.text.length-current.shown;
+    if(backlog>0){
+      current.shown+=Math.max(1,Math.ceil(backlog/20));
+      const code=current.text.charCodeAt(current.shown-1);if(code>=0xd800&&code<0xdc00)current.shown++;
+    }
+    const follow=atConversationEnd(),done=current.shown>=current.text.length;
+    GyeoteAnswerFormat.render(current.node,current.text.slice(0,current.shown),{caret:!(done&&current.final)});
+    if(follow)transcript.scrollTop=transcript.scrollHeight;
+    if(!done)current.frame=requestAnimationFrame(stepTyping);
+    else if(current.final)typing=null;
+  }
+  function typeText(node,text,{from=0,final=false}={}){
+    if(typing&&typing.node!==node)finishTyping();
+    if(typing){typing.shown=commonPrefix(typing.text.slice(0,typing.shown),text);typing.text=text;typing.final=final;}
+    else typing={node,text,shown:Math.max(0,Math.min(from,text.length)),final,frame:0};
+    if(reducedMotion())typing.shown=text.length;
+    if(!typing.frame)typing.frame=requestAnimationFrame(stepTyping);
+  }
   function showDraft(text){
     if(!pendingReply?.isConnected||typeof text!=='string'||!text)return;
-    const follow=atConversationEnd();let draft=pendingReply.querySelector('.draft-text');
+    let draft=pendingReply.querySelector('.draft-text');
     if(!draft){
       const label=document.createElement('span');label.className='sr-only';label.textContent='곁에가 답변을 작성하고 있습니다.';
-      draft=document.createElement('p');draft.className='draft-text';
+      draft=document.createElement('div');draft.className='draft-text answer-body';
       pendingReply.setAttribute('aria-live','off');pendingReply.setAttribute('aria-busy','true');pendingReply.classList.add('drafting');pendingReply.replaceChildren(label,draft);
     }
-    draft.textContent=GyeoteProtocol.privacy.maskText(text);if(follow)transcript.scrollTop=transcript.scrollHeight;
+    typeText(draft,GyeoteProtocol.privacy.maskText(text));
   }
   function showPending(){
     removePending();const follow=atConversationEnd();pendingReply=document.createElement('div');pendingReply.className='pending-reply';pendingReply.setAttribute('role','status');pendingReply.setAttribute('aria-live','polite');
@@ -58,7 +87,7 @@
   }
   const synth=window.speechSynthesis,speechSupported=!!synth&&typeof window.SpeechSynthesisUtterance==='function';
   let speaking=null,speechVersion=0;
-  function cancel(message){stopSummary();stopSpeech();removePending();finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;updateRequestControl();clear(message);inputAssist?.invalidate();}
+  function cancel(message){finishTyping();stopSummary();stopSpeech();removePending();finishQuestion(message||'요청을 중지했습니다.');serial++;savedPanel?.cancelRequest();clearTimeout(requestTimer);requestPort?.disconnect();requestPort=null;busy=false;requestPending=false;updateRequestControl();clear(message);inputAssist?.invalidate();}
   function position(){
     frame=0;
     if(!selected.length)return;
@@ -117,11 +146,11 @@
     sendButton.setAttribute('aria-label',label);sendButton.title=label;sendButton.disabled=summaryBusy;
     updateSummaryControls();
   }
-  const summaryButton=document.createElement('button'),summaryPanel=document.createElement('section'),summaryHeading=document.createElement('strong'),summaryBody=document.createElement('p'),summaryClose=document.createElement('button'),summaryRun=document.createElement('button'),summaryCancel=document.createElement('button');
+  const summaryButton=document.createElement('button'),summaryPanel=document.createElement('section'),summaryHeading=document.createElement('strong'),summaryBody=document.createElement('div'),summaryClose=document.createElement('button'),summaryRun=document.createElement('button'),summaryCancel=document.createElement('button');
   summaryButton.type='button';summaryButton.className='consultation-summary';summaryButton.textContent='상담 요약';
   summaryPanel.className='consultation-summary-result modal-dialog';summaryPanel.id='gyeote-summary';summaryPanel.hidden=true;summaryPanel.setAttribute('role','dialog');summaryPanel.setAttribute('aria-modal','true');summaryPanel.setAttribute('aria-labelledby','gyeote-summary-title');
   summaryButton.setAttribute('aria-haspopup','dialog');summaryButton.setAttribute('aria-controls',summaryPanel.id);summaryButton.setAttribute('aria-expanded','false');
-  summaryHeading.id='gyeote-summary-title';summaryHeading.textContent='상담 요약';summaryBody.style.whiteSpace='pre-wrap';summaryBody.setAttribute('role','status');summaryBody.textContent='저장된 상담 요약이 없습니다.';
+  summaryHeading.id='gyeote-summary-title';summaryHeading.textContent='상담 요약';summaryBody.className='summary-body';summaryBody.setAttribute('role','status');summaryBody.textContent='저장된 상담 요약이 없습니다.';
   const summaryTop=document.createElement('div'),summaryActions=document.createElement('div');summaryTop.className='profile-heading';summaryActions.className='row';
   summaryClose.type=summaryRun.type=summaryCancel.type='button';summaryClose.className='summary-dismiss';summaryClose.textContent='×';summaryClose.setAttribute('aria-label','요약 창 닫기');summaryRun.className='summary-run';summaryRun.textContent='요약하기';summaryCancel.textContent='요약 취소';summaryCancel.hidden=true;
   summaryTop.append(summaryHeading,summaryClose);summaryActions.append(summaryRun,summaryCancel);summaryPanel.append(summaryTop,summaryBody,summaryActions);
@@ -140,7 +169,8 @@
     lastSummary=currentAccess?.mode==='anonymous'?summary:null;
     if(summaryBusy)return;
     summaryHeading.textContent=lastSummary?.partial?'보관된 최근 상담 일부 요약':'상담 요약';
-    summaryBody.textContent=lastSummary?.text||'저장된 상담 요약이 없습니다. 요약하기를 눌러 보관된 대화를 요약하세요.';
+    if(lastSummary?.text)GyeoteAnswerFormat.renderSummary(summaryBody,lastSummary.text);
+    else summaryBody.textContent='저장된 상담 요약이 없습니다. 요약하기를 눌러 보관된 대화를 요약하세요.';
   }
   summaryClose.addEventListener('click',closeModal);
   summaryCancel.addEventListener('click',()=>{stopSummary();summaryRun.focus();});
@@ -391,6 +421,23 @@
     @container(min-width:800px){.head{display:flex}.head strong{flex:1}.head .ui-opacity{width:112px;flex:0 0 112px}.head .mode-switch{margin-right:6px}}
     @media(max-height:480px){.body{display:block;overflow:auto;overscroll-behavior:contain}.transcript{min-height:0;overflow:visible}.status{max-height:none}.consultation{padding:8px 12px}}
   `;
+  formStyle.textContent+=`
+    .conversation article.assistant-message{padding:14px 16px}
+    .answer-body{white-space:normal;line-height:1.75;word-break:keep-all;overflow-wrap:anywhere}
+    .answer-body>*{margin:0 0 12px}.answer-body>*:last-child{margin-bottom:0}
+    .conversation article .answer-body p{margin:0 0 12px}.conversation article .answer-body p:last-child{margin-bottom:0}
+    .answer-body h4{margin:16px 0 6px;font-size:15px;font-weight:700;color:#304aa2}.answer-body h4:first-child{margin-top:0}
+    .answer-body ul,.answer-body ol{padding-left:1.4em}.answer-body li{margin:0 0 6px;padding-left:2px}.answer-body li:last-child{margin-bottom:0}
+    .answer-body li::marker{color:var(--gyeote-accent);font-weight:700}
+    .answer-body strong{font-weight:700;color:#1d2b52}.answer-body .answer-label{color:#304aa2}
+    .pending-reply .draft-text{margin:0;white-space:normal;line-height:1.75}
+    .typing-caret{display:inline-block;width:2px;height:1.1em;margin-left:2px;vertical-align:-3px;background:var(--gyeote-accent);animation:gyeote-caret 1s steps(1) infinite}
+    @keyframes gyeote-caret{50%{opacity:0}}@media(prefers-reduced-motion:reduce){.typing-caret{animation:none}}
+    .document-contacts{margin-top:12px;padding:10px 12px;border:1px solid #d9e1ef;border-radius:12px;background:#fff;font-size:14px}.document-contacts p{margin:4px 0 0}.document-contacts p:first-child{margin-top:0}.document-contacts a{font-weight:700;color:#304aa2}
+    .summary-body{margin:14px 0;padding:14px 16px;background:var(--gyeote-soft);border:1px solid #d9e1ef;border-radius:16px;line-height:1.75;word-break:keep-all;overflow-wrap:anywhere}
+    .summary-body p{margin:0}.summary-body ul{margin:0;padding-left:1.3em}.summary-body li{margin:0 0 8px}.summary-body li:last-child{margin-bottom:0}.summary-body li::marker{color:var(--gyeote-accent)}
+    .consultation-summary-result .summary-run{background:var(--gyeote-accent);color:#fff;border-color:var(--gyeote-accent)}.consultation-summary-result .summary-run:hover:not(:disabled){background:#304aa2}.consultation-summary-result .summary-run:disabled{opacity:.55}
+  `;
   profilePanel.ready.then(()=>{if(initialProfileActive&&!profilePanel.state){profileOpen=true;updateProfileView();}});
   $('.onboarding-edit').addEventListener('click',()=>{if(!profileOpen)profileButton.click();});
   $('.onboarding-later').addEventListener('click',()=>void profilePanel.defer());
@@ -423,10 +470,11 @@
       transcript.dataset.conversationId=conversation?.id||'';
       const pendingNodes=[pendingQuestion,pendingReply].filter(node=>node?.isConnected);
       $('.conversation').replaceChildren();
-      for(const message of conversation?.messages||[]){
+      const messages=conversation?.messages||[],lastAnswer=messages.findLastIndex(message=>message.role!=='user');
+      messages.forEach((message,index)=>{
         if(message.role==='user')appendMessage('user',message.content,GyeoteConversations.limits.messages+2);
-        else appendDocumentAnswer({kind:message.kind,text:message.content,evidence:message.evidence,contacts:message.contacts,evidenceTruncated:message.evidenceTruncated,context_usage:message.contextUsage});
-      }
+        else appendDocumentAnswer({kind:message.kind,text:message.content,evidence:message.evidence,contacts:message.contacts,evidenceTruncated:message.evidenceTruncated,context_usage:message.contextUsage},{resume:index===lastAnswer});
+      });
       $('.conversation').append(...pendingNodes);
       transcript.scrollTop=follow?transcript.scrollHeight:scroll;
       inputAssist?.update();
@@ -544,11 +592,15 @@
     const button=document.createElement('button');button.type='button';button.className='speak-answer';speechIdle(button);
     button.addEventListener('click',()=>void speak(button,read));message.label.after(button);return button;
   }
-  function appendDocumentAnswer(answer){
+  function appendDocumentAnswer(answer,{typedPrefix=null,resume=false}={}){
     const message=appendMessage('assistant',answer.text);message.label.textContent=answer.kind==='answer'?'곁에 · 문서 답변':'곁에 · 안내';
+    message.text.className='answer-body';
+    if(typedPrefix!==null)typeText(message.text,answer.text,{from:commonPrefix(typedPrefix,answer.text),final:true});
+    else if(resume&&typing?.final&&typing.text===answer.text)typeText(message.text,answer.text,{from:typing.shown,final:true});
+    else GyeoteAnswerFormat.render(message.text,answer.text);
     const contacts=GyeoteProtocol.documentContacts(answer.contacts);
     const spokenContacts=contacts.map(contact=>`${contact.kind==='general'?'일반 복지상담':'문서 문의처'}, ${contact.label}. 전화 ${spokenPhone(contact.phone)}.${contact.hours?' '+contact.hours+'.':''}`);
-    addSpeech(message,()=>[message.text.textContent,...spokenContacts].join('\n'));
+    addSpeech(message,()=>[answer.text,...spokenContacts].join('\n'));
     if(contacts.length){
       const section=document.createElement('section');section.className='document-contacts';section.setAttribute('aria-label','확인할 문의처');
       for(const contact of contacts){
@@ -612,10 +664,11 @@
       port.onDisconnect.addListener(()=>{if(version===serial&&requestPort===port&&!finished)cancel(errors.connection_failed);});
       async function displayAndSaveDocumentReply(body){
         const answer=GyeoteProtocol.documentReply(body,requestInput?.conversation_context??null);
+        const typedPrefix=typing&&pendingReply?.contains(typing.node)?typing.text.slice(0,typing.shown):'';
         removePending();
         pendingQuestion=null;
         setStatus('');
-        appendDocumentAnswer(answer);
+        appendDocumentAnswer(answer,{typedPrefix});
         clearTimeout(requestTimer);
         const saved=await savedPanel.save(conversationContext,requestId,question,answer,conversationContext.profileRevision,()=>version===serial&&requestPort===port&&mode==='document');
         if(version!==serial||requestPort!==port)return;

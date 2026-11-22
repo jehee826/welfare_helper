@@ -11,7 +11,7 @@
   "background": {"service_worker": "worker.js"},
   "content_scripts": [{
     "matches": ["https://www.bokjiro.go.kr/*"],
-    "js": ["protocol.js", "conversations.js", "dom.js", "profile.js", "conversation-panel.js", "input-assist.js", "content.js"],
+    "js": ["protocol.js", "conversations.js", "dom.js", "profile.js", "conversation-panel.js", "input-assist.js", "answer-format.js", "content.js"],
     "run_at": "document_idle",
     "all_frames": false
   }]

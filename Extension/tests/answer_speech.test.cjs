@@ -27,7 +27,7 @@ test('본문 URL과 내부 식별자는 낭독에서만 빼고 조건·예외·�
     assert.doesNotMatch(spoken,/https|www|example|doc-123|document|chunk|snapshot|target|ABCDEF|123e4567|\bC1\b/);
     assert.match(spoken,/공식 안내/);assert.match(spoken,/만 65세 이상, 소득 2\.5% 이하, 1,000,000원/);
     assert.match(spoken,/예외는 별도 확인하세요/);assert.match(spoken,/02-123-4567/);assert.match(spoken,/0 2, 1 2 3, 4 5 6 7/);
-    assert.equal(f.root.querySelector('.assistant-message div').textContent,text);
+    assert.equal([...f.root.querySelectorAll('.assistant-message .answer-body p')].map(node=>node.textContent).join('\n'),text);
   }finally{f.close();}
 });
 

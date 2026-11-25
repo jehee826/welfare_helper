@@ -1,0 +1,17 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "곁에 처음 화면" [ref=e5] [cursor=pointer]:
+      - /url: /
+      - text: 곁에복지 길잡이
+    - navigation "주 메뉴" [ref=e6]:
+      - button "글자 크게" [ref=e7] [cursor=pointer]
+  - main [ref=e8]:
+    - region [ref=e9]:
+      - paragraph [ref=e10]: 복지관 직원 전용
+      - heading "관리자 로그인" [level=1] [ref=e11]
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]: 관리자 키
+          - textbox "관리자 키" [ref=e15]
+        - button "들어가기" [ref=e16] [cursor=pointer]
+      - paragraph [ref=e17]: "목업 안내: 키를 브라우저에서 비교하므로 실제 보안 기능이 아니에요. 실제 인증은 백엔드 연동 단계에서 적용해요."

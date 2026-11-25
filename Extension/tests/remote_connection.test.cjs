@@ -24,7 +24,7 @@ test('운영 allowlist 패키지는 정적 origin·정확한 host·CSP를 일치
   assert.deepEqual(fs.readdirSync(packagePath).sort(),[...runtimeFiles].sort());
   const manifest=JSON.parse(read('manifest.json'));assert.deepEqual(manifest.host_permissions,[origin+'/*']);assert.deepEqual(manifest.permissions,JSON.parse(source('manifest.json')).permissions);assert.ok(manifest.permissions.includes('activeTab'));
   for(const name of ['options.html','offscreen.html']){assert.ok(read(name).includes('connect-src '+origin+';'));assert.ok(!read(name).includes('connect-src http:'));}
-  assert.equal(protocol().documentOrigin(),origin);assert.equal(runtimeFiles.length,15);assert.ok(!runtimeFiles.includes('capture.js')&&!runtimeFiles.includes('image.js'));
+  assert.equal(protocol().documentOrigin(),origin);assert.equal(runtimeFiles.length,16);assert.ok(!runtimeFiles.includes('capture.js')&&!runtimeFiles.includes('image.js'));
   const before=read('protocol.js');assert.throws(()=>packageExtension({origin,name:path.basename(packagePath)}),/덮어쓰지/);assert.equal(read('protocol.js'),before);
   assert.throws(()=>packageExtension({origin,name:'../escape'}));assert.throws(()=>packageExtension({origin,name:'other',extra:true}));
   assert.equal(source('protocol.js'),sourceProtocol);

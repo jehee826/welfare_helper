@@ -1,0 +1,113 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - generic [ref=e15]:
+      - generic [ref=e18]:
+        - button "본문 바로가기" [ref=e25] [cursor=pointer]
+        - button "공동인증서 내보내기" [ref=e33] [cursor=pointer]
+        - generic "지원메뉴 목록 펼치기" [ref=e39]:
+          - button "지원 엔터키를 눌러 메뉴를 확인하세요." [ref=e41] [cursor=pointer]:
+            - generic [ref=e43]: 지원
+        - generic [ref=e51]:
+          - button "화면크기 줄이기" [ref=e53] [cursor=pointer]:
+            - generic [ref=e54]: 작게
+          - generic [ref=e55]: 화면크기
+          - button "화면크기 키우기" [ref=e59] [cursor=pointer]:
+            - generic [ref=e60]: 크게
+      - generic [ref=e66]: 이 누리집은 대한민국 공식 전자정부 누리집입니다.
+      - heading [level=1] [ref=e79] [cursor=pointer]:
+        - generic "복지로 바로가기" [ref=e80]:
+          - img "복지로 로고" [ref=e81]
+      - iframe [ref=e92]:
+        - navigation [ref=f2e2]:
+          - list [ref=f2e3]:
+            - listitem [ref=f2e4]:
+              - link "복지서비스" [ref=f2e5] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f2e6]:
+              - link "서비스 신청" [ref=f2e7] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f2e8]:
+              - link "복지지도" [ref=f2e9] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f2e10]:
+              - link "복지위기알림" [ref=f2e11] [cursor=pointer]:
+                - /url: "#"
+            - listitem [ref=f2e12]:
+              - link "복지신고" [ref=f2e13] [cursor=pointer]:
+                - /url: "#"
+    - generic [ref=e124]:
+      - generic [ref=e128]:
+        - generic [ref=e132]:
+          - generic [ref=e137]:
+            - generic [ref=e140]:
+              - generic "중앙부처 복지사업" [ref=e142]
+              - generic "교육" [ref=e146]
+              - generic "생활지원" [ref=e150]
+              - generic "청년" [ref=e154]
+            - generic [ref=e159]:
+              - generic [ref=e163] [cursor=pointer]:
+                - checkbox "찜하기" [ref=e165]
+                - generic [ref=e166]: 찜하기
+              - generic [ref=e167]: 찜하기
+          - generic [ref=e179]:
+            - generic [ref=e182]:
+              - generic "복지정보명" [ref=e184]: 인문100년장학금
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic "복지정보태그"
+            - generic [ref=e187]: 인문사회계열 우수학생에게 학자금을 지원하여 인문학 소양을 갖춘 인재를 양성할 수 있도록 장학금을 지원합니다.
+            - generic [ref=e192]:
+              - generic "담당부처" [ref=e193]
+              - generic "복지정보담당부처명" [ref=e196]: 교육부 청년장학지원과
+            - table "복지서비스 상세" [ref=e203]:
+              - caption: 복지서비스 상세
+              - rowgroup [ref=e204]:
+                - row [ref=e205]:
+                  - columnheader [ref=e206]:
+                    - generic "사업기준연도" [ref=e208]: 기준연도
+                  - columnheader "문의처" [ref=e211]
+                  - columnheader "지원주기" [ref=e216]
+                  - columnheader "제공유형" [ref=e221]
+              - rowgroup [ref=e226]:
+                - row [ref=e227]:
+                  - cell "2026" [ref=e228]
+                  - cell "1599-2290" [ref=e233]
+                  - cell "반기" [ref=e238]
+                  - cell "현금지급" [ref=e243]
+        - button "목록" [ref=e261] [cursor=pointer]
+      - generic [ref=e268]:
+        - generic [ref=e274]:
+          - generic "지원대상 선택됨" [ref=e279] [cursor=pointer]:
+            - link "지원대상 선택됨" [ref=e280]:
+              - generic [ref=e281]: 지원대상
+          - link "서비스 내용" [ref=e287] [cursor=pointer]
+          - link "신청방법" [ref=e294] [cursor=pointer]
+          - link "추가정보" [ref=e301] [cursor=pointer]
+        - tabpanel [ref=e312]:
+          - generic [ref=e315]:
+            - heading "지원대상 선택됨" [level=1] [ref=e319]
+            - generic [ref=e323]:
+              - generic [ref=e324]: 지원대상
+              - list [ref=e334]:
+                - list [ref=e335]:
+                  - listitem [ref=e336]: 국내 4년제 대학의 인문사회계열 학과(부) 재학생 중, 선발·지원 기준을 충족하는 우수 학생(1학년, 3학년)을 대상으로 합니다.
+            - generic [ref=e340]:
+              - generic [ref=e341]: 선정기준
+              - list [ref=e351]:
+                - list [ref=e352]:
+                  - listitem [ref=e353]: 학업성적 및 학생역량을 고려하여 대학이 자체 선발하되, 경제적 수준이 낮을수록 가점을 부여합니다.
+                  - list [ref=e354]:
+                    - listitem [ref=e355]: "전공 탐색 유형(대학생 1학년): 경제적 수준, 학업성적, 전공분야 우수성, 성장가능성 등을 평가할 수 있도록 대학 자체선발기준 수립"
+                    - listitem [ref=e356]: "전공 확립 유형(대학생 3학년): 학업성적(60%) + 경제적 수준 및 학생역량(40%) 비중으로 대학 자체선발기준을 수립하되, 기본자격 요건*(성적 및 이수학점 기준) 충족 필요* 기본자격 요건 : 직전학기까지의 총 평균성적이 백분위 90점 이상 또는 평점 3.6이상/4.5만점(3.4이상/4.3만점), 취득 이수학점이 소속대학 졸업이수학점의 40% 이상"
+  - generic [ref=e362]:
+    - generic "새로고침" [ref=e363] [cursor=pointer]:
+      - button "새로고침" [ref=e364]
+    - generic "챗봇" [ref=e366] [cursor=pointer]:
+      - button "챗봇" [ref=e367]
+    - generic "상단이동" [ref=e369] [cursor=pointer]:
+      - button "상단이동" [ref=e370]
+    - generic "하단이동" [ref=e372] [cursor=pointer]:
+      - button "하단이동" [ref=e373]
